@@ -1,0 +1,57 @@
+# Orba API — Fly.io configuration
+# See: https://fly.io/docs/reference/configuration/
+#
+# Deploy with: fly deploy --config apps/api/fly.toml
+# The app runs a persistent NestJS process (indexer poller + WebSocket server).
+# Free tier: shared-cpu-1x, 256MB RAM — enough for testnet traffic.
+
+app = "orbafun-api"
+primary_region = "iad"  # Washington, DC — closest to Arc RPC endpoints
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  API_PORT = "4000"
+  NODE_ENV = "production"
+  # Arc testnet config (public — no secrets here)
+  ARC_RPC_URLS = "https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io"
+  ARC_CHAIN_ID = "5042002"
+  ARC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000"
+  ARC_TOKEN_FACTORY_ADDRESS = "0xA0a06666a065f2fE83d49D72934c54e692907296"
+  ARC_TREASURY_ADDRESS = "0xe70CdaC18008857b9BCbBa0c94A41e11C54Fb033"
+  ARC_MIGRATOR_ADDRESS = "0x8Bd1D9187C157CCe74881976A0d532210328fC50"
+  ARC_AMM_FACTORY_ADDRESS = "0x09109941796E004d86e5383dA0222DCdB43d4b13"
+  ARC_POLLER_ENABLED = "true"
+  # AUTH_ALLOW_INSECURE must be "false" for production — set to true only
+  # for testnet if wallet signature auth is not yet wired up on the frontend.
+  AUTH_ALLOW_INSECURE = "true"
+  # CORS — set to your Vercel frontend URL after deploying the frontend.
+  # For now, allow all origins (testnet only).
+  CORS_ORIGIN = "*"
+
+# Secrets (set via `fly secrets set` — NOT in this file):
+#   fly secrets set POSTGRES_HOST=... POSTGRES_PORT=... POSTGRES_DB=... \
+#     POSTGRES_USER=... POSTGRES_PASSWORD=... \
+#     REDIS_URL=... \
+#     AUTH_SECRET=... \
+#     DEPLOYER_PRIVATE_KEY=... \
+#     ADMIN_WALLETS=... \
+#     PINATA_JWT=...
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  auto_stop_machines = false  # NEVER stop — indexer + WebSocket must run 24/7
+  auto_start_machines = true
+  min_machines_running = 1    # always keep 1 machine running
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 100
+    soft_limit = 80
+
+# VM config — smallest available (free tier eligible).
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

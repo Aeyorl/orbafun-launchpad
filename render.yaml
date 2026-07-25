@@ -1,0 +1,78 @@
+# Render Blueprint — Orba backend
+# See: https://render.com/docs/blueprint-spec
+#
+# This blueprint defines the Orba API as a persistent web service.
+# Render keeps it running 24/7 (no spin-down on paid plans).
+#
+# Deploy: Push this repo to GitHub, then go to
+#   https://dashboard.render.com/blueprints → New Blueprint → select the repo
+# Render will read this file and create the service automatically.
+#
+# Secrets (set in Render dashboard → Environment tab after creation):
+#   POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD
+#   REDIS_URL
+#   AUTH_SECRET
+#   DEPLOYER_PRIVATE_KEY
+#   ADMIN_WALLETS
+#   PINATA_JWT (optional)
+#   CORS_ORIGIN (set to your Vercel frontend URL after deploying the frontend)
+
+services:
+  - type: web
+    name: orbafun-api
+    runtime: docker
+    # Build from the monorepo root (so workspace deps resolve), but use the
+    # API's Dockerfile.
+    rootDir: .
+    dockerfilePath: ./apps/api/Dockerfile
+    region: oregon  # US West — closest to Arc RPC endpoints
+    plan: starter   # $7/month — 512MB RAM, no spin-down, always on
+    healthCheckPath: /tokens?limit=1
+    autoDeploy: true
+    envVars:
+      # Non-secret config (set directly in the blueprint)
+      - key: API_PORT
+        value: 4000
+      - key: NODE_ENV
+        value: production
+      - key: ARC_RPC_URLS
+        value: https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io
+      - key: ARC_CHAIN_ID
+        value: "5042002"
+      - key: ARC_USDC_ADDRESS
+        value: "0x3600000000000000000000000000000000000000"
+      - key: ARC_TOKEN_FACTORY_ADDRESS
+        value: "0xA0a06666a065f2fE83d49D72934c54e692907296"
+      - key: ARC_TREASURY_ADDRESS
+        value: "0xe70CdaC18008857b9BCbBa0c94A41e11C54Fb033"
+      - key: ARC_MIGRATOR_ADDRESS
+        value: "0x8Bd1D9187C157CCe74881976A0d532210328fC50"
+      - key: ARC_AMM_FACTORY_ADDRESS
+        value: "0x09109941796E004d86e5383dA0222DCdB43d4b13"
+      - key: ARC_POLLER_ENABLED
+        value: "true"
+      - key: AUTH_ALLOW_INSECURE
+        value: "true"
+      - key: CORS_ORIGIN
+        sync: false  # set manually in dashboard after frontend is deployed
+      # Secrets (set manually in Render dashboard → Environment)
+      - key: POSTGRES_HOST
+        sync: false
+      - key: POSTGRES_PORT
+        sync: false
+      - key: POSTGRES_DB
+        sync: false
+      - key: POSTGRES_USER
+        sync: false
+      - key: POSTGRES_PASSWORD
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: AUTH_SECRET
+        sync: false
+      - key: DEPLOYER_PRIVATE_KEY
+        sync: false
+      - key: ADMIN_WALLETS
+        sync: false
+      - key: PINATA_JWT
+        sync: false
