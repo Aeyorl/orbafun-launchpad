@@ -1,0 +1,143 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-inter: 'Inter', system-ui, sans-serif;
+    --font-jetbrains: 'JetBrains Mono', monospace;
+  }
+
+  body {
+    @apply bg-bg-base text-text-primary font-sans antialiased;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0, 255, 157, 0.08), transparent),
+      radial-gradient(ellipse 60% 40% at 80% 100%, rgba(59, 130, 246, 0.05), transparent);
+    background-attachment: fixed;
+  }
+
+  /* Visible focus ring for keyboard users only (mouse clicks don't show it) */
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent-green ring-offset-2 ring-offset-bg-base rounded;
+  }
+
+  /* Skip-to-content link for screen readers / keyboard users */
+  .skip-link {
+    @apply absolute left-2 top-2 z-[100] bg-accent-green text-black px-3 py-1.5 rounded-lg text-sm font-semibold
+           -translate-y-20 transition-transform focus:translate-y-0;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-bg-base;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-bg-border rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-text-muted;
+  }
+
+  /* Respect reduced-motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Card component */
+  .card {
+    @apply bg-bg-card border border-bg-border rounded-xl p-4 transition-colors;
+  }
+  .card-hover {
+    @apply hover:border-accent-green/30 hover:bg-bg-hover cursor-pointer;
+  }
+
+  /* Button variants */
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-accent-green text-black hover:bg-accent-greenDim font-semibold;
+  }
+  .btn-secondary {
+    @apply btn bg-bg-input text-text-primary hover:bg-bg-border border border-bg-border;
+  }
+  .btn-buy {
+    @apply btn bg-accent-green text-black hover:bg-accent-greenDim font-semibold;
+  }
+  .btn-sell {
+    @apply btn bg-accent-red text-white hover:bg-red-600 font-semibold;
+  }
+
+  /* Input fields */
+  .input,
+  .input-field {
+    @apply bg-bg-input border border-bg-border rounded-lg px-3 py-2 text-text-primary
+           placeholder:text-text-muted focus:outline-none focus:border-accent-green/50
+           transition-colors w-full;
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-green {
+    @apply badge bg-accent-green/10 text-accent-green border border-accent-green/20;
+  }
+  .badge-blue {
+    @apply badge bg-accent-blue/10 text-accent-blue border border-accent-blue/20;
+  }
+  .badge-purple {
+    @apply badge bg-accent-purple/10 text-accent-purple border border-accent-purple/20;
+  }
+  .badge-red {
+    @apply badge bg-accent-red/10 text-accent-red border border-accent-red/20;
+  }
+  .badge-orange {
+    @apply badge bg-accent-orange/10 text-accent-orange border border-accent-orange/20;
+  }
+  .badge-muted {
+    @apply badge bg-bg-border text-text-secondary;
+  }
+
+  /* Progress bar (bonding curve) */
+  .progress-bar {
+    @apply w-full h-2 bg-bg-border rounded-full overflow-hidden;
+  }
+  .progress-fill {
+    @apply h-full bg-gradient-to-r from-accent-green to-accent-blue transition-all duration-500;
+  }
+
+  /* Tab navigation */
+  .tab {
+    @apply px-3 py-1.5 rounded-lg text-sm font-medium text-text-secondary
+           hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer;
+  }
+  .tab-active {
+    @apply bg-bg-hover text-accent-green;
+  }
+}
+
+@layer utilities {
+  /* Number formatting */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Glow effect for active elements */
+  .glow-green {
+    box-shadow: 0 0 20px rgba(0, 255, 157, 0.15);
+  }
+  .glow-blue {
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.15);
+  }
+}

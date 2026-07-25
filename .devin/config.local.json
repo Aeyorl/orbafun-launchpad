@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Exec(curl)",
+      "Exec(Get-Date)",
+      "Exec(npm run)",
+      "Exec(head)",
+      "Exec(Start-Sleep)",
+      "Exec(forge test)"
+    ]
+  }
+}

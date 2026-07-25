@@ -1,0 +1,18 @@
+{
+  "name": "@orbafun/indexer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Envio HyperIndex indexer for Orba contract events",
+  "scripts": {
+    "codegen": "envio codegen",
+    "build": "envio build",
+    "dev": "envio dev",
+    "start": "envio start",
+    "stop": "envio stop",
+    "logs": "envio logs"
+  },
+  "dependencies": {
+    "envio": "*"
+  }
+}

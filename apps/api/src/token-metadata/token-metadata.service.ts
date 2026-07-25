@@ -1,0 +1,151 @@
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { DatabaseService } from '../database/database.service';
+
+export interface TokenMetadata {
+  token_address: string;
+  website: string | null;
+  twitter: string | null;
+  telegram: string | null;
+  discord: string | null;
+  description: string | null;
+  updated_at: string;
+}
+
+export interface TokenMetadataInput {
+  website?: string;
+  twitter?: string;
+  telegram?: string;
+  discord?: string;
+  description?: string;
+}
+
+const MAX_URL_LENGTH = 200;
+const MAX_DESCRIPTION_LENGTH = 500;
+
+/**
+ * Validate that a URL uses a safe scheme (http/https only).
+ * Rejects javascript:, data:, vbscript:, and other dangerous schemes.
+ */
+function isValidHttpUrl(value: string): boolean {
+  if (!value || value.length > MAX_URL_LENGTH) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Sanitize a Telegram handle/URL. Accepts either a t.me URL or a bare handle.
+ */
+function sanitizeTelegram(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_URL_LENGTH) return null;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const url = new URL(trimmed);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+      return trimmed;
+    } catch {
+      return null;
+    }
+  }
+  // Bare handle — only allow alphanumeric, underscores, and hyphens.
+  if (/^[a-zA-Z0-9_-]+$/.test(trimmed)) return trimmed;
+  return null;
+}
+
+/**
+ * Sanitize a Twitter handle. Strip leading @, only allow alphanumeric + underscores.
+ */
+function sanitizeTwitter(value: string): string | null {
+  const trimmed = value.trim().replace(/^@/, '');
+  if (!trimmed || trimmed.length > 50) return null;
+  if (/^[a-zA-Z0-9_]+$/.test(trimmed)) return trimmed;
+  return null;
+}
+
+@Injectable()
+export class TokenMetadataService {
+  private readonly logger = new Logger(TokenMetadataService.name);
+
+  constructor(private db: DatabaseService) {}
+
+  /** Get metadata for a token. Returns empty object if none exists. */
+  async getMetadata(tokenAddress: string): Promise<TokenMetadata | null> {
+    const addr = tokenAddress.toLowerCase();
+    const row = await this.db.queryOne<TokenMetadata>(
+      `SELECT token_address, website, twitter, telegram, discord, description, updated_at
+       FROM token_metadata
+       WHERE token_address = $1`,
+      [addr],
+    );
+    return row || null;
+  }
+
+  /** Set or update metadata for a token. Only the creator can set it. */
+  async setMetadata(
+    tokenAddress: string,
+    creatorWallet: string,
+    input: TokenMetadataInput,
+  ): Promise<TokenMetadata> {
+    const addr = tokenAddress.toLowerCase();
+    const creator = creatorWallet.toLowerCase();
+
+    // Verify the caller is the token creator.
+    const token = await this.db.queryOne<{ creator_wallet: string }>(
+      `SELECT creator_wallet FROM tokens WHERE contract_address = $1`,
+      [addr],
+    );
+    if (!token) {
+      throw new NotFoundException('Token not found');
+    }
+    if (token.creator_wallet.toLowerCase() !== creator) {
+      throw new Error('Only the token creator can update metadata');
+    }
+
+    // Validate and sanitize all fields.
+    const website = input.website?.trim() || null;
+    if (website && !isValidHttpUrl(website)) {
+      throw new Error('Website must be a valid http:// or https:// URL');
+    }
+
+    const twitter = input.twitter ? sanitizeTwitter(input.twitter) : null;
+    if (input.twitter && !twitter) {
+      throw new Error('Twitter handle must be alphanumeric (letters, numbers, underscores only)');
+    }
+
+    const telegram = input.telegram ? sanitizeTelegram(input.telegram) : null;
+    if (input.telegram && !telegram) {
+      throw new Error('Telegram must be a valid https://t.me/ URL or a handle (alphanumeric, _, -)');
+    }
+
+    const discord = input.discord?.trim() || null;
+    if (discord && !isValidHttpUrl(discord)) {
+      throw new Error('Discord must be a valid http:// or https:// URL');
+    }
+
+    const description = input.description?.trim() || null;
+    if (description && description.length > MAX_DESCRIPTION_LENGTH) {
+      throw new Error(`Description must be ${MAX_DESCRIPTION_LENGTH} characters or less`);
+    }
+
+    // Upsert.
+    const result = await this.db.queryOne<TokenMetadata>(
+      `INSERT INTO token_metadata (token_address, website, twitter, telegram, discord, description, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+       ON CONFLICT (token_address)
+       DO UPDATE SET
+         website = EXCLUDED.website,
+         twitter = EXCLUDED.twitter,
+         telegram = EXCLUDED.telegram,
+         discord = EXCLUDED.discord,
+         description = EXCLUDED.description,
+         updated_at = NOW()
+       RETURNING token_address, website, twitter, telegram, discord, description, updated_at`,
+      [addr, website, twitter, telegram, discord, description],
+    );
+    return result!;
+  }
+}

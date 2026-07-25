@@ -1,0 +1,7 @@
+{
+  "testFactoryAddress": "0x50367af1b46c18a68f14124d154ec171959a9cef",
+  "migratorAddress": "0xcb67439f13452bffc298f748bfed3d63efa06266",
+  "tokenAddress": "0x4b1f5267604a97ccc9b9701ddfb6f0174ed47f97",
+  "curveAddress": "0xc33f13f6dbfc7655c590fc54810abecbe318f4a4",
+  "ammPair": "0x6FC25AC50849cbaF93D0a5a1218050003E7f8168"
+}

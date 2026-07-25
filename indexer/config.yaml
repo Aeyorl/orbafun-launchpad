@@ -1,0 +1,77 @@
+# yaml-language-server: $schema=./node_modules/envio/evm.schema.json
+name: orbafun-indexer
+description: Orba memecoin launchpad indexer — tracks token lifecycle (create, buy, sell, graduate, migrate) on Arc Testnet.
+
+contracts:
+  - name: TokenFactory
+    abi_file_path: abis/TokenFactory.json
+    events:
+      - event: TokenCreated(address indexed token, address indexed curve, address indexed creator, string name, string symbol, string image, uint256 createdAt)
+      - event: TokenGraduated(address indexed token, address indexed ammPair)
+      - event: CreationFeeUpdated(uint256 oldFee, uint256 newFee)
+      - event: PauseStateChanged(bool paused)
+
+  - name: BondingCurve
+    abi_file_path: abis/BondingCurve.json
+    events:
+      - event: Buy(address indexed buyer, uint256 usdcIn, uint256 tokensOut, uint256 price)
+      - event: Sell(address indexed seller, uint256 tokensIn, uint256 usdcOut, uint256 price)
+      - event: Graduated(address indexed token, address indexed ammPair, uint256 lpUsdc, uint256 lpTokens)
+      - event: CreatorFeesClaimed(address indexed creator, uint256 amount)
+      - event: ProtocolFeesClaimed(address indexed owner, uint256 amount)
+
+  - name: LiquidityMigration
+    abi_file_path: abis/LiquidityMigration.json
+    events:
+      - event: TokenMigrated(address indexed token, address indexed ammPair, uint256 lpBurned)
+
+  - name: AMMPair
+    abi_file_path: abis/AMMPair.json
+    events:
+      - event: Swap(address indexed sender, address indexed to, uint256 amount0In, uint256 amount1In, uint256 amount0Out, uint256 amount1Out)
+      - event: Sync(uint112 reserve0, uint112 reserve1)
+      - event: Mint(address indexed sender, uint256 amount0, uint256 amount1)
+      - event: Burn(address indexed sender, uint256 amount0, uint256 amount1, address indexed to)
+
+chains:
+  - id: 5042002
+    # Start from a recent block to avoid massive historical backfill.
+    # The Arc testnet RPC is heavily rate-limited, making backfill of
+    # hundreds of thousands of blocks impractical. Set this to just before
+    # the earliest event you need to index. Update as needed.
+    start_block: 52803500
+    # RPC tuning for Arc testnet's aggressive rate limit (-32011).
+    # Aggressive block intervals + short backoff for faster catch-up.
+    # The Arc testnet RPC handles large eth_getLogs ranges reasonably
+    # well; the main constraint is request frequency, not response size.
+    rpc:
+      - url: https://rpc.testnet.arc.io
+        for: sync
+        initial_block_interval: 10000
+        backoff_multiplicative: 0.8
+        acceleration_additive: 2000
+        interval_ceiling: 50000
+        backoff_millis: 5000
+        query_timeout_millis: 30000
+    contracts:
+      - name: TokenFactory
+        address: "0x26Ab49011AAf73c373e462CbD5445588Ff69b7A6"
+      - name: LiquidityMigration
+        address: "0x664A37fED62192b9B29c66572198524e2CC8A6A6"
+      # Pre-register known BondingCurve contracts as static so Envio
+      # indexes their events from start_block without waiting for the
+      # dynamic contractRegister handler to fire. The dynamic handler
+      # still runs for any NEW tokens created after start_block.
+      - name: BondingCurve
+        address: "0x8d8d07f196a1d69f791e9533c7da48ce76ed440c" # Arc Doge
+      - name: BondingCurve
+        address: "0x121467e339c8a10f729fcf709a79afbf109a6f27" # bully
+      - name: BondingCurve
+        address: "0x486ea7b6de154811fe1417b5ccd011d6b54bf258" # ejkjs
+
+# Select transaction.hash for all events (not included by default in V3)
+field_selection:
+  transaction_fields:
+    - hash
+
+address_format: lowercase
