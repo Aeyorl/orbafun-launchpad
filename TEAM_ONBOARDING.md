@@ -2,6 +2,20 @@
 
 Read this before touching anything. Each role has its own section. Find yours, do the steps in order, then ask the Lead (project owner) for your first task.
 
+## The team
+
+| Role | Who | Code access? |
+|---|---|---|
+| Lead (also codes) | You | Yes — full |
+| Coder | 1 person | Yes — full, PR review by Lead |
+| Social Media + Support | 1 person | No |
+| Stress Tester A ("The Trader") | 1 person | No (testnet only) |
+| Stress Tester B ("The Browser") | 1 person | No (testnet only) |
+
+**Only the Lead and the Coder have code access.** Social/Support and Stress Testers do not touch the repo, contracts, infra, or deploy keys.
+
+---
+
 ## Read these first (everyone, no exceptions)
 
 In this order:
@@ -31,25 +45,22 @@ If `e2e-full-flow.js` fails, do not start work. Fix your env first (see `.env.ex
 
 ---
 
-## Role: Lead / Coder (you + 1 coder)
+## Role: Lead (you)
 
-You and one other dev share this role. Split work by area, not by ticket — see "Division of labor" below.
+You're the project owner AND hands-on-keyboard. You code alongside the Coder, but you also hold the keys, the merge button, and the final call.
 
 ### You own
-- Final merge approval to `main`
-- Deployer key access (only you execute mainnet deploys; the other coder writes scripts, you run them)
-- `DECISION_LOG.md` updates — every product/research decision gets logged
-- Incident response on mainnet
-- Roadmap calls and team coordination
+- **Final merge approval to `main`** — every PR routes through you. No exceptions until mainnet ships.
+- **Deployer key access** — only you execute mainnet deploys. The Coder writes deploy scripts; you run them.
+- **`DECISION_LOG.md` updates** — every product/research decision gets logged as D29+.
+- **Incident response on mainnet** — you're on call.
+- **Roadmap calls and team coordination** — you decide what gets built and when.
+- **Branch protection, CI, repo settings** — you manage these. No one else touches them.
+- **Audit relationship** — you interface with the auditor; you triage findings.
 
-### The other coder owns
-- Implementation work across contracts, API, indexer, frontend
-- Writing (not executing) mainnet deploy scripts
-- Applying audit fixes — but every fix PR routes through you for review until mainnet ships
-
-### Division of labor (suggested)
-- **You**: contracts + mainnet redeploy + audit-fix review + indexer health
-- **Other coder**: API + frontend + indexer feature work + bug fixes from stress testers
+### You also code (suggested split with Coder)
+- **You**: contracts + mainnet redeploy + audit-fix review + indexer health + `packages/shared/src/index.ts`
+- **Coder**: API + frontend + indexer feature work + bug fixes from stress testers
 - Swap as needed, but keep one person per file at a time to avoid merge conflicts.
 
 ### Day-1 commands
@@ -70,10 +81,58 @@ cd apps/web && npm run dev                               # frontend on :3000
 - `apps/web/src/lib/config.ts` — wagmi fallback transport, chainId pinning.
 - `apps/web/src/lib/utils.ts` — the THREE USDC formatters. Using the wrong one is the #1 frontend bug. Read the header comment.
 
-### What you do NOT touch without Lead sign-off
-- `packages/shared/src/index.ts` (chain config, contract addresses) — changing this breaks everything downstream
-- `contracts/src/BondingCurve.sol` curve math — only with an audit finding backing the change
-- Deployer key usage on mainnet
+### What you protect
+- **Deployer key** — never in code, commits, logs, or chat. Lead-only.
+- **`packages/shared/src/index.ts`** — changing this breaks everything downstream. Only you edit it.
+- **`contracts/src/BondingCurve.sol` curve math** — only with an audit finding backing the change.
+- **Branch protection + CI** — don't let anyone disable these.
+- **Mainnet gate** — no mainnet deploy until audit closes AND stress tests pass AND B32 (conservation of funds) passes.
+
+---
+
+## Role: Coder
+
+You're the second developer. You have full code access across contracts, API, indexer, and frontend — but all merges route through the Lead, and the deployer key is Lead-only.
+
+**Read `CODER_ONBOARDING.md` in full before writing any code.** That doc is your complete guide: repo map, Arc gotchas, day-1 commands, access/authority rules, workflow, files to read before editing, and mainnet rules. This section is a summary; the full doc is authoritative.
+
+### You own
+- Implementation work across contracts, API, indexer, frontend
+- Writing (not executing) mainnet deploy scripts
+- Applying audit fixes — every fix PR routes through Lead for review until mainnet ships
+- Bug fixes reported by stress testers (from the playbook's findings log)
+- Feature work assigned by the Lead
+
+### You CANNOT (without explicit Lead sign-off, every time)
+- Merge to `main` — all merges go through Lead's review
+- Force-push or push directly to `main`
+- Touch the deployer key or `DEPLOYER_PRIVATE_KEY`
+- Deploy contracts to mainnet
+- Modify `packages/shared/src/index.ts` (chain config, contract addresses)
+- Modify `contracts/src/BondingCurve.sol` curve math without an audit finding
+- Change branch protection, CI, or repo settings
+- Modify `.env`, `.env.example`, or any secrets file
+- Add, remove, or upgrade dependencies (supply-chain risk)
+- Disable the RPC rotation, `/rpc` proxy whitelist, or indexer
+- Run `e2e-graduation.js` without Lead sign-off (burns ~$9,000 USDC per run)
+
+### Day-1 (summary — full version in `CODER_ONBOARDING.md`)
+```bash
+npm install
+cp .env.example .env             # fill in values; ask Lead for RPC URLs (NOT deployer key)
+node scripts/check-balance.js <your-wallet>
+node scripts/e2e-full-flow.js    # must pass before starting work
+forge test --root contracts
+```
+
+You need your own funded testnet wallet (get USDC at https://faucet.circle.com). Do NOT use the deployer wallet.
+
+### Workflow
+- Branch off `main`: `feat/<...>` or `fix/<...>`
+- One branch per logical change
+- PR to `main` — Lead reviews and merges
+- Run relevant tests before opening a PR (contracts → `forge test`, API → `npm run build`, frontend → `npm run build`)
+- If your change touches USDC math or display, double-check the formatter (3 formatters in `apps/web/src/lib/utils.ts` — using the wrong one is the #1 frontend bug)
 
 ---
 
@@ -112,96 +171,113 @@ You are the public voice of the project. You do not touch code, contracts, infra
 
 ---
 
-## Role: Stress Tester A — Load / Scale
+## Role: Stress Tester A — "The Trader"
 
-You hammer the platform at volume. Your job is to find where it breaks under load, not to find logic bugs (that's Tester B).
+You act as a regular user testing the core trading flow. You open the site in a browser, connect a wallet, and click through the trading features: launch, buy, sell, watch graduation, trade on the AMM, and verify real-time updates. You are NOT probing contracts, databases, or backend infrastructure — you're clicking buttons and reporting what you see.
 
 ### You own
-- API throughput testing (REST + WebSocket)
-- WebSocket connection limits and message delivery under load
-- Indexer lag measurement under event volume
-- RPC rate-limit exhaustion testing (the 4-provider rotation)
-- Database write contention under concurrent buys/sells
+- Wallet connect + network switching
+- Launching a token (form, image upload, 5 USDC fee, approval flow)
+- Buying (quick amounts 10/50/100/500, custom amounts, slippage, approval flow, quotes, confirmations)
+- Selling (token approval, quotes, slippage, confirmations)
+- Watching graduation happen (buying until $25K MC, seeing the graduated state)
+- Trading on the AMM after graduation
+- Real-time updates (two tabs syncing, LiveTicker, PriceChart, TradeHistory)
+- Transaction failure feedback (insufficient balance, no allowance, wrong network, slippage reverts)
+- Rapid buying (UI handling fast clicks)
+- Wrong network handling + disconnect/reconnect
 
 ### You do NOT own
-- Logic/financial-correctness bugs (Tester B)
+- Testing every page (that's Tester B)
 - Code fixes (route findings to the dev team via the playbook's reporting format)
 - Anything on mainnet — testnet only, always
 
 ### Day-1 setup
-```bash
-npm install
-node scripts/e2e-full-flow.js                  # learn the happy path first
-node scripts/e2e-trade-test.js                 # buy + sell on existing token
-```
-You'll need 2–3 funded testnet wallets (get USDC at https://faucet.circle.com). Coordinate with the Lead on wallet funding — don't drain the deployer wallet.
+1. Install a wallet browser extension (MetaMask, Rabby, or any EVM wallet)
+2. Get testnet USDC at https://faucet.circle.com
+3. Add Arc Testnet to your wallet (chain ID `5042002` — ask Lead for RPC URL)
+4. Get the site URL from the Lead and open it in your browser
+5. Open DevTools (F12) — Console + Network tabs
+
+You need a funded testnet wallet. The graduation test (A7) needs more USDC — coordinate with the Lead for funding. Don't use the deployer wallet.
 
 ### Scenarios to run
-See `STRESS_TEST_PLAYBOOK.md` — Tester A section. Start there, then go off-script once you've covered the listed scenarios.
+**Read `STRESS_TEST_PLAYBOOK.md` — Tester A section (scenarios A1–A14).** Each scenario has steps, what to verify, and pass criteria. Use `STRESS_TEST_CHECKLIST.md` to tick off as you go.
 
-### Tools you'll likely need
-- `artillery` or `k6` for HTTP load against the API
-- A custom WebSocket client (the repo doesn't ship one) — write one in Node, ping the Lead before adding it to the repo
-- Multiple funded wallets running `e2e-trade-test.js` in parallel shells
-
-### What to monitor while testing
-- API response times (p50, p95, p99)
-- WebSocket message latency (event emitted on-chain → received by client)
-- Indexer lag: `indexer_sync_state` table, entity `ArcEventPoller` — compare `last_processed_block` to current block
-- RPC error rate: watch for `-32011 request limit reached` in API logs
-- Postgres: `pg_stat_activity` for connection saturation, lock waits
+### What to watch for
+- Does the button work? Does the transaction confirm? Does the screen update?
+- Are the values displayed reasonable? (not $0, not 1e6× too big)
+- Do you get clear error messages when things fail? (not raw hex codes)
+- Does the UI freeze or hang?
+- Any red errors in the browser console (DevTools)?
 
 ---
 
-## Role: Stress Tester B — Edge Cases / Financial Correctness
+## Role: Stress Tester B — "The Browser"
 
-You find logic bugs at the boundaries. Your job is to find where the math breaks or where state transitions go wrong, not to find load issues (that's Tester A).
+You act as a regular user testing every page and every navigation path. You open the site in a browser and click through every page, every link, every feature that isn't the core trading flow. Your job is to find broken pages, wrong values, missing features, and bad UX.
 
 ### You own
-- Graduation threshold boundary (what happens at exactly $25K MC, just under, just over)
-- 4% max-wallet limit enforcement (under, at, over)
-- Sell-when-illiquid scenarios
-- Fee split math verification (creator fee, protocol fee, curve)
-- Rapid buy → sell → buy races on the same curve
-- Reentrancy-ish patterns (even if guarded, verify)
-- What happens when a USDC transfer fails mid-curve
+- Every page loads without errors (home, explore, launch, coin, leaderboard, watchlist, profile, agents, fees, docs, blog, legal)
+- Auth flow (SIWE login/logout via Navbar)
+- Favorites/watchlist (favorite button, watchlist page)
+- Token chat (posting messages, seeing them appear)
+- Profile page (holdings, trade history)
+- Search (by name, symbol, address)
+- Leaderboard
+- USDC formatting on every page (the #1 bug source — values not showing as $0 or 1e6× too big)
+- Mobile responsive (resize browser on every page)
+- Error states (404 page, error page, invalid addresses)
+- Browser shields/adblocker compatibility
+- Multiple tabs/windows
+- Navbar and footer links
+- Token image display
 
 ### You do NOT own
-- Load/scale testing (Tester A)
+- The core trading flow (that's Tester A)
 - Code fixes (route findings via the playbook's reporting format)
 - Anything on mainnet — testnet only
 
 ### Day-1 setup
-```bash
-npm install
-node scripts/e2e-full-flow.js                          # happy path
-node scripts/e2e-graduation.js                         # graduation flow — needs ~$9000 USDC, coordinate with Lead
-node scripts/e2e-sell-test.js <curve> <amount>         # sell only, on an existing token
-node scripts/bonding-curve-model.js                    # understand the curve math before testing it
-```
+1. Install a wallet browser extension (MetaMask, Rabby, or any EVM wallet)
+2. Get testnet USDC at https://faucet.circle.com (small amount is fine — $10–50)
+3. Add Arc Testnet to your wallet (chain ID `5042002` — ask Lead for RPC URL)
+4. Get the site URL from the Lead and open it in your browser
+5. Open DevTools (F12) — Console + Network tabs
 
 ### Scenarios to run
-See `STRESS_TEST_PLAYBOOK.md` — Tester B section. The graduation test is expensive (real USDC); coordinate funding with the Lead before running it repeatedly.
+**Read `STRESS_TEST_PLAYBOOK.md` — Tester B section (scenarios B1–B23).** Each scenario has steps, what to verify, and pass criteria. Use `STRESS_TEST_CHECKLIST.md` to tick off as you go.
 
-### What to verify on every scenario
-- On-chain state matches DB state after the indexer catches up (compare `contracts/src/BondingCurve.sol` view outputs to `apps/api` DB rows)
-- Fee splits sum to exactly the expected total (no dust loss, no overflow)
-- Token balances across all participants + curve + AMM (post-graduation) sum to total supply
-- No revert that the frontend doesn't surface to the user
+### What to watch for
+- Does the page load? Is there anything broken or missing?
+- Are values displayed reasonable? (not $0, not 1e6× too big — this is the #1 bug source)
+- Do all links work? Does navigation make sense?
+- Does it work on mobile? (resize your browser to ~375px)
+- Any red errors in the browser console (DevTools)?
+- Does it work with adblocker/shields enabled?
 
-### Files to read before testing
-- `contracts/src/BondingCurve.sol` — the curve math and state transitions
-- `contracts/src/LiquidityMigration.sol` — graduation + LP burn
-- `contracts/src/Treasury.sol` — fee accumulation
-- `scripts/bonding-curve-model.js` — the off-chain model; your on-chain results should match this
-- `DECISION_LOG.md` D20 (curve parameters locked in), D19 (fee model)
+### Priority order if you're overwhelmed
+1. **B19 (USDC formatting)** — the #1 bug source. If values show 1e6× too big or $0, users will be confused or misled.
+2. **B4 (coin page layout)** + **B1 (home page)** — the pages users see most.
+3. **B7 (auth)** + **B8 (favorites)** + **B9 (chat)** — features that require login.
+4. **B18 (mobile)** — most memecoin users are on mobile.
+5. Everything else — important but lower severity if they fail.
 
 ---
 
 ## Cross-team rules
 
-- **All findings from stress testers go in `STRESS_TEST_PLAYBOOK.md` under "Findings log"** with repro steps, expected vs actual, and severity. Don't DM findings — write them down so they're not lost.
-- **All code changes go through PR review by the Lead** until mainnet ships. No direct pushes to `main`.
-- **Deployer key is Lead-only.** No one else executes mainnet deploys.
-- **Mainnet does not ship until the audit closes and stress tests pass.** Non-negotiable.
+- **Only Lead + Coder have code access.** Social/Support and Stress Testers do not touch the repo.
+- **Stress testers act as regular users.** They open the site in a browser, connect a wallet, and click through everything. They do NOT probe contracts, databases, backend infrastructure, or run load tests. They report what they see as users.
+- **All findings from stress testers go in `STRESS_TEST_PLAYBOOK.md` under "Findings log"** with repro steps, expected vs actual, and severity. Don't DM findings — write them down so they're not lost. Tick the corresponding box in `STRESS_TEST_CHECKLIST.md`.
+- **All code changes go through PR review by the Lead** until mainnet ships. No direct pushes to `main`. The Coder opens PRs; the Lead merges.
+- **Deployer key is Lead-only.** No one else executes mainnet deploys. The Coder writes deploy scripts; the Lead runs them.
+- **Mainnet does not ship until:**
+  - The audit closes
+  - All Critical findings resolved
+  - All High findings resolved or explicitly accepted by Lead
+  - B19 (USDC formatting) passes on every page
+  - Non-negotiable.
 - **New decisions get logged in `DECISION_LOG.md`** as D29, D30, etc. — date, decision, rationale.
+- **Stress testers use their own funded wallets, not the deployer wallet.** Coordinate funding with the Lead.
+- **Graduation test (A7) needs more USDC — coordinate funding with the Lead before running.**

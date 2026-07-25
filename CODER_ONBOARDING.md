@@ -229,7 +229,7 @@ If you make a decision during implementation, log it. If you're unsure whether s
 
 ## 9. Mainnet rules (critical)
 
-- **Mainnet does not ship until the audit closes AND stress tests pass.** Non-negotiable.
+- **Mainnet does not ship until the audit closes AND user testing passes AND B19 (USDC formatting on every page) passes.** Non-negotiable.
 - Mainnet chain ID is `5042` (testnet is `5042002`).
 - Mainnet requires private/paid RPC endpoints — there are no public ones yet.
 - Mainnet deploy is Lead-only. You write the scripts; the Lead executes.
@@ -237,7 +237,51 @@ If you make a decision during implementation, log it. If you're unsure whether s
 
 ---
 
-## 10. When you're blocked
+## 10. Working with the user testers
+
+Two testers act as regular users — they open the site in a browser, connect a wallet, and click through everything. They are NOT probing contracts, databases, or backend infrastructure. Their findings become your tickets.
+
+- **Tester A ("The Trader")** — tests the core trading flow: launch, buy, sell, graduation, AMM, real-time updates
+- **Tester B ("The Browser")** — tests every page, auth, favorites, chat, profile, search, USDC formatting, mobile, error states
+
+### How findings reach you
+1. Testers log findings in `STRESS_TEST_PLAYBOOK.md` under "Findings log" (format: F1, F2, ... with repro, expected/actual, severity, status)
+2. They tick boxes in `STRESS_TEST_CHECKLIST.md` as they go
+3. The Lead triages findings and assigns them to you as tickets
+4. You fix in a branch, open a PR, Lead reviews and merges
+5. You update the finding's status to "Fixed" in the playbook
+
+### Severity = your priority
+- **Critical** (user loses funds, tx succeeds but user gets nothing, can't use core features): drop everything, fix immediately, mainnet blocked until resolved
+- **High** (core feature broken — can't buy/sell/launch, wrong values that could mislead a user into a bad trade): fix before mainnet
+- **Medium** (feature partially broken, confusing error, real-time updates lag but recover): fix before mainnet if possible, else ack and schedule
+- **Low** (cosmetic, typo, minor layout, edge case most users won't hit): fix when you can
+
+### When you pick up a finding
+1. Read the finding in `STRESS_TEST_PLAYBOOK.md` — full repro, expected vs actual
+2. **Reproduce it yourself in the browser** before starting the fix — don't trust the report blindly. The testers are users, not devs; their repro steps are user-perspective, not code-perspective.
+3. Once reproduced, trace it to the code: open DevTools, check the Network tab for failed requests, check the Console for errors, then find the relevant component in `apps/web/src/` or endpoint in `apps/api/src/`
+4. Fix in a branch: `fix/F<n>-<short-description>`
+5. Test: reproduce the original scenario in the browser — verify the fix works. If the finding touches USDC display, double-check the formatter (3 formatters in `apps/web/src/lib/utils.ts` — using the wrong one is the #1 frontend bug).
+6. PR with the finding ID in the title: `fix: F3 — market cap shows $4B instead of $4K on home page`
+7. After merge, update the finding's status to "Fixed" in the playbook
+
+### The #1 bug source: USDC formatting
+Most findings from Tester B will be values displaying wrong — usually 1,000,000× or 1,000,000,000,000× too big, or showing $0 when they shouldn't. This happens when the frontend uses the wrong formatter. Before you start fixing:
+- `formatUsdc(x)` — divides by 1e6. For micro-USDC DB fields: `real_usdc`, `creator_fees_accrued`, `protocol_fees_accrued`, `usdc_amount`, `total_volume_usdc`.
+- `formatUsdDirect(x)` — no division. For values already in dollars: `market_cap`, `volume_24h`, `CREATION_FEE`.
+- `formatNativeUsdc(x)` — divides by 1e18. For Arc native balance from `useBalance` (18-dec native USDC).
+- `formatTokens(x)` — divides by 1e18. For 18-dec token amounts.
+- `formatPrice(x)` — no division. For `price` (already USDC-per-token in dollars).
+
+If a value is 1e6× too big, the wrong formatter was used (e.g., `formatUsdc` on a value that's already in dollars, or `formatUsdDirect` on a micro-USDC value). Check the field's unit in the DB schema (`AGENTS.md` "Database notes") and match the formatter.
+
+### Don't dismiss findings without reproducing
+If a tester reports something that "can't be right," reproduce it in the browser anyway. Arc has non-standard behavior (D22, D23) and the frontend has subtle RPC fallback logic that has caused real surprises. If you can't reproduce, say so in the finding's status with your repro steps — the tester may have hit a browser-specific issue (adblocker, shields, wallet extension) you didn't.
+
+---
+
+## 11. When you're blocked
 
 - **Env / RPC issues**: check `.env.example` for the right values; check `AGENTS.md` "RPC rate limits."
 - **Arc-specific weirdness**: search `DECISION_LOG.md` — it's probably documented as a D-entry.
