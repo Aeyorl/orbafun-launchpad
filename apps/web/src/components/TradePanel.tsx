@@ -257,7 +257,7 @@ export function TradePanel({ token }: { token: Token }) {
           aria-selected={mode === 'buy'}
           onClick={() => setMode('buy')}
           className={`flex-1 py-2 rounded-md text-sm font-semibold transition-colors ${
-            mode === 'buy' ? 'bg-accent-green text-black' : 'text-text-secondary hover:text-text-primary'
+            mode === 'buy' ? 'bg-accent-green text-white' : 'text-text-secondary hover:text-text-primary'
           }`}
         >
           Buy

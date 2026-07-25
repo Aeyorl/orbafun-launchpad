@@ -28,11 +28,13 @@ export function Navbar() {
     <nav className="sticky top-0 z-50 bg-bg-base/80 backdrop-blur-md border-b border-bg-border">
       <div className="max-w-7xl mx-auto px-4 h-14 flex items-center gap-3 justify-between">
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-2 font-bold text-lg flex-shrink-0">
-          <span className="text-accent-green text-2xl">&#9670;</span>
-          <span>
-            Orba
-          </span>
+        <Link href="/" className="flex items-center gap-2 flex-shrink-0" aria-label="Orba home">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/orba-logo-light.svg"
+            alt="Orba"
+            className="h-7 w-auto"
+          />
         </Link>
 
         {/* Search — desktop (inline, takes available space) */}

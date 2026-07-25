@@ -188,6 +188,60 @@ Phase 5 (Optional Features) — 4 features built, smoke-tested, shipped.
     (ShareButton + ReferralPanel hydrate client-side). All 4 referral API
     endpoints return correct JSON. API + frontend `tsc` clean. 33/33 contract
     tests pass.
+  Branding refresh (2026-07-25): sharp-corner design + official Orba logo/favicon.
+    - Border radius set to 0px site-wide via `borderRadius` override in
+      `apps/web/tailwind.config.ts` (all `rounded-*` utilities now resolve to 0).
+      Inline `borderRadius: '12px'` on the react-hot-toast container in
+      `apps/web/src/app/layout.tsx` changed to `0px`. The OG image generator
+      (`opengraph-image.tsx`) keeps its radii since it renders a social preview
+      image, not website chrome.
+    - Favicon: replaced dynamic `apps/web/src/app/icon.tsx` (diamond glyph) with
+      static `apps/web/src/app/icon.png` (orba-favicon-32.png from brand kit).
+      Next.js app router auto-detects `icon.png` as the favicon. Also added
+      `apps/web/src/app/apple-icon.png` (orba-icon-192.png) for iOS home-screen.
+    - Navbar + Footer logo: replaced the `◆ Orba` text glyph with the official
+      `orba-logo-light.svg` (full wordmark + tagline, USDC-blue orb icon).
+      Files in `apps/web/public/`: orba-logo-light.svg, orba-logo-light.png,
+      orba-logo-dark.svg, orba-icon.svg, orba-icon-192.png, orba-icon-512.png.
+      Navbar renders at h-7, Footer at h-8 (dark theme → light variant).
+    Build verified: `npx tsc --noEmit` clean, `npx next build` succeeds,
+      `/icon.png` + `/apple-icon.png` routes registered.
+  Steep design system retheme (2026-07-25): dark → light editorial aesthetic.
+    Applied the "Steep" style reference (serif analytics on warm paper) from
+    `DESIGN.md` / `theme.css` / `variables.css` / `tokens.json`. Light theme,
+    Signifier serif headlines (Source Serif 4 fallback via Google Fonts),
+    Sohne body (Inter fallback), pill buttons (9999px), 24px card radius,
+    peach #fbe1d1 + sienna #5d2a1a accent pair on white canvas.
+    - `apps/web/tailwind.config.ts` — semantic tokens remapped so all 23+
+      files using `bg-bg-*`, `text-text-*`, `accent-*` adopt the new palette
+      without per-file edits. bg.base #ffffff, bg.card #f2f2f3, bg.border
+      #ececec, text.primary #17191c, accent.green → ink-black #17191c (primary
+      action), accent.peach + accent.sienna added. Radii: sm 12px, md 16px,
+      lg 20px, xl/2xl/3xl 24px, full 9999px. Shadows: subtle / subtle-2 /
+      subtle-3 added. Fonts: serif (Source Serif 4) + sans (Inter) stacks.
+    - `apps/web/src/app/globals.css` — light theme base: white canvas with
+      subtle warm peach radial wash, h1/h2 use font-serif font-normal with
+      tight tracking. Component classes updated: `.card` (mist-gray, 24px,
+      no border), `.card-elevated` (white + shadow-subtle-3), `.card-peach`
+      (blush-peach/sienna), `.btn-*` (pill shape), `.input` (white fill,
+      hairline border, 16px), `.badge-*` (pill), `.tab` (whisper-quiet).
+    - `apps/web/src/app/layout.tsx` — removed `className="dark"` from <html>,
+      added Source Serif 4 to Google Fonts link, toast styling → white bg,
+      ink-black text, 24px radius, subtle shadow.
+    - `apps/web/src/app/page.tsx` — hero h1 now serif font-normal at
+      4xl/6xl/7xl with sienna italic accent on "Orba"; StatCards use
+      `.card-elevated`; removed neon-green + emoji from hero/numbers.
+    - `apps/web/src/components/PriceChart.tsx` — chart stroke #5d2a1a
+      (sienna), gradient fill sienna 18%→0, axis lines #ececec, tick text
+      #979799, tooltip white + 16px radius + subtle shadow.
+    - `apps/web/src/components/TradePanel.tsx` — buy tab `text-black` →
+      `text-white` (since accent-green is now ink-black).
+    - Functional trading colors preserved but muted: accent.red #9b2c2c
+      (sell), accent.orange #b45309 (warning), accent.yellow #a16207
+      (caution). OG image generators left as-is (separate social preview
+      images, not site chrome).
+    Dev server verified: all 6 pages (/, /explore, /launch, /leaderboard,
+      /agents, /docs) serve HTTP 200, no compile errors.
 
 ## Key files
 - `00_MASTER_PLAN.md` — overview, timeline (15-17 weeks), anti-rug mechanics

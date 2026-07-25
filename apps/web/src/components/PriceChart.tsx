@@ -100,31 +100,33 @@ export function PriceChart({ trades }: { trades: Trade[] }) {
         <AreaChart data={data}>
           <defs>
             <linearGradient id="colorMcap" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#00ff9d" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="#00ff9d" stopOpacity={0} />
+              <stop offset="5%" stopColor="#5d2a1a" stopOpacity={0.18} />
+              <stop offset="95%" stopColor="#5d2a1a" stopOpacity={0} />
             </linearGradient>
           </defs>
           <XAxis
             dataKey="time"
             tickFormatter={(t) => timeAgo(t)}
-            tick={{ fill: '#71717a', fontSize: 11 }}
-            axisLine={{ stroke: '#26262e' }}
+            tick={{ fill: '#979799', fontSize: 11 }}
+            axisLine={{ stroke: '#ececec' }}
             tickLine={false}
           />
           <YAxis
             domain={[minMcap - padding, maxMcap + padding]}
             tickFormatter={(v) => formatUsdDirect(v)}
-            tick={{ fill: '#71717a', fontSize: 11 }}
-            axisLine={{ stroke: '#26262e' }}
+            tick={{ fill: '#979799', fontSize: 11 }}
+            axisLine={{ stroke: '#ececec' }}
             tickLine={false}
             width={60}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: '#131316',
-              border: '1px solid #26262e',
-              borderRadius: '8px',
+              backgroundColor: '#ffffff',
+              border: '1px solid #ececec',
+              borderRadius: '16px',
               fontSize: '12px',
+              color: '#17191c',
+              boxShadow: '0 0 0 1px rgba(4, 23, 43, 0.05), 0 8px 40px 0 rgba(0, 0, 0, 0.1)',
             }}
             labelFormatter={(t) => new Date(t as number).toLocaleString()}
             formatter={(value: number, name: string) => [
@@ -135,7 +137,7 @@ export function PriceChart({ trades }: { trades: Trade[] }) {
           <Area
             type="monotone"
             dataKey="marketCap"
-            stroke="#00ff9d"
+            stroke="#5d2a1a"
             strokeWidth={2}
             fill="url(#colorMcap)"
           />

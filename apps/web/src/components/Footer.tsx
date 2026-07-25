@@ -10,8 +10,13 @@ export function Footer() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-sm">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
-            <div className="font-bold text-lg mb-2">
-              Orba
+            <div className="mb-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/orba-logo-light.svg"
+                alt="Orba"
+                className="h-8 w-auto"
+              />
             </div>
             <p className="text-text-muted text-xs leading-relaxed">
               The stablecoin-native launchpad on Arc. Built on Circle&apos;s

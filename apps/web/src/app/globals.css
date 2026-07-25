@@ -6,28 +6,59 @@
   :root {
     --font-inter: 'Inter', system-ui, sans-serif;
     --font-jetbrains: 'JetBrains Mono', monospace;
+    --font-signifier: 'Source Serif 4', ui-serif, Georgia, Cambria, serif;
+    --font-sohne: 'Inter', ui-sans-serif, system-ui, sans-serif;
   }
 
   body {
     @apply bg-bg-base text-text-primary font-sans antialiased;
+    /* Warm terracotta glow tied to the sienna #5d2a1a of "Orba" in the headline.
+       Off-center (slightly left, upper third) so it reads as intentional rather
+       than a stock centered hero glow. A lifted terracotta rgba(150,72,42,...)
+       is used instead of raw sienna so the wash reads as warmth, not a brown
+       stain. A second very faint wash lower on the page + a barely-there
+       terracotta-tinted grid carry the texture past the hero so the stat cards
+       and token board don't sit on flat cream. */
+    background-color: #ffffff;
     background-image:
-      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(0, 255, 157, 0.08), transparent),
-      radial-gradient(ellipse 60% 40% at 80% 100%, rgba(59, 130, 246, 0.05), transparent);
+      /* Primary off-center terracotta glow — sits behind the headline */
+      radial-gradient(ellipse 65% 42% at 40% 6%, rgba(150, 72, 42, 0.11), transparent 62%),
+      /* Soft warm wash continuing down the page — keeps warmth past the hero */
+      radial-gradient(ellipse 95% 70% at 50% 38%, rgba(251, 225, 209, 0.16), transparent 72%),
+      /* Lower-page warmth — faint, so the footer area isn't flat white */
+      radial-gradient(ellipse 80% 50% at 60% 92%, rgba(150, 72, 42, 0.05), transparent 70%),
+      /* Barely-there grid — terracotta-tinted at ~2% opacity, continues the
+         considered-texture feel down the whole page */
+      linear-gradient(rgba(93, 42, 26, 0.022) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(93, 42, 26, 0.022) 1px, transparent 1px);
+    background-size:
+      100% 100%,
+      100% 100%,
+      100% 100%,
+      46px 46px,
+      46px 46px;
     background-attachment: fixed;
+    background-position: 0 0, 0 0, 0 0, 0 0, 0 0;
+  }
+
+  /* Serif headlines — Signifier (Source Serif 4 fallback) at weight 400 */
+  h1, h2 {
+    @apply font-serif font-normal;
+    letter-spacing: -0.015em;
   }
 
   /* Visible focus ring for keyboard users only (mouse clicks don't show it) */
   :focus-visible {
-    @apply outline-none ring-2 ring-accent-green ring-offset-2 ring-offset-bg-base rounded;
+    @apply outline-none ring-2 ring-accent-green ring-offset-2 ring-offset-bg-base;
   }
 
   /* Skip-to-content link for screen readers / keyboard users */
   .skip-link {
-    @apply absolute left-2 top-2 z-[100] bg-accent-green text-black px-3 py-1.5 rounded-lg text-sm font-semibold
+    @apply absolute left-2 top-2 z-[100] bg-accent-green text-white px-3 py-1.5 text-sm font-semibold
            -translate-y-20 transition-transform focus:translate-y-0;
   }
 
-  /* Scrollbar styling */
+  /* Scrollbar styling — light theme */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -53,77 +84,87 @@
 }
 
 @layer components {
-  /* Card component */
+  /* Card component — Mist Gray surface, 24px radius, no shadow (Steep Neutral Card) */
   .card {
-    @apply bg-bg-card border border-bg-border rounded-xl p-4 transition-colors;
+    @apply bg-bg-card rounded-xl p-5 transition-colors;
   }
   .card-hover {
-    @apply hover:border-accent-green/30 hover:bg-bg-hover cursor-pointer;
+    @apply hover:bg-bg-hover cursor-pointer;
   }
 
-  /* Button variants */
+  /* Floating product artifact — white surface with subtle shadow (Steep elevated card) */
+  .card-elevated {
+    @apply bg-white rounded-lg p-5 shadow-subtle-3;
+  }
+
+  /* Accent Peach card — editorial highlight (use at most once per page) */
+  .card-peach {
+    @apply bg-accent-peach text-accent-sienna rounded-xl p-5;
+  }
+
+  /* Button variants — pill shape (9999px), Steep signature */
   .btn {
-    @apply px-4 py-2 rounded-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply px-5 py-2 rounded-full font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed;
   }
   .btn-primary {
-    @apply btn bg-accent-green text-black hover:bg-accent-greenDim font-semibold;
+    @apply btn bg-accent-green text-white hover:bg-accent-greenDim;
   }
   .btn-secondary {
-    @apply btn bg-bg-input text-text-primary hover:bg-bg-border border border-bg-border;
+    @apply btn bg-transparent text-accent-green border border-accent-green hover:bg-accent-green hover:text-white;
   }
   .btn-buy {
-    @apply btn bg-accent-green text-black hover:bg-accent-greenDim font-semibold;
+    @apply btn bg-accent-green text-white hover:bg-accent-greenDim;
   }
   .btn-sell {
-    @apply btn bg-accent-red text-white hover:bg-red-600 font-semibold;
+    @apply btn bg-accent-red text-white hover:bg-red-800;
   }
 
-  /* Input fields */
+  /* Input fields — white fill, hairline border, 16px radius */
   .input,
   .input-field {
-    @apply bg-bg-input border border-bg-border rounded-lg px-3 py-2 text-text-primary
-           placeholder:text-text-muted focus:outline-none focus:border-accent-green/50
+    @apply bg-white border border-bg-border rounded-md px-4 py-2.5 text-text-primary
+           placeholder:text-text-muted focus:outline-none focus:border-accent-green/40
            transition-colors w-full;
   }
 
-  /* Badge */
+  /* Badge — pill shape */
   .badge {
     @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
   }
   .badge-green {
-    @apply badge bg-accent-green/10 text-accent-green border border-accent-green/20;
+    @apply badge bg-accent-green/10 text-accent-green;
   }
   .badge-blue {
-    @apply badge bg-accent-blue/10 text-accent-blue border border-accent-blue/20;
+    @apply badge bg-accent-peach text-accent-sienna;
   }
   .badge-purple {
-    @apply badge bg-accent-purple/10 text-accent-purple border border-accent-purple/20;
+    @apply badge bg-accent-peach text-accent-sienna;
   }
   .badge-red {
-    @apply badge bg-accent-red/10 text-accent-red border border-accent-red/20;
+    @apply badge bg-accent-red/10 text-accent-red;
   }
   .badge-orange {
-    @apply badge bg-accent-orange/10 text-accent-orange border border-accent-orange/20;
+    @apply badge bg-accent-orange/10 text-accent-orange;
   }
   .badge-muted {
-    @apply badge bg-bg-border text-text-secondary;
+    @apply badge bg-bg-card text-text-secondary;
   }
 
   /* Progress bar (bonding curve) */
   .progress-bar {
-    @apply w-full h-2 bg-bg-border rounded-full overflow-hidden;
+    @apply w-full h-2 bg-bg-card rounded-full overflow-hidden;
   }
   .progress-fill {
-    @apply h-full bg-gradient-to-r from-accent-green to-accent-blue transition-all duration-500;
+    @apply h-full bg-accent-green transition-all duration-500;
   }
 
-  /* Tab navigation */
+  /* Tab navigation — whisper-quiet, no background */
   .tab {
-    @apply px-3 py-1.5 rounded-lg text-sm font-medium text-text-secondary
-           hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer;
+    @apply px-3 py-1.5 rounded-full text-sm font-medium text-text-secondary
+           hover:text-text-primary hover:bg-bg-card transition-colors cursor-pointer;
   }
   .tab-active {
-    @apply bg-bg-hover text-accent-green;
+    @apply bg-bg-card text-text-primary;
   }
 }
 
@@ -133,11 +174,11 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Glow effect for active elements */
+  /* Glow effect for active elements — subtle on light theme */
   .glow-green {
-    box-shadow: 0 0 20px rgba(0, 255, 157, 0.15);
+    box-shadow: 0 0 20px rgba(23, 25, 28, 0.08);
   }
   .glow-blue {
-    box-shadow: 0 0 20px rgba(59, 130, 246, 0.15);
+    box-shadow: 0 0 20px rgba(93, 42, 26, 0.08);
   }
 }

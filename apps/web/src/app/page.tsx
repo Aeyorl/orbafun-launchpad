@@ -65,19 +65,19 @@ export default function LandingPage() {
   return (
     <div className="space-y-8">
       {/* Hero */}
-      <section className="text-center py-12 animate-fade-in">
-        <h1 className="text-4xl md:text-5xl font-bold mb-4">
+      <section className="text-center py-16 animate-fade-in">
+        <h1 className="text-4xl md:text-6xl lg:text-7xl font-serif font-normal tracking-tight mb-5 leading-tight">
           Launch a token on{' '}
-          <span className="text-accent-green">Orba</span>
+          <em className="not-italic text-accent-sienna">Orba</em>
         </h1>
-        <p className="text-lg text-text-secondary max-w-2xl mx-auto mb-6">
+        <p className="text-lg text-text-secondary max-w-2xl mx-auto mb-8">
           The stablecoin-native launchpad. Fair bonding curves priced in USDC,
           automatic DEX graduation, sub-second finality. No presale, no team
           allocation.
         </p>
         <div className="flex gap-3 justify-center">
           <Link href="/launch" className="btn-primary text-base px-6 py-3">
-            🚀 Launch a token
+            Launch a token
           </Link>
           <Link href="/explore" className="btn-secondary text-base px-6 py-3">
             Explore the board
@@ -123,7 +123,7 @@ export default function LandingPage() {
       {/* Token board */}
       <section>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold">Token Board</h2>
+          <h2 className="text-xl font-serif font-normal">Token Board</h2>
           <div className="flex gap-1" role="tablist" aria-label="Token board sorting">
             {(['newest', 'market_cap', 'volume', 'graduated'] as Tab[]).map((t) => (
               <button
@@ -166,8 +166,8 @@ export default function LandingPage() {
 
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="card text-center">
-      <div className="text-2xl font-bold text-accent-green tabular-nums">
+    <div className="card-elevated text-center">
+      <div className="text-2xl font-medium tabular-nums">
         {value}
       </div>
       <div className="text-xs text-text-muted mt-1">{label}</div>
@@ -186,8 +186,8 @@ function HowItStep({
 }) {
   return (
     <div className="card">
-      <div className="text-accent-green text-sm font-mono mb-2">{num}</div>
-      <h3 className="font-semibold mb-2">{title}</h3>
+      <div className="text-text-muted text-sm font-mono mb-2">{num}</div>
+      <h3 className="font-medium text-lg mb-2">{title}</h3>
       <p className="text-sm text-text-secondary">{desc}</p>
     </div>
   );

@@ -1,0 +1,9 @@
+<svg width="220" height="220" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+<title>Orba icon</title>
+<ellipse cx="110" cy="110" rx="98" ry="60" fill="none" stroke="#2775CA" stroke-width="2" stroke-dasharray="5 6" opacity="0.55" transform="rotate(-18 110 110)"/>
+<circle cx="110" cy="110" r="80" fill="#2775CA"/>
+<circle cx="110" cy="110" r="80" fill="none" stroke="#1a4f8c" stroke-width="1"/>
+<path d="M 52 145 Q 90 145 99 120 T 124 90 Q 141 74 172 74" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round"/>
+<circle cx="172" cy="74" r="8" fill="#ffffff"/>
+<circle cx="52" cy="145" r="6" fill="#ffffff" opacity="0.85"/>
+</svg>

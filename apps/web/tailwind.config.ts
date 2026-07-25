@@ -9,34 +9,55 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Orba brand palette — dark theme with USDC blue + green accents
-        // Inspired by pump.fun's energy + orba.app's clean USDC-native aesthetic
+        // Steep design system — serif analytics on warm paper (light theme).
+        // Semantic tokens remapped so existing components adopt the new
+        // palette without per-file edits. See DESIGN.md for the source spec.
         bg: {
-          base: '#0a0a0b',      // near-black background
-          card: '#131316',      // card background
-          hover: '#1a1a1f',     // hover state
-          input: '#1e1e24',     // input fields
-          border: '#26262e',    // borders
+          base: '#ffffff',      // Paper White — page canvas
+          card: '#f2f2f3',      // Mist Gray — card surfaces, nested content
+          hover: '#fafafb',     // Fog White — hover surfaces, alt sections
+          input: '#ffffff',     // Paper White — input fills (border carries definition)
+          border: '#ececec',    // Hairline border
         },
         accent: {
-          green: '#00ff9d',     // primary accent (pump.fun-style neon green)
-          greenDim: '#00cc7e',  // dimmed green for secondary elements
-          blue: '#3b82f6',      // USDC blue (secondary accent)
-          blueDim: '#2563eb',   // dimmed blue
-          purple: '#a855f7',    // tertiary accent (graduation, special)
-          red: '#ef4444',       // sell / danger
-          orange: '#f97316',    // warning / near migration
-          yellow: '#eab308',    // caution
+          green: '#17191c',     // Ink Black — primary action (filled pill buttons)
+          greenDim: '#2a2d33',  // dimmed ink for hover/secondary
+          blue: '#5d2a1a',      // Sienna Brown — secondary accent (on peach surfaces)
+          blueDim: '#4a2115',   // dimmed sienna
+          purple: '#5d2a1a',    // Sienna Brown — graduation/special → warm accent
+          red: '#9b2c2c',       // muted brick red — sell / danger (functional)
+          orange: '#b45309',    // muted amber — warning / near migration
+          yellow: '#a16207',    // muted gold — caution
+          peach: '#fbe1d1',     // Blush Peach — editorial accent card surface
+          sienna: '#5d2a1a',    // Sienna Brown — text/stroke on peach
         },
         text: {
-          primary: '#f4f4f5',   // main text (zinc-100)
-          secondary: '#a1a1aa', // secondary text (zinc-400)
-          muted: '#8b8b94',     // muted text — bumped from #71717a for WCAG AA contrast on dark bg
+          primary: '#17191c',   // Ink Black — main text
+          secondary: '#777b86', // Slate Gray — secondary text, links
+          muted: '#979799',     // Ash Gray — tertiary labels, category tags
         },
       },
       fontFamily: {
-        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
-        mono: ['var(--font-jetbrains)', 'monospace'],
+        sans: ['var(--font-sohne)', 'var(--font-inter)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        serif: ['var(--font-signifier)', 'ui-serif', 'Georgia', 'Cambria', 'serif'],
+        mono: ['var(--font-jetbrains)', 'ui-monospace', 'monospace'],
+      },
+      // Steep border radii — cards 24px, inputs 16px, buttons 9999px (pill)
+      borderRadius: {
+        none: '0',
+        sm: '12px',        // images
+        DEFAULT: '16px',   // inputs, small cards
+        md: '16px',        // inputs, small cards
+        lg: '20px',        // elevated cards
+        xl: '24px',        // cards
+        '2xl': '24px',     // cards
+        '3xl': '24px',     // cards
+        full: '9999px',    // buttons, badges (pill)
+      },
+      boxShadow: {
+        subtle: '0 0 0 1px rgba(4, 23, 43, 0.05), 0 4px 24px 0 rgba(0, 0, 0, 0.08)',
+        'subtle-2': '0 0 0 1px rgba(4, 23, 43, 0.05), 0 8px 40px 0 rgba(0, 0, 0, 0.1)',
+        'subtle-3': '0 0 0 1px rgba(4, 23, 43, 0.05), 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-out',
@@ -54,8 +75,8 @@ const config: Config = {
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
         pulseGreen: {
-          '0%, 100%': { boxShadow: '0 0 0 0 rgba(0, 255, 157, 0.4)' },
-          '50%': { boxShadow: '0 0 0 8px rgba(0, 255, 157, 0)' },
+          '0%, 100%': { boxShadow: '0 0 0 0 rgba(23, 25, 28, 0.25)' },
+          '50%': { boxShadow: '0 0 0 8px rgba(23, 25, 28, 0)' },
         },
         ticker: {
           '0%': { transform: 'translateX(0)' },
