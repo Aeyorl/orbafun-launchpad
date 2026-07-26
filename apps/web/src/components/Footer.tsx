@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { AddArcNetworkButton } from './AddArcNetworkButton';
 
 /**
  * Footer — site footer with Resources and Legal sections.
@@ -22,6 +23,9 @@ export function Footer() {
               The stablecoin-native launchpad on Arc. Built on Circle&apos;s
               USDC-native L1. Not affiliated with Circle.
             </p>
+            {/* Add Arc network to wallet — one-click via EIP-3085 instead of
+                manual configuration in wallet settings */}
+            <AddArcNetworkButton />
           </div>
 
           {/* Resources */}
