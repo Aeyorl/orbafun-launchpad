@@ -91,12 +91,19 @@ export default function LaunchPage() {
   const [description, setDescription] = useState('');
   const [image, setImage] = useState('');        // pfp — sent on-chain as `image`
   const [banner, setBanner] = useState('');      // banner — stored off-chain in token_metadata
-  // Social links — stored off-chain in token_metadata alongside the banner.
   const [website, setWebsite] = useState('');
   const [twitter, setTwitter] = useState('');
   const [telegram, setTelegram] = useState('');
   const [discord, setDiscord] = useState('');
+  const [showSocials, setShowSocials] = useState(false);
   const [error, setError] = useState('');
+
+  // Auto-expand socials if any field has restored values
+  useEffect(() => {
+    if (website || twitter || telegram || discord) {
+      setShowSocials(true);
+    }
+  }, [website, twitter, telegram, discord]);
 
   // Persist form state to sessionStorage so mobile browsers don't lose
   // PFP/banner/fields when the page is backgrounded and restored.
@@ -430,57 +437,82 @@ export default function LaunchPage() {
           />
         </div>
 
-        {/* Social links — stored off-chain in token_metadata alongside banner */}
-        <div className="border-t border-bg-border pt-4 space-y-3">
-          <p className="text-sm font-medium">Social Links <span className="text-text-muted">(optional)</span></p>
-          <div>
-            <label htmlFor="token-website" className="text-xs text-text-muted block mb-1">Website</label>
-            <input
-              id="token-website"
-              type="text"
-              value={website}
-              onChange={(e) => setWebsite(e.target.value)}
-              placeholder="https://example.com"
-              maxLength={200}
-              className="input"
-            />
-          </div>
-          <div>
-            <label htmlFor="token-twitter" className="text-xs text-text-muted block mb-1">Twitter / X</label>
-            <input
-              id="token-twitter"
-              type="text"
-              value={twitter}
-              onChange={(e) => setTwitter(e.target.value)}
-              placeholder="handle (without @)"
-              maxLength={50}
-              className="input"
-            />
-          </div>
-          <div>
-            <label htmlFor="token-telegram" className="text-xs text-text-muted block mb-1">Telegram</label>
-            <input
-              id="token-telegram"
-              type="text"
-              value={telegram}
-              onChange={(e) => setTelegram(e.target.value)}
-              placeholder="https://t.me/yourgroup"
-              maxLength={200}
-              className="input"
-            />
-          </div>
-          <div>
-            <label htmlFor="token-discord" className="text-xs text-text-muted block mb-1">Discord</label>
-            <input
-              id="token-discord"
-              type="text"
-              value={discord}
-              onChange={(e) => setDiscord(e.target.value)}
-              placeholder="https://discord.gg/invite"
-              maxLength={200}
-              className="input"
-            />
-          </div>
+        {/* Social links — collapsable accordion matching pump.fun design */}
+        <div className="border-t border-bg-border pt-4">
+          <button
+            type="button"
+            onClick={() => setShowSocials(!showSocials)}
+            className="flex items-center justify-between w-full text-left font-medium text-sm hover:opacity-80 transition-opacity py-1"
+          >
+            <span className="flex items-center gap-2">
+              <svg className="w-4 h-4 text-text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              <span>Add social links</span>
+              <span className="text-text-muted text-xs font-normal">(Optional)</span>
+            </span>
+            <svg
+              className={`w-4 h-4 text-text-muted transition-transform duration-200 ${showSocials ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {showSocials && (
+            <div className="space-y-3 pt-3">
+              <div>
+                <label htmlFor="token-website" className="text-xs text-text-muted block mb-1">Website</label>
+                <input
+                  id="token-website"
+                  type="text"
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  placeholder="https://example.com"
+                  maxLength={200}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label htmlFor="token-twitter" className="text-xs text-text-muted block mb-1">Twitter / X</label>
+                <input
+                  id="token-twitter"
+                  type="text"
+                  value={twitter}
+                  onChange={(e) => setTwitter(e.target.value)}
+                  placeholder="handle (without @)"
+                  maxLength={50}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label htmlFor="token-telegram" className="text-xs text-text-muted block mb-1">Telegram</label>
+                <input
+                  id="token-telegram"
+                  type="text"
+                  value={telegram}
+                  onChange={(e) => setTelegram(e.target.value)}
+                  placeholder="https://t.me/yourgroup"
+                  maxLength={200}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label htmlFor="token-discord" className="text-xs text-text-muted block mb-1">Discord</label>
+                <input
+                  id="token-discord"
+                  type="text"
+                  value={discord}
+                  onChange={(e) => setDiscord(e.target.value)}
+                  placeholder="https://discord.gg/invite"
+                  maxLength={200}
+                  className="input"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Fee notice */}
