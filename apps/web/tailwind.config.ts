@@ -42,17 +42,17 @@ const config: Config = {
         serif: ['var(--font-signifier)', 'ui-serif', 'Georgia', 'Cambria', 'serif'],
         mono: ['var(--font-jetbrains)', 'ui-monospace', 'monospace'],
       },
-      // Steep border radii — cards 24px, inputs 16px, buttons 9999px (pill)
+      // All border radii set to 0px (per design spec — sharp corners site-wide)
       borderRadius: {
         none: '0',
-        sm: '12px',        // images
-        DEFAULT: '16px',   // inputs, small cards
-        md: '16px',        // inputs, small cards
-        lg: '20px',        // elevated cards
-        xl: '24px',        // cards
-        '2xl': '24px',     // cards
-        '3xl': '24px',     // cards
-        full: '9999px',    // buttons, badges (pill)
+        sm: '0',
+        DEFAULT: '0',
+        md: '0',
+        lg: '0',
+        xl: '0',
+        '2xl': '0',
+        '3xl': '0',
+        full: '0',
       },
       boxShadow: {
         subtle: '0 0 0 1px rgba(4, 23, 43, 0.05), 0 4px 24px 0 rgba(0, 0, 0, 0.08)',
