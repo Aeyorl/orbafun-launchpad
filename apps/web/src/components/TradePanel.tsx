@@ -223,12 +223,25 @@ export function TradePanel({ token }: { token: Token }) {
     if (!address || !amount) return;
     setTxAction('approve');
     if (mode === 'buy') {
-      // Approve USDC for the bonding curve (used by buy() via transferFrom).
+      // Increase USDC allowance for the bonding curve (used by buy() via transferFrom).
+      // Uses increaseAllowance (selector 0x39509351) instead of approve so wallet extensions
+      // like MetaMask/Rabby strictly classify it as ERC-20 (no NFT warnings).
       writeContract({
         address: CONTRACTS.USDC,
-        abi: erc20Abi,
-        functionName: 'approve',
-        args: [token.curve_address as `0x${string}`, maxUint256],
+        abi: [
+          {
+            name: 'increaseAllowance',
+            type: 'function',
+            stateMutability: 'nonpayable',
+            inputs: [
+              { name: 'spender', type: 'address' },
+              { name: 'addedValue', type: 'uint256' },
+            ],
+            outputs: [{ name: '', type: 'bool' }],
+          },
+        ],
+        functionName: 'increaseAllowance',
+        args: [token.curve_address as `0x${string}`, parseUnits(amount, USDC_DECIMALS)],
         chainId: arcTestnet.id,
       });
     } else {
