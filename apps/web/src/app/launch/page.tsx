@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useBalance, useReadContract, useSwitchChain } from 'wagmi';
 import { arcTestnet } from 'viem/chains';
-import { parseUnits, formatUnits, erc20Abi, toEventSelector, decodeEventLog, type Log } from 'viem';
+import { parseUnits, formatUnits, erc20Abi, maxUint256, toEventSelector, decodeEventLog, type Log } from 'viem';
 import { CONTRACTS, USDC_DECIMALS } from '@/lib/config';
 import { formatUsdDirect, formatNativeUsdc } from '@/lib/utils';
 import { useArcReceiptFallback } from '@/lib/use-arc-receipt';
@@ -154,7 +154,7 @@ export default function LaunchPage() {
       address: CONTRACTS.USDC,
       abi: erc20Abi,
       functionName: 'approve',
-      args: [CONTRACTS.TOKEN_FACTORY, feeAmount],
+      args: [CONTRACTS.TOKEN_FACTORY, maxUint256],
       chainId: arcTestnet.id,
     });
   };

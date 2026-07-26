@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useAccount, useBalance, useReadContract, useWriteContract, useWaitForTransactionReceipt, useSwitchChain } from 'wagmi';
 import { arcTestnet } from 'viem/chains';
-import { parseUnits, formatUnits, erc20Abi } from 'viem';
+import { parseUnits, formatUnits, erc20Abi, maxUint256 } from 'viem';
 import toast from 'react-hot-toast';
 import { CONTRACTS, USDC_DECIMALS, TOKEN_DECIMALS } from '@/lib/config';
 import { formatUsdc, formatNativeUsdc, formatTokens } from '@/lib/utils';
@@ -228,7 +228,7 @@ export function TradePanel({ token }: { token: Token }) {
         address: CONTRACTS.USDC,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [token.curve_address as `0x${string}`, parseUnits(amount, USDC_DECIMALS)],
+        args: [token.curve_address as `0x${string}`, maxUint256],
         chainId: arcTestnet.id,
       });
     } else {
@@ -237,7 +237,7 @@ export function TradePanel({ token }: { token: Token }) {
         address: token.contract_address as `0x${string}`,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [token.curve_address as `0x${string}`, parseUnits(amount, TOKEN_DECIMALS)],
+        args: [token.curve_address as `0x${string}`, maxUint256],
         chainId: arcTestnet.id,
       });
     }
