@@ -288,7 +288,12 @@ export default function CoinPage() {
       <div className="grid lg:grid-cols-3 gap-4">
         {/* Left: chart + trade history + chat */}
         <div className="lg:col-span-2 space-y-4">
-          <PriceChart trades={trades} currentMarketCap={Number(token.market_cap)} />
+          <PriceChart
+            trades={trades}
+            currentMarketCap={Number(token.market_cap)}
+            tokenSymbol={token.symbol}
+            tokenPrice={Number(token.price)}
+          />
           <TradeHistory initialTrades={trades} tokenAddress={address} />
           <HoldersPanel tokenAddress={address} currentPrice={Number(token.price)} />
           <TokenChat tokenAddress={address} />
