@@ -40,7 +40,12 @@ export default function CoinPage() {
 
   const { data: token, isLoading } = useQuery({
     queryKey: ['token', address],
-    queryFn: () => api.getToken(address),
+    queryFn: async () => {
+      const res = await api.getToken(address);
+      if (!res) throw new Error(`Token ${address} not found yet`);
+      return res;
+    },
+    placeholderData: (previousData) => previousData,
     refetchInterval: 15_000, // fallback refetch
     retry: (failureCount) => failureCount < MAX_RETRIES,
     retryDelay: 3_000,
@@ -92,9 +97,8 @@ export default function CoinPage() {
   const handleEvent = useCallback(
     (event: any) => {
       if (event.type === 'NEW_BUY' || event.type === 'NEW_SELL') {
-        // Invalidate trades query to refetch
+        // Invalidate trades and holders query to refetch, but preserve token page
         queryClient.invalidateQueries({ queryKey: ['tokenTrades', address] });
-        queryClient.invalidateQueries({ queryKey: ['token', address] });
         queryClient.invalidateQueries({ queryKey: ['tokenHolders', address] });
       }
       if (event.type === 'TOKEN_GRADUATED') {
