@@ -193,7 +193,7 @@ export const api = {
         `/tokens/${address.toLowerCase()}/trades?${qs.toString()}`
       );
     } catch {
-      return { trades: [], total: 0, hasMore: false };
+      return { trades: [], total: 0 };
     }
   },
 
