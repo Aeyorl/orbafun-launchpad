@@ -13,18 +13,19 @@ async function main() {
 
   await client.connect();
 
-  const tokenRes = await client.query(
-    "SELECT id, contract_address, curve_address, name, symbol, real_usdc, tokens_sold, created_block, created_tx_hash FROM tokens WHERE symbol = 'PROLS'"
-  );
-  console.log('PROLS Token record:', tokenRes.rows[0]);
+  const res = await client.query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM tokens) AS total_tokens,
+      (SELECT COUNT(*)::int FROM tokens WHERE status = 'active') AS active_tokens,
+      (SELECT COUNT(*)::int FROM tokens WHERE status = 'graduated') AS graduated_tokens,
+      (SELECT COALESCE(SUM(usdc_amount::bigint), 0)::text FROM trades WHERE timestamp >= NOW() - INTERVAL '24 hours') AS volume_24h_micro
+  `);
 
-  if (tokenRes.rows[0]) {
-    const tradesRes = await client.query(
-      "SELECT * FROM trades WHERE token_id = $1 ORDER BY id DESC",
-      [tokenRes.rows[0].id]
-    );
-    console.log(`PROLS Trades in DB (${tradesRes.rows.length}):`, tradesRes.rows);
-  }
+  console.log('Raw stats from DB:', res.rows[0]);
+
+  const micro = BigInt(res.rows[0].volume_24h_micro);
+  const dollars = (Number(micro) / 1e6).toFixed(6);
+  console.log(`Formatted 24h volume: $${dollars}`);
 
   await client.end();
 }

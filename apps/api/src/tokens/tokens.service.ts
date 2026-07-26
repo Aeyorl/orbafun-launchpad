@@ -313,21 +313,23 @@ export class TokensService {
 
     const result = await this.db.query(`
       SELECT
-        COUNT(*)::int AS total_tokens,
-        COUNT(*) FILTER (WHERE status = 'active')::int AS active_tokens,
-        COUNT(*) FILTER (WHERE status = 'graduated')::int AS graduated_tokens,
-        COALESCE(SUM(volume_24h), 0)::text AS volume_24h
-      FROM tokens
+        (SELECT COUNT(*)::int FROM tokens) AS total_tokens,
+        (SELECT COUNT(*)::int FROM tokens WHERE status = 'active') AS active_tokens,
+        (SELECT COUNT(*)::int FROM tokens WHERE status = 'graduated') AS graduated_tokens,
+        (SELECT COALESCE(SUM(usdc_amount::bigint), 0)::text FROM trades WHERE timestamp >= NOW() - INTERVAL '24 hours') AS volume_24h_micro
     `);
+
+    const micro = BigInt(result.rows[0]?.volume_24h_micro || '0');
+    const volumeDollars = (Number(micro) / 1e6).toFixed(6);
 
     const stats = {
       total_tokens: result.rows[0]?.total_tokens || 0,
       active_tokens: result.rows[0]?.active_tokens || 0,
       graduated_tokens: result.rows[0]?.graduated_tokens || 0,
-      volume_24h: result.rows[0]?.volume_24h || '0',
+      volume_24h: volumeDollars,
     };
 
-    await this.redis.set(cacheKey, JSON.stringify(stats), 30);
+    await this.redis.set(cacheKey, JSON.stringify(stats), 10);
     return stats;
   }
 }
