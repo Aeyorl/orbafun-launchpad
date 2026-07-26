@@ -96,8 +96,13 @@ export class ArcEventPollerService implements OnModuleInit {
 
     this.rpcUrls = envUrls;
     this.rpcUrl = this.rpcUrls[0]; // kept for backward-compat logging
-    this.tokenFactoryAddress = (
-      process.env.ARC_TOKEN_FACTORY_ADDRESS || '0x26Ab49011AAf73c373e462CbD5445588Ff69b7A6'
+  }
+
+  private getFactoryAddress(): string {
+    return (
+      process.env.ARC_TOKEN_FACTORY_ADDRESS ||
+      process.env.NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS ||
+      '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b'
     ).toLowerCase();
   }
 
@@ -151,6 +156,10 @@ export class ArcEventPollerService implements OnModuleInit {
   async poll(): Promise<void> {
     this.polling = true;
     try {
+      // Reload curve addresses from DB on every poll cycle so newly launched
+      // tokens are instantly recognized without waiting for a server restart.
+      await this.loadCurveAddresses();
+
       const currentBlock = await this.getCurrentBlock();
       const targetBlock =
         currentBlock > this.confirmations
@@ -187,15 +196,16 @@ export class ArcEventPollerService implements OnModuleInit {
     fromBlock: bigint,
     toBlock: bigint,
   ): Promise<void> {
+    const factoryAddress = this.getFactoryAddress();
+
     // 1. Fetch TokenFactory events (TokenCreated, TokenGraduated).
     const factoryLogs = await this.getLogsSafe(
-      [this.tokenFactoryAddress],
+      [factoryAddress],
       fromBlock,
       toBlock,
     );
 
-    // Small delay between RPC calls (rpcCall rotates providers, but a tiny
-    // delay still helps avoid bursts when there are many curve addresses).
+    // Small delay between RPC calls.
     await sleep(200);
 
     // 2. Fetch BondingCurve events (Buy, Sell, Graduated) for all known curves.
@@ -213,13 +223,30 @@ export class ArcEventPollerService implements OnModuleInit {
       }
     }
 
-    // 3. Decode and process all logs, sorted by block + logIndex for correct ordering.
-    const allLogs = [...factoryLogs, ...curveLogs].sort((a, b) => {
-      const aBlock = hexToBigInt(a.blockNumber);
-      const bBlock = hexToBigInt(b.blockNumber);
-      if (aBlock !== bBlock) return aBlock > bBlock ? 1 : -1;
-      return hexToBigInt(a.logIndex) > hexToBigInt(b.logIndex) ? 1 : -1;
-    });
+    // 3. Fallback: Also fetch logs by topic (Buy / Sell / Graduated) without restricting
+    // to curveAddresses, to catch trades on any curve that wasn't in memory yet.
+    const topicLogs = await this.getLogsByTopicsSafe(
+      [TOPIC_BUY, TOPIC_SELL, TOPIC_GRADUATED],
+      fromBlock,
+      toBlock,
+    );
+
+    // 4. Decode and process all logs, deduplicated by txHash + logIndex
+    // and sorted by block + logIndex for correct ordering.
+    const seen = new Set<string>();
+    const allLogs = [...factoryLogs, ...curveLogs, ...topicLogs]
+      .filter((log) => {
+        const key = `${log.transactionHash}-${log.logIndex}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => {
+        const aBlock = hexToBigInt(a.blockNumber);
+        const bBlock = hexToBigInt(b.blockNumber);
+        if (aBlock !== bBlock) return aBlock > bBlock ? 1 : -1;
+        return hexToBigInt(a.logIndex) > hexToBigInt(b.logIndex) ? 1 : -1;
+      });
 
     for (const log of allLogs) {
       await this.processLog(log);
@@ -397,6 +424,34 @@ export class ArcEventPollerService implements OnModuleInit {
           }
         }
         throw err;
+      }
+    }
+    return [];
+  }
+
+  /**
+   * Fetch logs matching specified topic hashes across all contracts.
+   */
+  private async getLogsByTopicsSafe(
+    topics: string[],
+    fromBlock: bigint,
+    toBlock: bigint,
+  ): Promise<RpcLog[]> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const logs = await this.rpcCall<RpcLog[]>('eth_getLogs', [
+          {
+            topics: [topics],
+            fromBlock: '0x' + fromBlock.toString(16),
+            toBlock: '0x' + toBlock.toString(16),
+          },
+        ]);
+        return logs || [];
+      } catch {
+        if (attempt < 2) {
+          await sleep(1000);
+          continue;
+        }
       }
     }
     return [];

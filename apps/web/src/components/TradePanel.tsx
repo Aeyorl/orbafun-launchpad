@@ -65,34 +65,60 @@ export function TradePanel({ token }: { token: Token }) {
   // silently fails — balance shows $0, quotes never load, and receipt
   // polling never resolves. Detect it and prompt the user to switch.
   const wrongNetwork = isConnected && chainId !== arcTestnet.id;
-  // Track which action the in-flight tx belongs to, so we can reset the
-  // panel after an approval confirms (and let the user proceed to Buy).
+  // Track active tx hash locally to cleanly separate approval vs trade confirmation states
+  const [currentTxHash, setCurrentTxHash] = useState<`0x${string}` | undefined>(undefined);
   const [txAction, setTxAction] = useState<'approve' | 'trade' | null>(null);
+
   const { writeContract, data: txHash, isPending, reset } = useWriteContract();
-  // Pin chainId so the receipt is fetched via OUR Arc transports (with RPC
-  // rotation), not the wallet's possibly-misconfigured network.
+
+  // Sync writeContract txHash to local state
+  useEffect(() => {
+    if (txHash) setCurrentTxHash(txHash);
+  }, [txHash]);
+
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
-    hash: txHash,
+    hash: currentTxHash,
     chainId: arcTestnet.id,
   });
-  const fallback = useArcReceiptFallback(txHash);
+  const fallback = useArcReceiptFallback(currentTxHash);
   const txConfirmed = isSuccess || fallback.confirmed;
 
   // Fire toast notifications on transaction success / failure.
   useEffect(() => {
-    if (txConfirmed) {
+    if (!txConfirmed || !txAction) return;
+
+    if (txAction === 'approve') {
+      const asset = mode === 'buy' ? 'USDC' : token.symbol;
+      toast.success(`${asset} approved! Click ${mode === 'buy' ? 'Buy' : 'Sell'} to complete trade.`, {
+        id: `approve-${currentTxHash}`,
+      });
+      // Refetch allowances and reset approval state so the panel transitions
+      // to the active Buy/Sell button immediately.
+      refetchAllowance();
+      refetchTokenAllowance();
+      setCurrentTxHash(undefined);
+      setTxAction(null);
+      reset();
+    } else if (txAction === 'trade') {
       const verb = mode === 'buy' ? 'Bought' : 'Sold';
       const amt = amount || '';
       toast.success(`${verb} ${token.symbol}${amt ? ` for ${amt} USDC` : ''}`, {
-        id: `trade-${txHash}`,
+        id: `trade-${currentTxHash}`,
       });
+      // Auto-reset trade success state after 3s so user can make another trade
+      const timer = setTimeout(() => {
+        setCurrentTxHash(undefined);
+        setTxAction(null);
+        reset();
+      }, 3000);
+      return () => clearTimeout(timer);
     }
-  }, [txConfirmed]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [txConfirmed, txAction]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (fallback.failed) {
       toast.error('Transaction failed on-chain. Please try again.', {
-        id: `trade-fail-${txHash}`,
+        id: `trade-fail-${currentTxHash}`,
       });
     }
   }, [fallback.failed]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -129,17 +155,6 @@ export function TradePanel({ token }: { token: Token }) {
     chainId: arcTestnet.id,
     query: { enabled: !!address && mode === 'sell' },
   });
-
-  // After an approval confirms, refetch the relevant allowance and reset the
-  // write state so the panel transitions to the actual Buy/Sell button.
-  useEffect(() => {
-    if (txConfirmed && txAction === 'approve') {
-      refetchAllowance();
-      refetchTokenAllowance();
-      reset();
-      setTxAction(null);
-    }
-  }, [txConfirmed, txAction, refetchAllowance, refetchTokenAllowance, reset]);
 
   // Quote
   const parsedAmount = amount

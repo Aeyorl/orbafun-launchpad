@@ -1,39 +1,76 @@
-const f = require('node-fetch');
+const { createPublicClient, http, parseAbiItem } = require('viem');
+
+const RPC_URL = 'https://rpc.testnet.arc.io';
+
+const FACTORY_ADDRESS = '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b';
+const TOKEN_BRO = '0x014c4e5c57db5a6ad93540f22b905c51458a743b';
+const CURVE_BRO = '0x4c65538eefea10a3000b2167d4fdf80753494ee4';
 
 async function main() {
-  // Get latest block
-  const r1 = await f('https://rpc.testnet.arc.io', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }),
-  });
-  const j1 = await r1.json();
-  const latest = parseInt(j1.result, 16);
-  console.log('Latest block:', latest);
+  const fetch = (await import('node-fetch')).default || globalThis.fetch;
 
-  // Check last 1000 blocks for logs from TokenFactory
-  const fromBlock = '0x' + (latest - 1000).toString(16);
-  const toBlock = j1.result;
-  const r2 = await f('https://rpc.testnet.arc.io', {
+  const res = await fetch(RPC_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       jsonrpc: '2.0',
       id: 1,
-      method: 'eth_getLogs',
-      params: [{ fromBlock, toBlock, address: '0x26Ab49011AAf73c373e462CbD5445588Ff69b7A6' }],
+      method: 'eth_blockNumber',
+      params: [],
     }),
   });
-  const j2 = await r2.json();
-  if (j2.error) {
-    console.log('Error:', JSON.stringify(j2.error));
-    return;
+  const json = await res.json();
+  const currentBlock = BigInt(json.result);
+  console.log('Current Arc block:', currentBlock.toString());
+
+  const fromBlock = currentBlock - 2000n;
+  console.log(`Checking logs from block ${fromBlock} to ${currentBlock}...`);
+
+  // 1. Factory logs (TokenCreated)
+  const factoryRes = await fetch(RPC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'eth_getLogs',
+      params: [
+        {
+          address: FACTORY_ADDRESS,
+          fromBlock: '0x' + fromBlock.toString(16),
+          toBlock: '0x' + currentBlock.toString(16),
+        },
+      ],
+    }),
+  });
+  const factoryJson = await factoryRes.json();
+  console.log(`Factory logs found: ${factoryJson.result?.length || 0}`);
+  if (factoryJson.result?.length > 0) {
+    console.log('Sample factory log:', factoryJson.result[0]);
   }
-  const logs = j2.result || [];
-  console.log('Found', logs.length, 'logs from TokenFactory in last 1000 blocks');
-  for (const l of logs.slice(-10)) {
-    console.log('  block', parseInt(l.blockNumber, 16), 'tx', l.transactionHash, 'topic', l.topics[0]?.slice(0, 10));
+
+  // 2. Curve logs for bro ($PROLS)
+  const curveRes = await fetch(RPC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'eth_getLogs',
+      params: [
+        {
+          address: CURVE_BRO,
+          fromBlock: '0x' + fromBlock.toString(16),
+          toBlock: '0x' + currentBlock.toString(16),
+        },
+      ],
+    }),
+  });
+  const curveJson = await curveRes.json();
+  console.log(`Curve logs for PROLS (${CURVE_BRO}): ${curveJson.result?.length || 0}`);
+  if (curveJson.result?.length > 0) {
+    console.log('Sample curve logs:', curveJson.result);
   }
 }
 
-main().catch((e) => console.log('ERR:', e.message));
+main().catch(console.error);
