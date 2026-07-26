@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { createConfig, http, fallback } from 'wagmi';
 import { arcTestnet } from 'viem/chains';
@@ -20,6 +20,7 @@ import { injected } from 'wagmi/connectors';
 // Providers (from https://docs.arc.io/arc/references/rpc-endpoints):
 //   Circle (primary), dRPC, QuickNode, Blockdaemon
 const DEFAULT_ARC_RPC_URLS = [
+  'https://arc-testnet.g.alchemy.com/v2/HMKXQ2KwDrFO0nwFthZm0',
   'https://rpc.testnet.arc.io',
   'https://rpc.drpc.testnet.arc.io',
   'https://rpc.quicknode.testnet.arc.io',

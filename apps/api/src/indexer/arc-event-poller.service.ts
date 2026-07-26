@@ -88,7 +88,7 @@ export class ArcEventPollerService implements OnModuleInit {
     const envUrls = (
       process.env.ARC_RPC_URLS ||
       process.env.ARC_RPC_URL ||
-      'https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io'
+      'https://arc-testnet.g.alchemy.com/v2/HMKXQ2KwDrFO0nwFthZm0,https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io'
     )
       .split(',')
       .map((u) => u.trim())
