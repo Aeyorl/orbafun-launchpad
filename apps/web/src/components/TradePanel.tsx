@@ -89,16 +89,21 @@ export function TradePanel({ token }: { token: Token }) {
 
     if (txAction === 'approve') {
       const asset = mode === 'buy' ? 'USDC' : token.symbol;
-      toast.success(`${asset} approved! Click ${mode === 'buy' ? 'Buy' : 'Sell'} to complete trade.`, {
+      toast.success(`${asset} approved! Prompts for ${mode === 'buy' ? 'Buy' : 'Sell'} in wallet…`, {
         id: `approve-${currentTxHash}`,
       });
-      // Refetch allowances and reset approval state so the panel transitions
-      // to the active Buy/Sell button immediately.
+      // Refetch allowances, reset approval state, and automatically trigger the trade transaction.
       refetchAllowance();
       refetchTokenAllowance();
       setCurrentTxHash(undefined);
       setTxAction(null);
       reset();
+
+      // Auto-trigger trade transaction after a short delay for state update
+      const timer = setTimeout(() => {
+        handleTrade();
+      }, 500);
+      return () => clearTimeout(timer);
     } else if (txAction === 'trade') {
       const verb = mode === 'buy' ? 'Bought' : 'Sold';
       const amt = amount || '';
@@ -407,19 +412,24 @@ export function TradePanel({ token }: { token: Token }) {
           ✓ Transaction successful
         </button>
       ) : needsApproval ? (
-        <button
-          onClick={handleApprove}
-          disabled={isPending || !amount}
-          className="btn-secondary w-full"
-        >
-          {isPending
-            ? mode === 'buy'
-              ? 'Approving USDC...'
-              : `Approving ${token.symbol}...`
-            : mode === 'buy'
-            ? `Approve USDC`
-            : `Approve ${token.symbol}`}
-        </button>
+        <>
+          <button
+            onClick={handleApprove}
+            disabled={isPending || !amount}
+            className="btn-secondary w-full"
+          >
+            {isPending
+              ? mode === 'buy'
+                ? 'Step 1/2: Approving USDC…'
+                : `Step 1/2: Approving ${token.symbol}…`
+              : mode === 'buy'
+              ? `Step 1/2: Approve USDC`
+              : `Step 1/2: Approve ${token.symbol}`}
+          </button>
+          <p className="text-[11px] text-text-muted text-center mt-1.5">
+            First time trading this token? Step 1 approves spending, then Step 2 prompts your {mode === 'buy' ? 'Buy' : 'Sell'} trade.
+          </p>
+        </>
       ) : (
         <button
           onClick={handleTrade}
