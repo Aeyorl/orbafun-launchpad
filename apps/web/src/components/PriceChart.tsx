@@ -132,7 +132,7 @@ function aggregateTradeData(
         markers.push({
           time: tSec,
           position: tr.type === 'buy' ? 'belowBar' : 'aboveBar',
-          color: tr.type === 'buy' ? '#22c55e' : '#ef4444',
+          color: tr.type === 'buy' ? '#16a34a' : '#dc2626',
           shape: tr.type === 'buy' ? 'arrowUp' : 'arrowDown',
           text: `${tr.type.toUpperCase()} $${usdcAmt >= 1000 ? `${(usdcAmt / 1000).toFixed(1)}k` : usdcAmt.toFixed(0)}`,
         });
@@ -151,7 +151,7 @@ function aggregateTradeData(
     volume.push({
       time: tSec,
       value: bucketVolUsdc,
-      color: close >= open ? 'rgba(34, 197, 94, 0.65)' : 'rgba(239, 68, 68, 0.65)',
+      color: close >= open ? 'rgba(22, 163, 74, 0.65)' : 'rgba(220, 38, 38, 0.65)',
     });
     area.push({ time: tSec, value: close });
   }
@@ -169,13 +169,61 @@ function aggregateTradeData(
       volume.push({
         time: nowSec,
         value: 0,
-        color: close >= open ? 'rgba(34, 197, 94, 0.65)' : 'rgba(239, 68, 68, 0.65)',
+        color: close >= open ? 'rgba(22, 163, 74, 0.65)' : 'rgba(220, 38, 38, 0.65)',
       });
       area.push({ time: nowSec, value: currentVal });
     }
   }
 
   return { candles, volume, area, markers };
+}
+
+/** Official TradingView Advanced Technical Analysis Widget. */
+function TradingViewAdvancedWidget({ symbol }: { symbol?: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const containerId = useMemo(() => `tradingview_${Math.random().toString(36).substring(2, 9)}`, []);
+
+  useEffect(() => {
+    const scriptId = 'tradingview-widget-script';
+    let script = document.getElementById(scriptId) as HTMLScriptElement;
+
+    const initWidget = () => {
+      if ((window as any).TradingView && containerRef.current) {
+        new (window as any).TradingView.widget({
+          autosize: true,
+          symbol: symbol ? `CRYPTO:${symbol}USD` : 'CRYPTOCAP:USDC',
+          interval: '5',
+          timezone: 'Etc/UTC',
+          theme: 'light',
+          style: '1',
+          locale: 'en',
+          toolbar_bg: '#f2f2f3',
+          enable_publishing: false,
+          hide_top_toolbar: false,
+          hide_legend: false,
+          save_image: true,
+          container_id: containerId,
+        });
+      }
+    };
+
+    if (!script) {
+      script = document.createElement('script');
+      script.id = scriptId;
+      script.src = 'https://s3.tradingview.com/tv.js';
+      script.async = true;
+      script.onload = initWidget;
+      document.head.appendChild(script);
+    } else {
+      initWidget();
+    }
+  }, [symbol, containerId]);
+
+  return (
+    <div className="w-full h-[400px] rounded-xl overflow-hidden border border-bg-border bg-bg-card">
+      <div id={containerId} ref={containerRef} className="w-full h-full" />
+    </div>
+  );
 }
 
 export function PriceChart({
@@ -189,6 +237,7 @@ export function PriceChart({
   tokenSymbol?: string;
   tokenPrice?: number;
 }) {
+  const [activeTab, setActiveTab] = useState<'bonding' | 'tradingview'>('bonding');
   const [metricMode, setMetricMode] = useState<MetricMode>('mcap');
   const [chartType, setChartType] = useState<ChartType>('candlestick');
   const [timeframe, setTimeframe] = useState<Timeframe>('5m');
@@ -262,9 +311,9 @@ export function PriceChart({
     [metricMode],
   );
 
-  // Create / Render TradingView Chart
+  // Create / Render Lightweight Chart with Steep Editorial Theme
   useEffect(() => {
-    if (!ready || !chartContainerRef.current || candles.length === 0) return;
+    if (!ready || activeTab !== 'bonding' || !chartContainerRef.current || candles.length === 0) return;
 
     // Dispose previous instance cleanly
     if (chartRef.current) {
@@ -276,28 +325,28 @@ export function PriceChart({
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#121318' },
-        textColor: '#979799',
-        fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
+        background: { type: ColorType.Solid, color: '#f2f2f3' },
+        textColor: '#17191c',
+        fontFamily: "'Source Serif 4', 'Inter', system-ui, sans-serif",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: 'rgba(255, 255, 255, 0.04)', style: 1 },
-        horzLines: { color: 'rgba(255, 255, 255, 0.04)', style: 1 },
+        vertLines: { color: 'rgba(0, 0, 0, 0.04)', style: 1 },
+        horzLines: { color: 'rgba(0, 0, 0, 0.04)', style: 1 },
       },
       crosshair: {
         mode: CrosshairMode.Magnet,
-        vertLine: { color: '#6b7280', width: 1, style: 3, labelBackgroundColor: '#374151' },
-        horzLine: { color: '#6b7280', width: 1, style: 3, labelBackgroundColor: '#374151' },
+        vertLine: { color: '#5d2a1a', width: 1, style: 3, labelBackgroundColor: '#5d2a1a' },
+        horzLine: { color: '#5d2a1a', width: 1, style: 3, labelBackgroundColor: '#5d2a1a' },
       },
       rightPriceScale: {
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: '#ececec',
         scaleMargins: { top: 0.1, bottom: 0.25 },
         mode: scaleMode === 'log' ? PriceScaleMode.Logarithmic : scaleMode === 'percent' ? PriceScaleMode.Percentage : PriceScaleMode.Normal,
         autoScale: true,
       },
       timeScale: {
-        borderColor: 'rgba(255, 255, 255, 0.1)',
+        borderColor: '#ececec',
         timeVisible: true,
         secondsVisible: false,
       },
@@ -320,10 +369,10 @@ export function PriceChart({
     let mainSeries: any;
     if (chartType === 'candlestick') {
       mainSeries = chart.addSeries(CandlestickSeries, {
-        upColor: '#22c55e',
-        downColor: '#ef4444',
-        wickUpColor: '#22c55e',
-        wickDownColor: '#ef4444',
+        upColor: '#16a34a',
+        downColor: '#dc2626',
+        wickUpColor: '#16a34a',
+        wickDownColor: '#dc2626',
         borderVisible: false,
         priceFormat: {
           type: 'custom',
@@ -357,9 +406,9 @@ export function PriceChart({
       }
     } else {
       mainSeries = chart.addSeries(AreaSeries, {
-        lineColor: change24h.isPositive ? '#22c55e' : '#ef4444',
-        topColor: change24h.isPositive ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.25)',
-        bottomColor: change24h.isPositive ? 'rgba(34, 197, 94, 0.0)' : 'rgba(239, 68, 68, 0.0)',
+        lineColor: change24h.isPositive ? '#16a34a' : '#dc2626',
+        topColor: change24h.isPositive ? 'rgba(22, 163, 74, 0.22)' : 'rgba(220, 38, 38, 0.22)',
+        bottomColor: change24h.isPositive ? 'rgba(22, 163, 74, 0.0)' : 'rgba(220, 38, 38, 0.0)',
         lineWidth: 2,
         lineType: LineType.Curved,
         priceFormat: {
@@ -403,148 +452,173 @@ export function PriceChart({
       mainSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [ready, candles, volume, area, markers, chartType, scaleMode, metricMode, formatValue, change24h.isPositive]);
+  }, [ready, activeTab, candles, volume, area, markers, chartType, scaleMode, metricMode, formatValue, change24h.isPositive]);
 
   return (
-    <div className="card space-y-3 !p-4 bg-[#121318] border-bg-border/60 text-white rounded-xl shadow-lg">
-      {/* Header Row: Metric Switcher + Big Price/MCap + 24h Change + ATH Progress Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
-        <div>
-          {/* Toggle label */}
-          <button
-            onClick={() => setMetricMode(metricMode === 'mcap' ? 'price' : 'mcap')}
-            className="flex items-center gap-1.5 text-xs text-text-muted hover:text-white transition-colors"
-          >
-            <span>{metricMode === 'mcap' ? 'Market cap' : 'Price'}</span>
-            <span className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded">⇄</span>
-          </button>
-
-          {/* Big metric display */}
-          <div className="flex items-baseline gap-3 mt-1">
-            <span className="text-2xl font-bold tracking-tight">
-              {formatValue(activeVal)}
-            </span>
-            {change24h.pct !== 0 && (
-              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${change24h.isPositive ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
-                {change24h.isPositive ? '+' : ''}{formatValue(change24h.diff)} ({change24h.isPositive ? '+' : ''}{change24h.pct.toFixed(2)}%) 24h
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Right side: ATH Progress Bar */}
-        <div className="min-w-[160px] text-right space-y-1">
-          <div className="text-xs text-text-muted font-medium">
-            ATH <span className="text-white font-semibold">{formatValue(athValue)}</span>
-          </div>
-          <div className="w-40 h-2 bg-white/10 rounded-full overflow-hidden ml-auto">
-            <div
-              className="h-full bg-gradient-to-r from-emerald-500 to-green-400 transition-all duration-300 rounded-full"
-              style={{ width: `${athProgressPercent}%` }}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Subheader Toolbar: Timeframe pills + Chart Type + Mode Switcher */}
-      <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
-        {/* Timeframe pills */}
-        <div className="flex items-center gap-1 bg-white/5 p-1 rounded-lg">
-          {TIMEFRAMES.map((tf) => (
-            <button
-              key={tf.key}
-              onClick={() => setTimeframe(tf.key)}
-              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
-                timeframe === tf.key
-                  ? 'bg-accent-sienna text-white shadow-sm font-semibold'
-                  : 'text-text-muted hover:text-white hover:bg-white/10'
-              }`}
-            >
-              {tf.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Chart type & Mode controls */}
+    <div className="card space-y-3 bg-bg-card border-bg-border text-text-primary rounded-2xl shadow-subtle p-5">
+      {/* Top View Mode Tabs: Bonding Curve Chart vs Advanced TradingView TA */}
+      <div className="flex items-center justify-between border-b border-bg-border pb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2">
-          {/* Candlestick vs Line toggle */}
-          <div className="flex items-center bg-white/5 p-1 rounded-lg">
-            <button
-              onClick={() => setChartType('candlestick')}
-              title="Candlestick Chart"
-              className={`px-2 py-1 rounded text-xs transition-colors ${chartType === 'candlestick' ? 'bg-white/20 text-white font-medium' : 'text-text-muted hover:text-white'}`}
-            >
-              📊 Candles
-            </button>
-            <button
-              onClick={() => setChartType('area')}
-              title="Line Chart"
-              className={`px-2 py-1 rounded text-xs transition-colors ${chartType === 'area' ? 'bg-white/20 text-white font-medium' : 'text-text-muted hover:text-white'}`}
-            >
-              📈 Line
-            </button>
+          <button
+            onClick={() => setActiveTab('bonding')}
+            className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
+              activeTab === 'bonding'
+                ? 'bg-text-primary text-bg-base shadow-sm'
+                : 'bg-bg-base text-text-muted hover:text-text-primary border border-bg-border'
+            }`}
+          >
+            📈 Bonding Curve Chart
+          </button>
+          <button
+            onClick={() => setActiveTab('tradingview')}
+            className={`px-4 py-1.5 rounded-full text-xs font-semibold transition-all ${
+              activeTab === 'tradingview'
+                ? 'bg-accent-sienna text-white shadow-sm'
+                : 'bg-bg-base text-text-muted hover:text-text-primary border border-bg-border'
+            }`}
+          >
+            📊 Advanced TradingView TA
+          </button>
+        </div>
+      </div>
+
+      {activeTab === 'tradingview' ? (
+        <TradingViewAdvancedWidget symbol={tokenSymbol} />
+      ) : (
+        <>
+          {/* Header Row: Metric Switcher + Big Price/MCap + 24h Change + ATH Progress Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-bg-border/60 pb-3">
+            <div>
+              <button
+                onClick={() => setMetricMode(metricMode === 'mcap' ? 'price' : 'mcap')}
+                className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary transition-colors"
+              >
+                <span>{metricMode === 'mcap' ? 'Market cap' : 'Price'}</span>
+                <span className="text-[10px] bg-bg-border px-1.5 py-0.5 rounded font-mono">⇄</span>
+              </button>
+
+              <div className="flex items-baseline gap-3 mt-1">
+                <span className="text-2xl font-serif font-normal tracking-tight text-text-primary">
+                  {formatValue(activeVal)}
+                </span>
+                {change24h.pct !== 0 && (
+                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${change24h.isPositive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {change24h.isPositive ? '+' : ''}{formatValue(change24h.diff)} ({change24h.isPositive ? '+' : ''}{change24h.pct.toFixed(2)}%) 24h
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="min-w-[160px] text-right space-y-1">
+              <div className="text-xs text-text-muted font-medium">
+                ATH <span className="text-text-primary font-semibold">{formatValue(athValue)}</span>
+              </div>
+              <div className="w-40 h-2 bg-bg-border rounded-full overflow-hidden ml-auto">
+                <div
+                  className="h-full bg-gradient-to-r from-accent-peach to-accent-sienna transition-all duration-300 rounded-full"
+                  style={{ width: `${athProgressPercent}%` }}
+                />
+              </div>
+            </div>
           </div>
 
-          {/* Price / MCap pill */}
-          <button
-            onClick={() => setMetricMode(metricMode === 'mcap' ? 'price' : 'mcap')}
-            className="px-3 py-1 bg-white/10 hover:bg-white/20 text-xs font-medium rounded-lg text-white transition-colors"
-          >
-            {metricMode === 'mcap' ? 'Price / MCap' : 'MCap / Price'}
-          </button>
-        </div>
-      </div>
+          {/* Subheader Toolbar: Timeframe pills + Chart Type + Mode Switcher */}
+          <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
+            <div className="flex items-center gap-1 bg-bg-base p-1 rounded-full border border-bg-border">
+              {TIMEFRAMES.map((tf) => (
+                <button
+                  key={tf.key}
+                  onClick={() => setTimeframe(tf.key)}
+                  className={`px-2.5 py-1 text-xs font-medium rounded-full transition-all ${
+                    timeframe === tf.key
+                      ? 'bg-accent-sienna text-white shadow-sm font-semibold'
+                      : 'text-text-muted hover:text-text-primary hover:bg-bg-card'
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              ))}
+            </div>
 
-      {/* Chart Canvas Area */}
-      <div className="relative bg-[#121318] rounded-lg overflow-hidden">
-        <div ref={chartContainerRef} className="w-full h-[350px]" />
+            <div className="flex items-center gap-2">
+              <div className="flex items-center bg-bg-base p-1 rounded-full border border-bg-border">
+                <button
+                  onClick={() => setChartType('candlestick')}
+                  title="Candlestick Chart"
+                  className={`px-2.5 py-1 rounded-full text-xs transition-colors ${chartType === 'candlestick' ? 'bg-text-primary text-bg-base font-semibold' : 'text-text-muted hover:text-text-primary'}`}
+                >
+                  📊 Candles
+                </button>
+                <button
+                  onClick={() => setChartType('area')}
+                  title="Line Chart"
+                  className={`px-2.5 py-1 rounded-full text-xs transition-colors ${chartType === 'area' ? 'bg-text-primary text-bg-base font-semibold' : 'text-text-muted hover:text-text-primary'}`}
+                >
+                  📈 Line
+                </button>
+              </div>
 
-        {/* TradingView Watermark badge */}
-        <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-black/50 backdrop-blur-md px-2 py-1 rounded text-[10px] text-text-muted border border-white/10 pointer-events-none z-10">
-          <svg className="w-3.5 h-3.5 text-white fill-current" viewBox="0 0 36 28">
-            <path d="M14 22H7V11H0V4h14v18zm8-18h7v18h-7V4zm14 0h-7v18h7V4z" />
-          </svg>
-          <span className="font-semibold text-white/90">TradingView</span>
-        </div>
-      </div>
+              <button
+                onClick={() => setMetricMode(metricMode === 'mcap' ? 'price' : 'mcap')}
+                className="px-3 py-1 bg-bg-base hover:bg-bg-border border border-bg-border text-xs font-medium rounded-full text-text-primary transition-colors"
+              >
+                {metricMode === 'mcap' ? 'Price / MCap' : 'MCap / Price'}
+              </button>
+            </div>
+          </div>
 
-      {/* Bottom Scale Control Toolbar (1D 5D 1M 3M 1Y, %, log, auto) */}
-      <div className="flex items-center justify-between pt-1 border-t border-white/10 text-[11px] text-text-muted">
-        <div className="flex items-center gap-2">
-          {(['1D', '5D', '1M', '3M', '1Y'] as const).map((label) => (
-            <button
-              key={label}
-              onClick={() => setTimeframe(label.toLowerCase() as any)}
-              className="hover:text-white transition-colors px-1 py-0.5"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 font-mono">
-          <button
-            onClick={() => setScaleMode(scaleMode === 'percent' ? 'normal' : 'percent')}
-            className={`px-1.5 py-0.5 rounded transition-colors ${scaleMode === 'percent' ? 'bg-white/20 text-white' : 'hover:text-white'}`}
-          >
-            %
-          </button>
-          <button
-            onClick={() => setScaleMode(scaleMode === 'log' ? 'normal' : 'log')}
-            className={`px-1.5 py-0.5 rounded transition-colors ${scaleMode === 'log' ? 'bg-white/20 text-white' : 'hover:text-white'}`}
-          >
-            log
-          </button>
-          <button
-            onClick={() => {
-              setScaleMode('normal');
-              if (chartRef.current) chartRef.current.timeScale().fitContent();
-            }}
-            className="hover:text-white transition-colors px-1.5 py-0.5 bg-white/5 rounded"
-          >
-            auto
-          </button>
-        </div>
-      </div>
+          {/* Chart Canvas Area */}
+          <div className="relative bg-bg-card rounded-xl overflow-hidden border border-bg-border/60">
+            <div ref={chartContainerRef} className="w-full h-[350px]" />
+
+            {/* TradingView Watermark badge */}
+            <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-bg-base/80 backdrop-blur-md px-2 py-1 rounded text-[10px] text-text-muted border border-bg-border pointer-events-none z-10">
+              <svg className="w-3.5 h-3.5 text-text-primary fill-current" viewBox="0 0 36 28">
+                <path d="M14 22H7V11H0V4h14v18zm8-18h7v18h-7V4zm14 0h-7v18h7V4z" />
+              </svg>
+              <span className="font-semibold text-text-primary">TradingView</span>
+            </div>
+          </div>
+
+          {/* Bottom Scale Control Toolbar (1D 5D 1M 3M 1Y, %, log, auto) */}
+          <div className="flex items-center justify-between pt-1 border-t border-bg-border text-[11px] text-text-muted">
+            <div className="flex items-center gap-2">
+              {(['1D', '5D', '1M', '3M', '1Y'] as const).map((label) => (
+                <button
+                  key={label}
+                  onClick={() => setTimeframe(label.toLowerCase() as any)}
+                  className="hover:text-text-primary transition-colors px-1 py-0.5"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 font-mono">
+              <button
+                onClick={() => setScaleMode(scaleMode === 'percent' ? 'normal' : 'percent')}
+                className={`px-1.5 py-0.5 rounded transition-colors ${scaleMode === 'percent' ? 'bg-text-primary text-bg-base' : 'hover:text-text-primary'}`}
+              >
+                %
+              </button>
+              <button
+                onClick={() => setScaleMode(scaleMode === 'log' ? 'normal' : 'log')}
+                className={`px-1.5 py-0.5 rounded transition-colors ${scaleMode === 'log' ? 'bg-text-primary text-bg-base' : 'hover:text-text-primary'}`}
+              >
+                log
+              </button>
+              <button
+                onClick={() => {
+                  setScaleMode('normal');
+                  if (chartRef.current) chartRef.current.timeScale().fitContent();
+                }}
+                className="hover:text-text-primary transition-colors px-1.5 py-0.5 bg-bg-base border border-bg-border rounded"
+              >
+                auto
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
