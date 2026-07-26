@@ -13,6 +13,7 @@ let PriceScaleMode: any;
 let CandlestickSeries: any;
 let AreaSeries: any;
 let HistogramSeries: any;
+let createSeriesMarkers: any;
 
 type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1D' | 'all';
 type ChartType = 'candlestick' | 'area';
@@ -48,39 +49,46 @@ export interface AreaPoint {
   value: number;
 }
 
-/** Aggregate trades into OHLC Candlestick data points. */
-function aggregateCandles(
+export interface ChartMarker {
+  time: number;
+  position: 'aboveBar' | 'belowBar';
+  color: string;
+  shape: 'arrowUp' | 'arrowDown';
+  text: string;
+}
+
+/**
+ * Aggregate trade history into high-precision OHLC candles, volume bars,
+ * and buy/sell event markers.
+ */
+function aggregateTradeData(
   trades: Trade[],
   timeframe: Timeframe,
   mode: MetricMode,
   currentVal?: number,
-): { candles: CandleData[]; volume: VolumeData[]; area: AreaPoint[] } {
-  if (trades.length === 0) return { candles: [], volume: [], area: [] };
-
+): { candles: CandleData[]; volume: VolumeData[]; area: AreaPoint[]; markers: ChartMarker[] } {
   const tf = TIMEFRAMES.find((t) => t.key === timeframe)!;
   const now = Date.now();
   const cutoff = tf.windowMs === Infinity ? 0 : now - tf.windowMs;
 
-  const extractValue = (t: Trade) => {
-    if (mode === 'price') return Number(t.price);
-    return Number(t.market_cap_after);
-  };
+  const extractVal = (t: Trade) => (mode === 'price' ? Number(t.price) : Number(t.market_cap_after));
 
-  // Sort chronologically
+  // Sort trades chronologically
   const sorted = [...trades]
     .filter((t) => new Date(t.timestamp).getTime() >= cutoff)
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
-  if (sorted.length === 0 && trades.length > 0) {
-    const latest = [...trades].sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-    )[0];
-    const val = extractValue(latest);
-    const tSec = Math.floor(new Date(latest.timestamp).getTime() / 1000);
+  // Base initial starting price/mcap before any trade ($4,000 MC / $0.000004 price)
+  const baseInitial = mode === 'price' ? 0.000004 : 4000;
+
+  if (sorted.length === 0) {
+    const active = currentVal || baseInitial;
+    const nowSec = Math.floor(now / 1000);
     return {
-      candles: [{ time: tSec, open: val, high: val, low: val, close: val }],
-      volume: [{ time: tSec, value: Number(latest.usdc_amount) / 1e6, color: '#22c55e80' }],
-      area: [{ time: tSec, value: val }],
+      candles: [{ time: nowSec, open: active, high: active * 1.001, low: active * 0.999, close: active }],
+      volume: [],
+      area: [{ time: nowSec, value: active }],
+      markers: [],
     };
   }
 
@@ -99,24 +107,51 @@ function aggregateCandles(
   const candles: CandleData[] = [];
   const volume: VolumeData[] = [];
   const area: AreaPoint[] = [];
+  const markers: ChartMarker[] = [];
 
-  let prevClose: number | null = null;
+  let runningOpen = baseInitial;
 
   for (const [tSec, bTrades] of sortedBuckets) {
-    const values = bTrades.map(extractValue);
-    const open = prevClose !== null ? prevClose : values[0];
-    const high = Math.max(...values, open);
-    const low = Math.min(...values, open);
-    const close = values[values.length - 1];
-    prevClose = close;
+    const open = runningOpen;
+    let high = open;
+    let low = open;
+    let close = open;
+    let bucketVolUsdc = 0;
 
-    const totalVol = bTrades.reduce((acc, tr) => acc + Number(tr.usdc_amount) / 1e6, 0);
+    for (const tr of bTrades) {
+      const trVal = extractVal(tr);
+      const usdcAmt = Number(tr.usdc_amount) / 1e6;
+      bucketVolUsdc += usdcAmt;
+
+      close = trVal;
+      if (trVal > high) high = trVal;
+      if (trVal < low) low = trVal;
+
+      // Add Pump.fun buy/sell marker for distinct trades
+      if (usdcAmt >= 1) {
+        markers.push({
+          time: tSec,
+          position: tr.type === 'buy' ? 'belowBar' : 'aboveBar',
+          color: tr.type === 'buy' ? '#22c55e' : '#ef4444',
+          shape: tr.type === 'buy' ? 'arrowUp' : 'arrowDown',
+          text: `${tr.type.toUpperCase()} $${usdcAmt >= 1000 ? `${(usdcAmt / 1000).toFixed(1)}k` : usdcAmt.toFixed(0)}`,
+        });
+      }
+    }
+
+    // Ensure candle has non-zero height for clear visibility
+    if (high === low) {
+      high = open * 1.002;
+      low = open * 0.998;
+    }
+
+    runningOpen = close;
 
     candles.push({ time: tSec, open, high, low, close });
     volume.push({
       time: tSec,
-      value: totalVol,
-      color: close >= open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)',
+      value: bucketVolUsdc,
+      color: close >= open ? 'rgba(34, 197, 94, 0.65)' : 'rgba(239, 68, 68, 0.65)',
     });
     area.push({ time: tSec, value: close });
   }
@@ -127,20 +162,20 @@ function aggregateCandles(
     const nowSec = Math.floor(now / 1000);
     if (nowSec > last.time) {
       const open = last.close;
-      const high = Math.max(open, currentVal);
-      const low = Math.min(open, currentVal);
       const close = currentVal;
+      const high = Math.max(open, close) * 1.001;
+      const low = Math.min(open, close) * 0.999;
       candles.push({ time: nowSec, open, high, low, close });
       volume.push({
         time: nowSec,
         value: 0,
-        color: close >= open ? 'rgba(34, 197, 94, 0.5)' : 'rgba(239, 68, 68, 0.5)',
+        color: close >= open ? 'rgba(34, 197, 94, 0.65)' : 'rgba(239, 68, 68, 0.65)',
       });
       area.push({ time: nowSec, value: currentVal });
     }
   }
 
-  return { candles, volume, area };
+  return { candles, volume, area, markers };
 }
 
 export function PriceChart({
@@ -176,6 +211,7 @@ export function PriceChart({
       CandlestickSeries = mod.CandlestickSeries;
       AreaSeries = mod.AreaSeries;
       HistogramSeries = mod.HistogramSeries;
+      createSeriesMarkers = mod.createSeriesMarkers;
       setReady(true);
     });
   }, []);
@@ -184,8 +220,8 @@ export function PriceChart({
     ? (tokenPrice || (trades.length > 0 ? Number(trades[0].price) : 0.000004))
     : (currentMarketCap || (trades.length > 0 ? Number(trades[0].market_cap_after) : 4000));
 
-  const { candles, volume, area } = useMemo(
-    () => aggregateCandles(trades, timeframe, metricMode, activeVal),
+  const { candles, volume, area, markers } = useMemo(
+    () => aggregateTradeData(trades, timeframe, metricMode, activeVal),
     [trades, timeframe, metricMode, activeVal],
   );
 
@@ -215,8 +251,11 @@ export function PriceChart({
 
   const formatValue = useCallback(
     (val: number) => {
+      if (val === undefined || val === null || isNaN(val)) return '$0.00';
       if (metricMode === 'price') {
-        return `$${val < 0.001 ? val.toFixed(8) : val.toFixed(4)}`;
+        if (val < 0.0001) return `$${val.toFixed(8)}`;
+        if (val < 0.01) return `$${val.toFixed(6)}`;
+        return `$${val.toFixed(4)}`;
       }
       return formatMarketCap(val);
     },
@@ -237,14 +276,14 @@ export function PriceChart({
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: 'transparent' },
+        background: { type: ColorType.Solid, color: '#121318' },
         textColor: '#979799',
         fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: 'rgba(255, 255, 255, 0.05)', style: 1 },
-        horzLines: { color: 'rgba(255, 255, 255, 0.05)', style: 1 },
+        vertLines: { color: 'rgba(255, 255, 255, 0.04)', style: 1 },
+        horzLines: { color: 'rgba(255, 255, 255, 0.04)', style: 1 },
       },
       crosshair: {
         mode: CrosshairMode.Magnet,
@@ -255,6 +294,7 @@ export function PriceChart({
         borderColor: 'rgba(255, 255, 255, 0.1)',
         scaleMargins: { top: 0.1, bottom: 0.25 },
         mode: scaleMode === 'log' ? PriceScaleMode.Logarithmic : scaleMode === 'percent' ? PriceScaleMode.Percentage : PriceScaleMode.Normal,
+        autoScale: true,
       },
       timeScale: {
         borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -265,12 +305,12 @@ export function PriceChart({
       handleScale: { axisPressedMouseMove: true },
     });
 
-    // Add Volume Histogram Series at bottom
+    // Add Volume Histogram Series on separate overlay scale
     const volumeSeries = chart.addSeries(HistogramSeries, {
+      priceScaleId: 'volume_overlay',
       priceFormat: { type: 'volume' },
-      priceScaleId: 'volume',
     });
-    volumeSeries.priceScale().applyOptions({
+    chart.priceScale('volume_overlay').applyOptions({
       scaleMargins: { top: 0.8, bottom: 0 },
     });
     volumeSeries.setData(volume);
@@ -287,10 +327,34 @@ export function PriceChart({
         borderVisible: false,
         priceFormat: {
           type: 'custom',
+          minMove: metricMode === 'price' ? 0.00000001 : 0.01,
           formatter: (p: number) => formatValue(p),
+        },
+        autoscaleInfoProvider: () => {
+          const vals = candles.flatMap((c: CandleData) => [c.low, c.high]);
+          const min = Math.min(...vals);
+          const max = Math.max(...vals);
+          const pad = (max - min) * 0.1 || min * 0.05;
+          return {
+            priceRange: {
+              minValue: Math.max(0.00000001, min - pad),
+              maxValue: max + pad,
+            },
+          };
         },
       });
       mainSeries.setData(candles);
+
+      // Add Buy / Sell markers to candles
+      if (markers.length > 0 && createSeriesMarkers) {
+        try {
+          createSeriesMarkers(mainSeries, markers);
+        } catch {
+          try { mainSeries.setMarkers(markers); } catch { /* ignore */ }
+        }
+      } else if (markers.length > 0) {
+        try { mainSeries.setMarkers(markers); } catch { /* ignore */ }
+      }
     } else {
       mainSeries = chart.addSeries(AreaSeries, {
         lineColor: change24h.isPositive ? '#22c55e' : '#ef4444',
@@ -300,7 +364,20 @@ export function PriceChart({
         lineType: LineType.Curved,
         priceFormat: {
           type: 'custom',
+          minMove: metricMode === 'price' ? 0.00000001 : 0.01,
           formatter: (p: number) => formatValue(p),
+        },
+        autoscaleInfoProvider: () => {
+          const vals = area.map((a: AreaPoint) => a.value);
+          const min = Math.min(...vals);
+          const max = Math.max(...vals);
+          const pad = (max - min) * 0.1 || min * 0.05;
+          return {
+            priceRange: {
+              minValue: Math.max(0.00000001, min - pad),
+              maxValue: max + pad,
+            },
+          };
         },
       });
       mainSeries.setData(area);
@@ -326,16 +403,7 @@ export function PriceChart({
       mainSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [ready, candles, volume, area, chartType, scaleMode, formatValue, change24h.isPositive]);
-
-  if (trades.length === 0) {
-    return (
-      <div className="card h-72 flex flex-col items-center justify-center text-text-muted space-y-2">
-        <div className="text-3xl">📊</div>
-        <p className="font-medium text-sm">No trades yet — be the first to buy {tokenSymbol || 'this token'}!</p>
-      </div>
-    );
-  }
+  }, [ready, candles, volume, area, markers, chartType, scaleMode, metricMode, formatValue, change24h.isPositive]);
 
   return (
     <div className="card space-y-3 !p-4 bg-[#121318] border-bg-border/60 text-white rounded-xl shadow-lg">
@@ -404,14 +472,14 @@ export function PriceChart({
             <button
               onClick={() => setChartType('candlestick')}
               title="Candlestick Chart"
-              className={`px-2 py-1 rounded text-xs transition-colors ${chartType === 'candlestick' ? 'bg-white/20 text-white' : 'text-text-muted hover:text-white'}`}
+              className={`px-2 py-1 rounded text-xs transition-colors ${chartType === 'candlestick' ? 'bg-white/20 text-white font-medium' : 'text-text-muted hover:text-white'}`}
             >
               📊 Candles
             </button>
             <button
               onClick={() => setChartType('area')}
               title="Line Chart"
-              className={`px-2 py-1 rounded text-xs transition-colors ${chartType === 'area' ? 'bg-white/20 text-white' : 'text-text-muted hover:text-white'}`}
+              className={`px-2 py-1 rounded text-xs transition-colors ${chartType === 'area' ? 'bg-white/20 text-white font-medium' : 'text-text-muted hover:text-white'}`}
             >
               📈 Line
             </button>
@@ -428,15 +496,15 @@ export function PriceChart({
       </div>
 
       {/* Chart Canvas Area */}
-      <div className="relative">
-        <div ref={chartContainerRef} className="w-full h-[340px]" />
+      <div className="relative bg-[#121318] rounded-lg overflow-hidden">
+        <div ref={chartContainerRef} className="w-full h-[350px]" />
 
         {/* TradingView Watermark badge */}
-        <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-black/40 backdrop-blur-md px-2 py-1 rounded text-[10px] text-text-muted border border-white/10 pointer-events-none">
+        <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-black/50 backdrop-blur-md px-2 py-1 rounded text-[10px] text-text-muted border border-white/10 pointer-events-none z-10">
           <svg className="w-3.5 h-3.5 text-white fill-current" viewBox="0 0 36 28">
             <path d="M14 22H7V11H0V4h14v18zm8-18h7v18h-7V4zm14 0h-7v18h7V4z" />
           </svg>
-          <span className="font-semibold text-white/80">TradingView</span>
+          <span className="font-semibold text-white/90">TradingView</span>
         </div>
       </div>
 
