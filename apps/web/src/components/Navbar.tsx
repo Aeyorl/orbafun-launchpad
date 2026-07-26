@@ -67,9 +67,6 @@ export function Navbar() {
           <Link href="/leaderboard" className={`tab ${isActive('/leaderboard') ? 'tab-active' : ''}`}>
             Leaders
           </Link>
-          <Link href="/docs" className={`tab ${isActive('/docs') ? 'tab-active' : ''}`}>
-            Docs
-          </Link>
           {address && (
             <>
               <Link href="/watchlist" className={`tab ${isActive('/watchlist') ? 'tab-active' : ''}`}>
@@ -176,13 +173,6 @@ export function Navbar() {
             onClick={() => setMobileMenuOpen(false)}
           >
             Leaders
-          </Link>
-          <Link
-            href="/docs"
-            className={`block py-2 px-3 rounded-lg transition-colors ${isActive('/docs') ? 'bg-bg-card text-accent-blue font-semibold' : 'hover:bg-bg-card text-text-primary'}`}
-            onClick={() => setMobileMenuOpen(false)}
-          >
-            Docs
           </Link>
           {address && (
             <>
