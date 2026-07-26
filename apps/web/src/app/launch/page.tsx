@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useBalance, useReadContract, useSwitchChain } from 'wagmi';
 import { arcTestnet } from 'viem/chains';
 import { parseUnits, formatUnits, erc20Abi, maxUint256, toEventSelector, decodeEventLog, type Log } from 'viem';
@@ -51,6 +52,7 @@ const CREATION_FEE = 5; // 5 USDC
 
 export default function LaunchPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { address, isConnected, chainId } = useAccount();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   // Detect wallet on wrong network — otherwise every hook silently fails.
@@ -283,18 +285,42 @@ export default function LaunchPage() {
 
       toast.success(`${symbol || 'Token'} launched successfully!`, { id: 'launch' });
 
-      // Redirect to the new token's page so the user can find it immediately,
-      // even before the indexer picks it up (the coin page will show a
-      // "waiting for indexer" state). Falls back to /explore if we can't
-      // extract the token address from the receipt.
       const tokenAddress = extractTokenAddress(receipt?.logs);
+      if (tokenAddress) {
+        // Seed React Query cache immediately so /coin/0x... loads INSTANTLY
+        // without waiting for the indexer or showing any error screen.
+        queryClient.setQueryData(['token', tokenAddress.toLowerCase()], {
+          id: Date.now(),
+          contract_address: tokenAddress.toLowerCase(),
+          curve_address: tokenAddress.toLowerCase(),
+          amm_pair_address: null,
+          creator_wallet: (address || '').toLowerCase(),
+          name,
+          symbol,
+          description: description || null,
+          image: image || null,
+          price: '0.000004',
+          market_cap: '4000.000000',
+          volume_24h: '0.000000',
+          real_usdc: '0',
+          tokens_sold: '0',
+          creator_fees_accrued: '0',
+          protocol_fees_accrued: '0',
+          status: 'active',
+          graduated_at: null,
+          lp_burned: null,
+          created_block: '0',
+          created_tx_hash: receipt?.transactionHash || '',
+          created_at: new Date().toISOString(),
+        });
+      }
       const destination = tokenAddress
         ? `/coin/${tokenAddress}`
         : '/explore?sort=newest';
-      const t = setTimeout(() => router.push(destination), 2000);
+      const t = setTimeout(() => router.push(destination), 1000);
       return () => clearTimeout(t);
     }
-  }, [launchConfirmed, router]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [launchConfirmed, router, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">

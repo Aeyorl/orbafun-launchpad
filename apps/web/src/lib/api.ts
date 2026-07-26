@@ -1,4 +1,6 @@
-import { API_URL } from './config';
+import { createPublicClient, http, parseAbi } from 'viem';
+import { arcTestnet } from 'viem/chains';
+import { API_URL, DEFAULT_ARC_RPC_URLS } from './config';
 
 // API client for the NestJS backend.
 // All requests go through this — centralizes error handling and base URL.
@@ -171,13 +173,13 @@ export const api = {
 
   getToken: async (address: string): Promise<Token | null> => {
     try {
-      return await fetchApi<Token>(`/tokens/${address.toLowerCase()}`);
+      const res = await fetchApi<Token>(`/tokens/${address.toLowerCase()}`);
+      if (res && res.contract_address) return res;
     } catch (err) {
-      console.warn(`[api] getToken for ${address} failed:`, err);
-      // Return null so the UI can display a graceful retry/wait state
-      // instead of crashing the page.
-      return null;
+      console.warn(`[api] getToken API call for ${address} failed, attempting on-chain fallback:`, err);
     }
+    // Direct on-chain fallback via Arc RPC — reads contract state directly from blockchain
+    return await fetchTokenOnChainFallback(address);
   },
 
   getTokenTrades: async (
@@ -535,4 +537,85 @@ export interface ExecutorStateEntry {
   fail_count: number;
   last_error: string | null;
   updated_at: string;
+}
+
+const fallbackClient = createPublicClient({
+  chain: arcTestnet,
+  transport: http(DEFAULT_ARC_RPC_URLS[0]),
+});
+
+async function fetchTokenOnChainFallback(address: string): Promise<Token | null> {
+  try {
+    const tokenAddr = address.toLowerCase() as `0x${string}`;
+    const tokenAbi = parseAbi([
+      'function name() view returns (string)',
+      'function symbol() view returns (string)',
+      'function bondingCurve() view returns (address)',
+    ]);
+    const [name, symbol, curveAddress] = await Promise.all([
+      fallbackClient.readContract({ address: tokenAddr, abi: tokenAbi, functionName: 'name' }),
+      fallbackClient.readContract({ address: tokenAddr, abi: tokenAbi, functionName: 'symbol' }),
+      fallbackClient.readContract({ address: tokenAddr, abi: tokenAbi, functionName: 'bondingCurve' }),
+    ]);
+
+    let price = '0.000004';
+    let marketCap = '4000.000000';
+    let realUsdc = '0';
+    let tokensSold = '0';
+    let graduated = false;
+
+    if (curveAddress && curveAddress !== '0x0000000000000000000000000000000000000000') {
+      try {
+        const curveAbi = parseAbi([
+          'function price() view returns (uint256)',
+          'function marketCap() view returns (uint256)',
+          'function realUsdc() view returns (uint256)',
+          'function tokensSold() view returns (uint256)',
+          'function graduated() view returns (bool)',
+        ]);
+        const [rawPrice, rawMc, rawUsdc, rawSold, isGrad] = await Promise.all([
+          fallbackClient.readContract({ address: curveAddress, abi: curveAbi, functionName: 'price' }),
+          fallbackClient.readContract({ address: curveAddress, abi: curveAbi, functionName: 'marketCap' }),
+          fallbackClient.readContract({ address: curveAddress, abi: curveAbi, functionName: 'realUsdc' }),
+          fallbackClient.readContract({ address: curveAddress, abi: curveAbi, functionName: 'tokensSold' }),
+          fallbackClient.readContract({ address: curveAddress, abi: curveAbi, functionName: 'graduated' }),
+        ]);
+        price = (Number(rawPrice) / 1e6).toFixed(6);
+        marketCap = (Number(rawMc) / 1e6).toFixed(6);
+        realUsdc = rawUsdc.toString();
+        tokensSold = rawSold.toString();
+        graduated = isGrad;
+      } catch (err) {
+        console.warn(`[api] Curve read failed for ${curveAddress}:`, err);
+      }
+    }
+
+    return {
+      id: Date.now(),
+      contract_address: tokenAddr,
+      curve_address: (curveAddress || tokenAddr).toLowerCase(),
+      amm_pair_address: null,
+      creator_wallet: '0x0000000000000000000000000000000000000000',
+      name,
+      symbol,
+      description: null,
+      image: null,
+      price,
+      market_cap: marketCap,
+      volume_24h: '0.000000',
+      real_usdc: realUsdc,
+      tokens_sold: tokensSold,
+      creator_fees_accrued: '0',
+      protocol_fees_accrued: '0',
+      status: graduated ? 'graduated' : 'active',
+      graduated_at: null,
+      lp_burned: null,
+      created_block: '0',
+      created_tx_hash: '',
+      created_at: new Date().toISOString(),
+    };
+  } catch (err) {
+    console.warn(`[api] On-chain token fallback failed for ${address}:`, err);
+    return null;
+  }
 }

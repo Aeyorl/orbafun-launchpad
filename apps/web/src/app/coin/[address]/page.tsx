@@ -128,14 +128,22 @@ export default function CoinPage() {
 
   if (!token) {
     return (
-      <div className="text-center py-12">
-        <h1 className="text-2xl font-bold mb-2">Token not found</h1>
-        <p className="text-text-secondary mb-4">
-          This token may not have been indexed yet.
-        </p>
-        <Link href="/explore" className="btn-secondary">
-          ← Back to Explore
-        </Link>
+      <div className="card text-center py-16 max-w-md mx-auto my-12 space-y-4">
+        <div className="inline-block w-10 h-10 border-4 border-accent-peach border-t-accent-sienna rounded-full animate-spin" />
+        <div>
+          <h1 className="text-2xl font-serif font-normal mb-2">Connecting to Arc Blockchain…</h1>
+          <p className="text-sm text-text-secondary">
+            Fetching live token data directly from the network. This takes just a moment.
+          </p>
+        </div>
+        <div className="flex justify-center gap-3 pt-2">
+          <button onClick={() => queryClient.invalidateQueries({ queryKey: ['token', address] })} className="btn-primary text-sm px-5 py-2">
+            Retry now
+          </button>
+          <Link href="/explore" className="btn-secondary text-sm px-5 py-2">
+            Explore tokens
+          </Link>
+        </div>
       </div>
     );
   }
