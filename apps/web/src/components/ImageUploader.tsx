@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { ipfsToGateway } from '@/lib/utils';
 
+
 /**
  * ImageUploader — drag-and-drop or click-to-upload image component.
  *
@@ -42,6 +43,15 @@ export function ImageUploader({
   const [dragOver, setDragOver] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Guards against the preview-sync useEffect overwriting the local blob URL
+  // while an IPFS upload is in progress. Without this, uploading a PFP can
+  // clobber the banner preview (and vice versa) because the parent re-renders
+  // both ImageUploader instances when either one calls onChange.
+  const isUploadingRef = useRef(false);
+  // Track the current blob URL so we can revoke it on cleanup or replacement
+  // instead of immediately in the upload handler (mobile browsers reclaim
+  // revoked blob URLs when the app is backgrounded).
+  const blobUrlRef = useRef<string | null>(null);
 
   // Check if the upload service is available.
   useEffect(() => {
@@ -52,13 +62,25 @@ export function ImageUploader({
   }, []);
 
   // Build a display URL for the preview from the current value.
+  // Skip if an upload is in-flight — the local blob preview is more current.
   useEffect(() => {
+    if (isUploadingRef.current) return;
     if (!value) {
       setPreview(null);
       return;
     }
     setPreview(ipfsToGateway(value));
   }, [value]);
+
+  // Revoke stale blob URLs on unmount.
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, []);
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -72,10 +94,17 @@ export function ImageUploader({
         return;
       }
 
+      // Revoke previous blob URL before creating a new one.
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+      }
+
       // Show local preview immediately.
       const localUrl = URL.createObjectURL(file);
+      blobUrlRef.current = localUrl;
       setPreview(localUrl);
 
+      isUploadingRef.current = true;
       setUploading(true);
       try {
         const form = new FormData();
@@ -93,9 +122,17 @@ export function ImageUploader({
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Upload failed');
         setPreview(null);
+        // Revoke on error since we won't need this preview.
+        if (blobUrlRef.current === localUrl) {
+          URL.revokeObjectURL(localUrl);
+          blobUrlRef.current = null;
+        }
       } finally {
+        isUploadingRef.current = false;
         setUploading(false);
-        URL.revokeObjectURL(localUrl);
+        // Note: we do NOT revoke the blob URL here — mobile browsers reclaim
+        // revoked URLs when backgrounded, causing the preview to vanish.
+        // Cleanup happens on unmount or when a new file replaces it.
       }
     },
     [onChange],

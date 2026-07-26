@@ -1,21 +1,24 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { api, Trade } from '@/lib/api';
 import { formatUsdc, formatTokens, shortenAddress, timeAgo } from '@/lib/utils';
 
 const PAGE_SIZE = 50;
+const ARCSCAN_BASE = 'https://testnet.arcscan.app';
+
+type TradeFilter = 'all' | 'buy' | 'sell';
 
 /**
- * TradeHistory — paginated, live-updating list of trades for a token.
+ * TradeHistory — paginated, filterable, live-updating list of trades for a token.
  *
- * Props:
- *  - initialTrades: first page (already fetched by the parent for the chart)
- *  - tokenAddress: used to fetch additional pages via the API
- *
- * Pagination: "Load more" button appends older trades (descending order).
- * Live updates: when `initialTrades` changes (e.g. WebSocket invalidation
- * refetches the parent query), we reset to the new first page.
+ * Features:
+ *  - Filter by trade type: All / Buys / Sells
+ *  - Wallet addresses link to internal profile + ArcScan
+ *  - Each trade row links to ArcScan tx detail
+ *  - Pagination with "Load more" button
+ *  - Live updates via WebSocket query invalidation
  */
 export function TradeHistory({
   initialTrades,
@@ -29,9 +32,9 @@ export function TradeHistory({
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<TradeFilter>('all');
 
   // When the parent's initial trades change (WS refetch), reset to page 1.
-  // Compare by first trade's tx_hash+log_index to avoid extra resets.
   const firstKey = initialTrades[0]
     ? `${initialTrades[0].tx_hash}-${initialTrades[0].log_index}`
     : '';
@@ -45,7 +48,6 @@ export function TradeHistory({
       setOffset(initialTrades.length);
       setTotal(null);
     } else if (!firstKey && trades.length > 0) {
-      // Token had trades, now none (rare — token deleted?). Reset.
       setTrades([]);
       setOffset(0);
     }
@@ -73,32 +75,66 @@ export function TradeHistory({
     }
   }, [loading, offset, tokenAddress]);
 
-  // Estimate total from initial fetch if we don't have it yet.
+  // Apply client-side filter
+  const filteredTrades = filter === 'all'
+    ? trades
+    : trades.filter((t) => t.type === filter);
+
+  // Counts for filter badges
+  const buyCount = trades.filter((t) => t.type === 'buy').length;
+  const sellCount = trades.filter((t) => t.type === 'sell').length;
+
   const totalTrades = total ?? (initialTrades.length >= 100 ? null : initialTrades.length);
   const hasMore = totalTrades === null ? trades.length >= 100 : trades.length < totalTrades;
 
   return (
     <div className="card">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold">Transaction History</h3>
-        {totalTrades !== null && (
-          <span className="text-xs text-text-muted tabular-nums">
-            {trades.length} / {totalTrades}
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {totalTrades !== null && (
+            <span className="text-xs text-text-muted tabular-nums">
+              {filteredTrades.length} / {totalTrades}
+            </span>
+          )}
+        </div>
       </div>
 
-      {trades.length === 0 ? (
+      {/* Filter tabs */}
+      <div className="flex items-center gap-1 mb-3" role="tablist" aria-label="Filter trades">
+        <FilterTab
+          label="All"
+          count={trades.length}
+          active={filter === 'all'}
+          onClick={() => setFilter('all')}
+        />
+        <FilterTab
+          label="Buys"
+          count={buyCount}
+          active={filter === 'buy'}
+          onClick={() => setFilter('buy')}
+          color="green"
+        />
+        <FilterTab
+          label="Sells"
+          count={sellCount}
+          active={filter === 'sell'}
+          onClick={() => setFilter('sell')}
+          color="red"
+        />
+      </div>
+
+      {filteredTrades.length === 0 ? (
         <div className="text-center py-8 text-text-muted text-sm">
-          No transactions yet
+          {trades.length === 0 ? 'No transactions yet' : `No ${filter} transactions`}
         </div>
       ) : (
         <>
           <div className="space-y-1 max-h-[28rem] overflow-y-auto pr-1">
-            {trades.map((trade) => (
+            {filteredTrades.map((trade) => (
               <div
                 key={`${trade.tx_hash}-${trade.log_index}`}
-                className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-bg-hover transition-colors text-sm"
+                className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-bg-hover transition-colors text-sm group"
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <span
@@ -117,9 +153,30 @@ export function TradeHistory({
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-text-muted flex-shrink-0">
-                  <span>{shortenAddress(trade.wallet)}</span>
+                  {/* Wallet — links to both internal profile and ArcScan */}
+                  <Link
+                    href={`/profile/${trade.wallet}`}
+                    className="hover:text-accent-blue hover:underline transition-colors"
+                    title={`View profile: ${trade.wallet}`}
+                  >
+                    {shortenAddress(trade.wallet)}
+                  </Link>
                   <span>·</span>
                   <span>{timeAgo(trade.timestamp)}</span>
+                  {/* ArcScan tx link */}
+                  <a
+                    href={`${ARCSCAN_BASE}/tx/${trade.tx_hash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity text-text-muted hover:text-accent-blue"
+                    title="View on ArcScan"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                  </a>
                 </div>
               </div>
             ))}
@@ -144,5 +201,42 @@ export function TradeHistory({
         </>
       )}
     </div>
+  );
+}
+
+/** Filter tab pill for the trade type filter bar. */
+function FilterTab({
+  label,
+  count,
+  active,
+  onClick,
+  color,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+  color?: 'green' | 'red';
+}) {
+  const activeClass = color === 'green'
+    ? 'bg-green-600/15 text-green-700'
+    : color === 'red'
+    ? 'bg-red-600/15 text-red-700'
+    : 'bg-text-primary/10 text-text-primary';
+
+  return (
+    <button
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+        active
+          ? activeClass
+          : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
+      }`}
+    >
+      {label}
+      <span className="ml-1 tabular-nums opacity-70">{count}</span>
+    </button>
   );
 }

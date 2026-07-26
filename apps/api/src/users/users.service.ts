@@ -85,4 +85,60 @@ export class UsersService {
     await this.redis.setJson(cacheKey, profile, this.CACHE_TTL);
     return profile;
   }
+
+  /**
+   * Calculate realized PnL for a wallet over a time period.
+   * PnL = (total USDC received from sells) - (total USDC spent on buys)
+   * usdc_amount is stored in 6-dec micro-USDC (bigint).
+   */
+  async getUserPnl(
+    wallet: string,
+    period: '7d' | '30d' | 'all',
+  ): Promise<{
+    period: string;
+    realized_pnl: string;
+    total_bought: string;
+    total_sold: string;
+    buy_count: number;
+    sell_count: number;
+  }> {
+    const normalized = wallet.toLowerCase();
+    const cacheKey = `user-pnl:${normalized}:${period}`;
+    const cached = await this.redis.getJson<any>(cacheKey);
+    if (cached) return cached;
+
+    let timeFilter = '';
+    if (period === '7d') {
+      timeFilter = `AND timestamp >= NOW() - INTERVAL '7 days'`;
+    } else if (period === '30d') {
+      timeFilter = `AND timestamp >= NOW() - INTERVAL '30 days'`;
+    }
+
+    const result = await this.db.queryOne<any>(
+      `SELECT
+         COALESCE(SUM(CASE WHEN type = 'buy'  THEN usdc_amount ELSE 0 END), 0) as total_bought,
+         COALESCE(SUM(CASE WHEN type = 'sell' THEN usdc_amount ELSE 0 END), 0) as total_sold,
+         COUNT(*) FILTER (WHERE type = 'buy')  as buy_count,
+         COUNT(*) FILTER (WHERE type = 'sell') as sell_count
+       FROM trades
+       WHERE wallet = $1 ${timeFilter}`,
+      [normalized],
+    );
+
+    const totalBought = BigInt(result?.total_bought || '0');
+    const totalSold = BigInt(result?.total_sold || '0');
+    const pnl = totalSold - totalBought;
+
+    const pnlResult = {
+      period,
+      realized_pnl: pnl.toString(),
+      total_bought: totalBought.toString(),
+      total_sold: totalSold.toString(),
+      buy_count: parseInt(result?.buy_count || '0', 10),
+      sell_count: parseInt(result?.sell_count || '0', 10),
+    };
+
+    await this.redis.setJson(cacheKey, pnlResult, this.CACHE_TTL);
+    return pnlResult;
+  }
 }

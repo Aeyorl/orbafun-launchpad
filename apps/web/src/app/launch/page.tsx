@@ -96,6 +96,38 @@ export default function LaunchPage() {
   const [discord, setDiscord] = useState('');
   const [error, setError] = useState('');
 
+  // Persist form state to sessionStorage so mobile browsers don't lose
+  // PFP/banner/fields when the page is backgrounded and restored.
+  const STORAGE_KEY = 'orba-launch-form';
+
+  // Restore on mount.
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(STORAGE_KEY);
+      if (!saved) return;
+      const s = JSON.parse(saved);
+      if (s.name) setName(s.name);
+      if (s.symbol) setSymbol(s.symbol);
+      if (s.description) setDescription(s.description);
+      if (s.image) setImage(s.image);
+      if (s.banner) setBanner(s.banner);
+      if (s.website) setWebsite(s.website);
+      if (s.twitter) setTwitter(s.twitter);
+      if (s.telegram) setTelegram(s.telegram);
+      if (s.discord) setDiscord(s.discord);
+    } catch { /* ignore corrupt storage */ }
+  }, []);
+
+  // Save on every change.
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ name, symbol, description, image, banner, website, twitter, telegram, discord }),
+      );
+    } catch { /* quota exceeded — ignore */ }
+  }, [name, symbol, description, image, banner, website, twitter, telegram, discord]);
+
   const noGasMoney = isConnected && balance && balance.value === 0n;
   // balance.value is the NATIVE balance (18 decimals on Arc), so the fee
   // comparison must use 18-dec units, not the 6-dec ERC-20 view.
@@ -235,8 +267,20 @@ export default function LaunchPage() {
 
   useEffect(() => {
     if (launchConfirmed) {
+      // Clear the persisted form state on successful launch.
+      try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+
       toast.success(`${symbol || 'Token'} launched successfully!`, { id: 'launch' });
-      const t = setTimeout(() => router.push('/explore?sort=newest'), 2000);
+
+      // Redirect to the new token's page so the user can find it immediately,
+      // even before the indexer picks it up (the coin page will show a
+      // "waiting for indexer" state). Falls back to /explore if we can't
+      // extract the token address from the receipt.
+      const tokenAddress = extractTokenAddress(receipt?.logs);
+      const destination = tokenAddress
+        ? `/coin/${tokenAddress}`
+        : '/explore?sort=newest';
+      const t = setTimeout(() => router.push(destination), 2000);
       return () => clearTimeout(t);
     }
   }, [launchConfirmed, router]); // eslint-disable-line react-hooks/exhaustive-deps

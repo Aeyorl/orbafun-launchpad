@@ -259,6 +259,16 @@ export const api = {
   getUserProfile: (wallet: string) =>
     fetchApi<UserProfile>(`/users/${wallet.toLowerCase()}`),
 
+  getUserPnl: (wallet: string, period: '7d' | '30d' | 'all' = 'all') =>
+    fetchApi<{
+      period: string;
+      realized_pnl: string;
+      total_bought: string;
+      total_sold: string;
+      buy_count: number;
+      sell_count: number;
+    }>(`/users/${wallet.toLowerCase()}/pnl?period=${period}`),
+
   // Leaderboard
   getLeaderboard: (type: 'top_creators' | 'top_gainers' | 'top_volume', limit = 20) =>
     fetchApi<any[]>(`/leaderboard?type=${type}&limit=${limit}`),

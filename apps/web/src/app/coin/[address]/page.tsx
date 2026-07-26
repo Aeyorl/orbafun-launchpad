@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { api, Token, Trade } from '@/lib/api';
 import { TradePanel } from '@/components/TradePanel';
@@ -14,6 +14,7 @@ import { FavoriteButton } from '@/components/FavoriteButton';
 import { ShareButton } from '@/components/ShareButton';
 import { SocialLinks } from '@/components/SocialLinks';
 import { useTokenEvents } from '@/lib/useWebSocket';
+import toast from 'react-hot-toast';
 import {
   formatUsdc,
   formatUsdDirect,
@@ -32,16 +33,50 @@ export default function CoinPage() {
   const address = params.address as string;
   const queryClient = useQueryClient();
 
+  // Track whether we should keep retrying when the token isn't found yet.
+  // After a fresh launch the indexer needs 5-10s to pick up the event.
+  const retryCountRef = useRef(0);
+  const MAX_RETRIES = 10; // 10 × 3s = 30s max wait
+
   const { data: token, isLoading } = useQuery({
     queryKey: ['token', address],
     queryFn: () => api.getToken(address),
     refetchInterval: 15_000, // fallback refetch
+    retry: (failureCount) => failureCount < MAX_RETRIES,
+    retryDelay: 3_000,
   });
+
+  // If the token is still not found, auto-refetch every 3s up to 30s
+  // (covers the indexer lag window after a fresh launch).
+  const [waitingForIndexer, setWaitingForIndexer] = useState(true);
+  useEffect(() => {
+    if (token || isLoading) {
+      setWaitingForIndexer(false);
+      retryCountRef.current = 0;
+      return;
+    }
+    // token is null and we're not loading — start polling
+    if (retryCountRef.current >= MAX_RETRIES) {
+      setWaitingForIndexer(false);
+      return;
+    }
+    setWaitingForIndexer(true);
+    const timer = setInterval(() => {
+      retryCountRef.current++;
+      queryClient.invalidateQueries({ queryKey: ['token', address] });
+      if (retryCountRef.current >= MAX_RETRIES) {
+        setWaitingForIndexer(false);
+        clearInterval(timer);
+      }
+    }, 3_000);
+    return () => clearInterval(timer);
+  }, [token, isLoading, address, queryClient]);
 
   const { data: tradesData } = useQuery({
     queryKey: ['tokenTrades', address],
     queryFn: () => api.getTokenTrades(address, { limit: 500, order: 'desc' }),
-    refetchInterval: 15_000,
+    refetchInterval: 5_000, // faster refetch so chart updates quickly after trades
+    enabled: !!token, // only fetch trades once the token is indexed
   });
 
   // Off-chain metadata (banner cover + social links). Deduped with the
@@ -73,6 +108,18 @@ export default function CoinPage() {
 
   if (isLoading) {
     return <CoinPageSkeleton />;
+  }
+
+  if (!token && waitingForIndexer) {
+    return (
+      <div className="text-center py-16">
+        <div className="inline-block w-8 h-8 border-3 border-accent-green border-t-transparent rounded-full animate-spin mb-4" />
+        <h1 className="text-2xl font-bold mb-2">Indexing your token…</h1>
+        <p className="text-text-secondary mb-4">
+          Your token was launched successfully! It should appear here in a few seconds.
+        </p>
+      </div>
+    );
   }
 
   if (!token) {
@@ -152,6 +199,33 @@ export default function CoinPage() {
                 <span>·</span>
                 <span>{timeAgo(token.created_at)}</span>
               </div>
+              {/* Contract address — prominently visible with copy + ArcScan link */}
+              <div className="flex items-center gap-2 mt-1.5">
+                <span className="text-xs text-text-muted font-medium">CA:</span>
+                <a
+                  href={`https://testnet.arcscan.app/address/${token.contract_address}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-mono text-accent-blue hover:underline truncate max-w-[200px] sm:max-w-none"
+                  title={token.contract_address}
+                >
+                  {token.contract_address}
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(token.contract_address);
+                    toast.success('Contract address copied!', { id: 'copy-ca', duration: 1500 });
+                  }}
+                  className="flex-shrink-0 p-1 rounded hover:bg-bg-hover transition-colors text-text-muted hover:text-text-primary"
+                  title="Copy contract address"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -202,9 +276,9 @@ export default function CoinPage() {
       <div className="grid lg:grid-cols-3 gap-4">
         {/* Left: chart + trade history + chat */}
         <div className="lg:col-span-2 space-y-4">
-          <PriceChart trades={trades} />
+          <PriceChart trades={trades} currentMarketCap={Number(token.market_cap)} />
           <TradeHistory initialTrades={trades} tokenAddress={address} />
-          <HoldersPanel tokenAddress={address} />
+          <HoldersPanel tokenAddress={address} currentPrice={Number(token.price)} />
           <TokenChat tokenAddress={address} />
         </div>
 
