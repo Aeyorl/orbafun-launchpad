@@ -169,20 +169,32 @@ export const api = {
     return fetchApi<TokenListResponse>(`/tokens?${qs.toString()}`);
   },
 
-  getToken: (address: string) =>
-    fetchApi<Token>(`/tokens/${address.toLowerCase()}`),
+  getToken: async (address: string): Promise<Token | null> => {
+    try {
+      return await fetchApi<Token>(`/tokens/${address.toLowerCase()}`);
+    } catch (err) {
+      console.warn(`[api] getToken for ${address} failed:`, err);
+      // Return null so the UI can display a graceful retry/wait state
+      // instead of crashing the page.
+      return null;
+    }
+  },
 
-  getTokenTrades: (
+  getTokenTrades: async (
     address: string,
     params: { limit?: number; offset?: number; order?: 'asc' | 'desc' } = {}
-  ) => {
-    const qs = new URLSearchParams();
-    if (params.limit) qs.set('limit', String(params.limit));
-    if (params.offset) qs.set('offset', String(params.offset));
-    if (params.order) qs.set('order', params.order);
-    return fetchApi<TradeListResponse>(
-      `/tokens/${address.toLowerCase()}/trades?${qs.toString()}`
-    );
+  ): Promise<TradeListResponse> => {
+    try {
+      const qs = new URLSearchParams();
+      if (params.limit) qs.set('limit', String(params.limit));
+      if (params.offset) qs.set('offset', String(params.offset));
+      if (params.order) qs.set('order', params.order);
+      return await fetchApi<TradeListResponse>(
+        `/tokens/${address.toLowerCase()}/trades?${qs.toString()}`
+      );
+    } catch {
+      return { trades: [], total: 0, hasMore: false };
+    }
   },
 
   getTokenHolders: (address: string, limit = 20) =>
