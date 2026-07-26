@@ -4,10 +4,12 @@ import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useBalance, useReadContract, useSwitchChain } from 'wagmi';
 import { arcTestnet } from 'viem/chains';
-import { parseUnits, formatUnits, erc20Abi } from 'viem';
+import { parseUnits, formatUnits, erc20Abi, toEventSelector, decodeEventLog, type Log } from 'viem';
 import { CONTRACTS, USDC_DECIMALS } from '@/lib/config';
 import { formatUsdDirect, formatNativeUsdc } from '@/lib/utils';
 import { useArcReceiptFallback } from '@/lib/use-arc-receipt';
+import { useAuth } from '@/lib/use-auth';
+import { api } from '@/lib/api';
 import { ImageUploader } from '@/components/ImageUploader';
 import toast from 'react-hot-toast';
 
@@ -29,6 +31,22 @@ const TOKEN_FACTORY_ABI = [
   },
 ] as const;
 
+// TokenFactory.TokenCreated event — used to extract the new token address
+// from the launch tx receipt so we can POST the off-chain banner URI.
+const TOKEN_CREATED_EVENT = {
+  type: 'event',
+  name: 'TokenCreated',
+  inputs: [
+    { name: 'token', type: 'address', indexed: true },
+    { name: 'curve', type: 'address', indexed: true },
+    { name: 'creator', type: 'address', indexed: true },
+    { name: 'name', type: 'string', indexed: false },
+    { name: 'symbol', type: 'string', indexed: false },
+    { name: 'image', type: 'string', indexed: false },
+    { name: 'createdAt', type: 'uint256', indexed: false },
+  ],
+} as const;
+
 const CREATION_FEE = 5; // 5 USDC
 
 export default function LaunchPage() {
@@ -42,12 +60,13 @@ export default function LaunchPage() {
   const [txAction, setTxAction] = useState<'approve' | 'launch' | null>(null);
   const { writeContract, data: txHash, isPending, reset } = useWriteContract();
   // Pin chainId so the receipt is fetched via our Arc transports.
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+  const { isLoading: isConfirming, isSuccess, data: receipt } = useWaitForTransactionReceipt({
     hash: txHash,
     chainId: arcTestnet.id,
   });
   const fallback = useArcReceiptFallback(txHash);
   const txConfirmed = isSuccess || fallback.confirmed;
+  const { getAuthToken, authenticate } = useAuth();
   // Pin chainId on reads.
   const { data: balance } = useBalance({ address, chainId: arcTestnet.id });
 
@@ -68,7 +87,13 @@ export default function LaunchPage() {
   const [name, setName] = useState('');
   const [symbol, setSymbol] = useState('');
   const [description, setDescription] = useState('');
-  const [image, setImage] = useState('');
+  const [image, setImage] = useState('');        // pfp — sent on-chain as `image`
+  const [banner, setBanner] = useState('');      // banner — stored off-chain in token_metadata
+  // Social links — stored off-chain in token_metadata alongside the banner.
+  const [website, setWebsite] = useState('');
+  const [twitter, setTwitter] = useState('');
+  const [telegram, setTelegram] = useState('');
+  const [discord, setDiscord] = useState('');
   const [error, setError] = useState('');
 
   const noGasMoney = isConnected && balance && balance.value === 0n;
@@ -136,6 +161,78 @@ export default function LaunchPage() {
 
   // Redirect to explore page once the LAUNCH tx confirms (not the approval).
   const launchConfirmed = txConfirmed && txAction === 'launch';
+
+  // Extract the newly launched token address from the receipt's TokenCreated
+  // event so we can persist the off-chain banner URI to token_metadata.
+  const extractTokenAddress = (logs: Log[] | undefined): `0x${string}` | null => {
+    if (!logs || logs.length === 0) return null;
+    const eventTopic = toEventSelector(
+      'TokenCreated(address,address,address,string,string,string,uint256)',
+    );
+    for (const log of logs) {
+      if (log.topics[0] !== eventTopic) continue;
+      try {
+        const decoded = decodeEventLog({
+          abi: [TOKEN_CREATED_EVENT],
+          data: log.data,
+          topics: log.topics,
+        });
+        return decoded.args.token as `0x${string}`;
+      } catch {
+        // fall through — try the indexed topic directly as a fallback
+      }
+      // Fallback: token is the first indexed topic (topics[1]).
+      const topic = log.topics[1];
+      if (topic) return `0x${topic.slice(-40)}` as `0x${string}`;
+    }
+    return null;
+  };
+
+  // After launch confirms, persist off-chain metadata (banner + social links)
+  // to token_metadata. Best-effort, non-blocking — the token is already
+  // launched on-chain. Authenticates with the wallet if needed, then POSTs
+  // whatever optional fields the user filled in.
+  const metadataSavedRef = useRef(false);
+  useEffect(() => {
+    if (!launchConfirmed || metadataSavedRef.current) return;
+    const hasMetadata = banner || website || twitter || telegram || discord;
+    if (!hasMetadata || !address) {
+      metadataSavedRef.current = true;
+      return;
+    }
+    const tokenAddress = extractTokenAddress(receipt?.logs);
+    if (!tokenAddress) {
+      metadataSavedRef.current = true;
+      return;
+    }
+    metadataSavedRef.current = true;
+    (async () => {
+      try {
+        let authToken = getAuthToken();
+        if (!authToken) {
+          await authenticate();
+          authToken = getAuthToken();
+        }
+        if (!authToken) return; // user declined auth — metadata stays unset
+        await api.setTokenMetadata(
+          tokenAddress,
+          address,
+          {
+            banner: banner || undefined,
+            website: website || undefined,
+            twitter: twitter || undefined,
+            telegram: telegram || undefined,
+            discord: discord || undefined,
+          },
+          authToken,
+        );
+      } catch (err) {
+        // Non-fatal — token is already launched; metadata just won't display.
+        console.warn('Failed to save token metadata:', err);
+      }
+    })();
+  }, [launchConfirmed, banner, website, twitter, telegram, discord, address, receipt, getAuthToken, authenticate]);
+
   useEffect(() => {
     if (launchConfirmed) {
       toast.success(`${symbol || 'Token'} launched successfully!`, { id: 'launch' });
@@ -150,7 +247,7 @@ export default function LaunchPage() {
         <h1 className="text-3xl font-bold mb-2">Launch a Token</h1>
         <p className="text-text-secondary">
           Fair launch on a bonding curve. Starts at $4.0K market cap, migrates
-          to DEX at $25.0K.
+          to DEX at $30.0K.
         </p>
       </div>
 
@@ -218,11 +315,22 @@ export default function LaunchPage() {
           />
         </div>
 
-        {/* Image upload */}
+        {/* Pfp upload (sent on-chain as the token's `image`) */}
         <ImageUploader
           value={image}
           onChange={setImage}
           symbol={symbol}
+          label="Add Pfp"
+          shape="round"
+        />
+
+        {/* Banner upload (stored off-chain in token_metadata) */}
+        <ImageUploader
+          value={banner}
+          onChange={setBanner}
+          symbol={symbol}
+          label="Add Banner"
+          shape="wide"
         />
 
         {/* Description */}
@@ -241,6 +349,59 @@ export default function LaunchPage() {
           />
         </div>
 
+        {/* Social links — stored off-chain in token_metadata alongside banner */}
+        <div className="border-t border-bg-border pt-4 space-y-3">
+          <p className="text-sm font-medium">Social Links <span className="text-text-muted">(optional)</span></p>
+          <div>
+            <label htmlFor="token-website" className="text-xs text-text-muted block mb-1">Website</label>
+            <input
+              id="token-website"
+              type="text"
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              placeholder="https://example.com"
+              maxLength={200}
+              className="input"
+            />
+          </div>
+          <div>
+            <label htmlFor="token-twitter" className="text-xs text-text-muted block mb-1">Twitter / X</label>
+            <input
+              id="token-twitter"
+              type="text"
+              value={twitter}
+              onChange={(e) => setTwitter(e.target.value)}
+              placeholder="handle (without @)"
+              maxLength={50}
+              className="input"
+            />
+          </div>
+          <div>
+            <label htmlFor="token-telegram" className="text-xs text-text-muted block mb-1">Telegram</label>
+            <input
+              id="token-telegram"
+              type="text"
+              value={telegram}
+              onChange={(e) => setTelegram(e.target.value)}
+              placeholder="https://t.me/yourgroup"
+              maxLength={200}
+              className="input"
+            />
+          </div>
+          <div>
+            <label htmlFor="token-discord" className="text-xs text-text-muted block mb-1">Discord</label>
+            <input
+              id="token-discord"
+              type="text"
+              value={discord}
+              onChange={(e) => setDiscord(e.target.value)}
+              placeholder="https://discord.gg/invite"
+              maxLength={200}
+              className="input"
+            />
+          </div>
+        </div>
+
         {/* Fee notice */}
         <div className="bg-bg-input rounded-lg p-3 text-sm">
           <div className="flex justify-between">
@@ -253,7 +414,7 @@ export default function LaunchPage() {
           </div>
           <div className="flex justify-between mt-1">
             <span className="text-text-muted">Graduation target</span>
-            <span className="font-semibold tabular-nums">$25,000.00</span>
+            <span className="font-semibold tabular-nums">$30,000.00</span>
           </div>
         </div>
 

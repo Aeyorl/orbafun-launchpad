@@ -121,6 +121,7 @@ export class TemplateService {
     name?: string;
     description?: string;
     wallet?: string;
+    ownerWallet?: string;
     dailyLimit?: string;
     monthlyLimit?: string;
   }) {
@@ -129,6 +130,7 @@ export class TemplateService {
     const name = overrides?.name || `${template.name} Agent`;
     const description = overrides?.description || template.description || undefined;
     const wallet = overrides?.wallet || template.creator_wallet || undefined;
+    const ownerWallet = overrides?.ownerWallet;
     const dailyLimit = overrides?.dailyLimit || template.daily_limit;
     const monthlyLimit = overrides?.monthlyLimit || template.monthly_limit;
     const config = template.config || {};
@@ -138,6 +140,7 @@ export class TemplateService {
       name,
       description,
       wallet,
+      ownerWallet,
       dailyLimit,
       monthlyLimit,
       config,

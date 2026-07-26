@@ -44,6 +44,15 @@ export default function CoinPage() {
     refetchInterval: 15_000,
   });
 
+  // Off-chain metadata (banner cover + social links). Deduped with the
+  // SocialLinks component via the shared query key.
+  const { data: metadata } = useQuery({
+    queryKey: ['token-metadata', address],
+    queryFn: () => api.getTokenMetadata(address),
+    staleTime: 30_000,
+  });
+  const bannerUri = metadata?.banner || null;
+
   // WebSocket: update token + trades in real time
   const handleEvent = useCallback(
     (event: any) => {
@@ -86,6 +95,21 @@ export default function CoinPage() {
 
   return (
     <div className="max-w-6xl mx-auto space-y-4">
+      {/* Banner cover image (off-chain, from token_metadata) */}
+      {bannerUri && (
+        <div className="card overflow-hidden !p-0">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={ipfsToGateway(bannerUri)}
+            alt={`${token.name} banner`}
+            className="w-full h-40 sm:h-52 object-cover"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+        </div>
+      )}
+
       {/* Token header */}
       <div className="card">
         <div className="flex items-start justify-between flex-wrap gap-4">
@@ -162,7 +186,7 @@ export default function CoinPage() {
             </span>
             <span className="font-semibold tabular-nums">
               {isGraduated ? '100%' : `${progress.toFixed(1)}%`}
-              {!isGraduated && ` · $${(25000 - Number(token.market_cap)).toFixed(0)} to graduation`}
+              {!isGraduated && ` · $${(30000 - Number(token.market_cap)).toFixed(0)} to graduation`}
             </span>
           </div>
           <div className="progress-bar h-3">

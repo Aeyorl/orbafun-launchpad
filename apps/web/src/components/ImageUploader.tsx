@@ -16,6 +16,8 @@ import { ipfsToGateway } from '@/lib/utils';
  *  - value: current image URI (ipfs://... or https://...)
  *  - onChange: called with the new URI whenever it changes
  *  - symbol: used for the emoji fallback preview
+ *  - label: optional override for the field label (default "Token Logo")
+ *  - shape: "round" (default, square avatar) or "wide" (banner cover preview)
  */
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -25,10 +27,14 @@ export function ImageUploader({
   value,
   onChange,
   symbol,
+  label = 'Token Logo',
+  shape = 'round',
 }: {
   value: string;
   onChange: (uri: string) => void;
   symbol?: string;
+  label?: string;
+  shape?: 'round' | 'wide';
 }) {
   const [uploadEnabled, setUploadEnabled] = useState<boolean | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -109,11 +115,11 @@ export function ImageUploader({
   if (uploadEnabled === false) {
     return (
       <div>
-        <label htmlFor="logo-url-input" className="text-sm font-medium mb-1 block">
-          Logo URL <span className="text-text-muted">(optional)</span>
+        <label htmlFor={`${label}-url-input`} className="text-sm font-medium mb-1 block">
+          {label} URL <span className="text-text-muted">(optional)</span>
         </label>
         <input
-          id="logo-url-input"
+          id={`${label}-url-input`}
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -130,7 +136,11 @@ export function ImageUploader({
             <img
               src={preview}
               alt="Preview"
-              className="w-12 h-12 rounded-full object-cover bg-bg-input"
+              className={
+                shape === 'wide'
+                  ? 'w-24 h-12 object-cover bg-bg-input border border-bg-border'
+                  : 'w-12 h-12 rounded-full object-cover bg-bg-input'
+              }
               onError={() => setPreview(null)}
             />
             <span className="text-xs text-text-muted">Preview</span>
@@ -145,7 +155,7 @@ export function ImageUploader({
     return (
       <div>
         <label className="text-sm font-medium mb-1 block">
-          Token Logo <span className="text-text-muted">(optional)</span>
+          {label} <span className="text-text-muted">(optional)</span>
         </label>
         <div className="input-field h-32 flex items-center justify-center text-text-muted text-sm">
           Checking upload availability…
@@ -158,22 +168,26 @@ export function ImageUploader({
   return (
     <div>
       <label className="text-sm font-medium mb-1 block">
-        Token Logo <span className="text-text-muted">(optional)</span>
+        {label} <span className="text-text-muted">(optional)</span>
       </label>
 
       {preview ? (
         // Show preview with change/remove buttons.
-        <div className="flex items-center gap-4">
+        <div className={`flex items-center gap-4 ${shape === 'wide' ? 'flex-col items-stretch' : ''}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={preview}
-            alt="Token logo"
-            className="w-20 h-20 rounded-full object-cover bg-bg-input border border-bg-border"
+            alt={label}
+            className={
+              shape === 'wide'
+                ? 'w-full h-32 object-cover bg-bg-input border border-bg-border'
+                : 'w-20 h-20 rounded-full object-cover bg-bg-input border border-bg-border'
+            }
             onError={() => setPreview(null)}
           />
           <div className="flex-1 space-y-2">
             <p className="text-xs text-text-muted">
-              {uploading ? 'Uploading to IPFS…' : 'Logo uploaded ✓'}
+              {uploading ? 'Uploading to IPFS…' : 'Uploaded ✓'}
             </p>
             <div className="flex gap-2">
               <button

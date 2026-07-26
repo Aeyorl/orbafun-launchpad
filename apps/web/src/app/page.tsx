@@ -116,7 +116,7 @@ export default function LandingPage() {
         <HowItStep
           num="03"
           title="Bond, then migrate"
-          desc="At $25K market cap the curve bonds and migrates to a DEX automatically, seeding permanent liquidity with LP burned."
+          desc="At $30K market cap the curve bonds and migrates to a DEX automatically, seeding permanent liquidity with LP burned."
         />
       </section>
 

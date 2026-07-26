@@ -97,9 +97,6 @@ export function SearchBar({ compact = false }: { compact?: boolean }) {
   return (
     <div ref={containerRef} className="relative w-full">
       <div className="relative">
-        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted text-sm pointer-events-none">
-          🔍
-        </span>
         <input
           type="text"
           value={query}
@@ -110,7 +107,7 @@ export function SearchBar({ compact = false }: { compact?: boolean }) {
           onFocus={() => query && setOpen(true)}
           onKeyDown={onKeyDown}
           placeholder="Search tokens…"
-          className={`input-field pl-9 ${compact ? 'h-9 text-sm' : ''}`}
+          className={`input-field ${compact ? 'h-9 text-sm' : ''}`}
           aria-label="Search tokens"
         />
         {loading && (

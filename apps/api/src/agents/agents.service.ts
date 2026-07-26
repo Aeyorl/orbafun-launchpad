@@ -77,6 +77,7 @@ export class AgentsService {
     name: string;
     description?: string;
     wallet?: string;
+    ownerWallet?: string;
     dailyLimit?: bigint;
     monthlyLimit?: bigint;
     config?: any;
@@ -86,6 +87,9 @@ export class AgentsService {
     }
     if (input.wallet && !isValidEvmAddress(input.wallet)) {
       throw new BadRequestException('Invalid wallet address');
+    }
+    if (input.ownerWallet && !isValidEvmAddress(input.ownerWallet)) {
+      throw new BadRequestException('Invalid owner wallet address');
     }
 
     const agentId = randomUUID();
@@ -98,14 +102,15 @@ export class AgentsService {
       await client.query('BEGIN');
 
       const agentRow = await client.query(
-        `INSERT INTO agents (agent_id, name, description, wallet, daily_limit, monthly_limit, config)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO agents (agent_id, name, description, wallet, owner_wallet, daily_limit, monthly_limit, config)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id`,
         [
           agentId,
           input.name.trim(),
           input.description || null,
           input.wallet?.toLowerCase() || null,
+          input.ownerWallet?.toLowerCase() || null,
           (input.dailyLimit ?? 50_000_000n).toString(),
           (input.monthlyLimit ?? 1_000_000_000n).toString(),
           JSON.stringify(input.config || {}),
@@ -878,6 +883,76 @@ export class AgentsService {
     } finally {
       client.release();
     }
+  }
+
+  // ─── Self-serve deploy support ──────────────────────────────────────────
+
+  /**
+   * List agents deployed by a given owner wallet (self-serve deploy attribution).
+   * Includes executor_enabled + last activity timestamp.
+   */
+  async listAgentsByOwner(ownerWallet: string, limit: number, offset: number) {
+    const w = ownerWallet.toLowerCase();
+    const agents = await this.db.queryRows(
+      `SELECT agent_id, name, description, wallet, daily_limit, monthly_limit,
+              executor_enabled, active, created_at,
+              (SELECT COUNT(*) FROM agent_launches WHERE agent_id = agents.id) AS launch_count,
+              (SELECT COUNT(*) FROM agent_trades WHERE agent_id = agents.id) AS trade_count
+       FROM agents
+       WHERE owner_wallet = $3
+       ORDER BY created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset, w],
+    );
+    const countResult = await this.db.queryOne<{ total: string }>(
+      `SELECT COUNT(*)::text AS total FROM agents WHERE owner_wallet = $1`,
+      [w],
+    );
+    return {
+      agents,
+      total: parseInt(countResult?.total || '0', 10),
+    };
+  }
+
+  /**
+   * Toggle the autonomous executor on/off for an agent.
+   * Ownership is verified by the caller (controller) before calling this.
+   * Returns the new state.
+   */
+  async toggleExecutor(agentId: string, ownerWallet: string): Promise<{ executorEnabled: boolean }> {
+    const w = ownerWallet.toLowerCase();
+    const result = await this.db.queryOne<{ executor_enabled: boolean }>(
+      `UPDATE agents
+       SET executor_enabled = NOT executor_enabled
+       WHERE agent_id = $1 AND owner_wallet = $2
+       RETURNING executor_enabled`,
+      [agentId, w],
+    );
+    if (!result) {
+      throw new NotFoundException('Agent not found or you are not the owner');
+    }
+    this.logger.log(`Executor ${result.executor_enabled ? 'enabled' : 'disabled'} for agent ${agentId} by ${w}`);
+    return { executorEnabled: result.executor_enabled };
+  }
+
+  /**
+   * Get the executor state (cooldowns + run counts) for an agent.
+   * Public-ish: the caller is responsible for ownership checks if needed.
+   */
+  async getExecutorState(agentId: string) {
+    const agent = await this.db.queryOne<{ id: number; executor_enabled: boolean }>(
+      `SELECT id, executor_enabled FROM agents WHERE agent_id = $1`,
+      [agentId],
+    );
+    if (!agent) throw new NotFoundException('Agent not found');
+    const state = await this.db.queryRows(
+      `SELECT action, last_run_at, last_tx_hash, run_count, fail_count, last_error, updated_at
+       FROM agent_executor_state
+       WHERE agent_id = $1
+       ORDER BY action`,
+      [agent.id],
+    );
+    return { executorEnabled: agent.executor_enabled, state };
   }
 }
 

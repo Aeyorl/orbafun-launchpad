@@ -4,7 +4,7 @@ pragma solidity ^0.8.26;
 /// @title TestBondingCurve
 /// @notice Copy of BondingCurve with a LOW graduation threshold ($4,150) for
 ///         budget-constrained graduation testing. The production BondingCurve
-///         graduates at $25,000 MC — reaching that requires ~$8,800 in buys,
+///         graduates at $30,000 MC — reaching that requires ~$10,800 in buys,
 ///         which is too expensive for testnet iteration. This test version
 ///         graduates at $4,150 MC, reachable with ~$110 of buys.
 /// @dev The ONLY change from BondingCurve.sol is GRADUATION_MARKET_CAP.
@@ -44,7 +44,7 @@ contract TestBondingCurve is ReentrancyGuard {
     /// @notice k = VIRTUAL_USDC * VIRTUAL_TOKENS (constant product).
     uint256 public constant K = VIRTUAL_USDC * VIRTUAL_TOKENS;
     /// @notice Graduation market cap threshold: $4,150 (6-dec USDC).
-    /// @dev LOW threshold for testnet — production is $25,000. Reaching $4,150 MC
+    /// @dev LOW threshold for testnet — production is $30,000. Reaching $4,150 MC
     ///      from $4,000 initial MC requires ~$110 of buys (fits testnet budget).
     uint256 public constant GRADUATION_MARKET_CAP = 4_150 * 10 ** 6;
     /// @notice USDC to seed DEX liquidity on graduation: $8,500 (6-dec).
@@ -355,7 +355,7 @@ contract TestBondingCurve is ReentrancyGuard {
     /// @notice Sweep excess USDC left in the curve after graduation.
     /// @dev After graduation, graduateToAmm() transfers LP_SEED_USDC ($8,500) to
     ///      the migrator for AMM liquidity. The remaining realUsdc (typically
-    ///      ~$6,170 at $25K graduation) would otherwise be permanently locked.
+    ///      ~$6,170 at $30K graduation) would otherwise be permanently locked.
     ///      This function sends the excess to the protocol owner (treasury).
     ///      Unclaimed creator/protocol fees are reserved and not swept.
     ///      Only callable after graduation, by the owner.

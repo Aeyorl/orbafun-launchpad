@@ -12,7 +12,7 @@ const TRADE_FEE_PCT = 1; // 1% of trade
 const CREATOR_SHARE_PCT = 50; // 50% of trade fee
 const PROTOCOL_SHARE_PCT = 50; // 50% of trade fee
 const REFERRAL_REWARD_BPS = 10; // 0.1% of volume
-const GRADUATION_MC = 25_000;
+const GRADUATION_MC = 30_000;
 
 export default function FeesPage() {
   return (

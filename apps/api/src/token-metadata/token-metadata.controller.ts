@@ -23,6 +23,7 @@ export class TokenMetadataController {
         telegram: null,
         discord: null,
         description: null,
+        banner: null,
       };
     }
     return meta;

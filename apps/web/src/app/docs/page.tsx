@@ -76,7 +76,7 @@ export default function DocsPage() {
               Orba is a memecoin launchpad on <strong>Arc</strong> — Circle&apos;s
               USDC-native L1 blockchain. Every token launches against a bonding
               curve priced in USDC. As buyers buy, the price rises along the curve.
-              When the market cap reaches <strong>$25,000</strong>, the token
+              When the market cap reaches <strong>$30,000</strong>, the token
               &ldquo;graduates&rdquo;: its liquidity migrates to an automated
               market maker (AMM) and the bonding curve is retired. From that point
               on, the token trades freely on the DEX.
@@ -106,7 +106,7 @@ export default function DocsPage() {
                 <li>Price increases smoothly as more tokens are bought.</li>
                 <li>You can always sell back to the curve — liquidity is guaranteed.</li>
                 <li>The curve takes a 1% fee on every trade (split 50/50 between the token creator and the protocol).</li>
-                <li>When the curve reaches $25,000 market cap, the token graduates.</li>
+                <li>When the curve reaches $30,000 market cap, the token graduates.</li>
               </ul>
             </div>
             <p className="text-sm text-text-secondary leading-relaxed">
@@ -120,7 +120,7 @@ export default function DocsPage() {
           <section id="graduation" className="scroll-mt-20">
             <h2 className="text-xl font-bold mb-3">Graduation to the DEX</h2>
             <p className="text-sm text-text-secondary leading-relaxed mb-3">
-              When a token&apos;s market cap reaches <strong>$25,000</strong>, the
+              When a token&apos;s market cap reaches <strong>$30,000</strong>, the
               bonding curve automatically migrates its liquidity to an AMM (a
               Uniswap V2-style constant-product pool). This is called
               &ldquo;graduation.&rdquo; After graduation:
@@ -137,7 +137,7 @@ export default function DocsPage() {
             </div>
             <p className="text-sm text-text-secondary leading-relaxed">
               Graduation is fully on-chain and automatic. No one can pause it,
-              front-run it, or prevent it. Once the curve hits $25K, the migration
+              front-run it, or prevent it. Once the curve hits $30K, the migration
               transaction is triggered by the next buy.
             </p>
           </section>
@@ -287,7 +287,7 @@ export default function DocsPage() {
             </p>
             <div className="bg-bg-input rounded-lg p-4 text-sm text-text-secondary mb-3 space-y-2">
               <p><code className="text-xs bg-bg-base px-1 rounded">MemeToken</code> — Fixed-supply ERC-20 (1B tokens, 18 decimals). No mint, no freeze. Max-wallet + cooldown enforced pre-graduation.</p>
-              <p><code className="text-xs bg-bg-base px-1 rounded">BondingCurve</code> — Linear bonding curve priced in USDC. Handles buys/sells, accrues creator + protocol fees, triggers graduation at $25K MC.</p>
+              <p><code className="text-xs bg-bg-base px-1 rounded">BondingCurve</code> — Linear bonding curve priced in USDC. Handles buys/sells, accrues creator + protocol fees, triggers graduation at $30K MC.</p>
               <p><code className="text-xs bg-bg-base px-1 rounded">TokenFactory</code> — Deploys MemeToken + BondingCurve pairs. Charges the 5 USDC creation fee.</p>
               <p><code className="text-xs bg-bg-base px-1 rounded">LiquidityMigration</code> — Migrates curve liquidity to the AMM on graduation. Burns LP tokens, renounces ownership.</p>
               <p><code className="text-xs bg-bg-base px-1 rounded">AMMFactory</code> + <code className="text-xs bg-bg-base px-1 rounded">AMMPair</code> — Uniswap V2 fork (0% fee) for post-graduation trading.</p>

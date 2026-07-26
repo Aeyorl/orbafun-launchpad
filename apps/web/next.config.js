@@ -19,16 +19,28 @@ const IPFS_GATEWAYS = [
 // WalletConnect relay server (used by injected connector for session pairing).
 const WALLETCONNECT_RELAY = 'wss://relay.walletconnect.com';
 
+// API origin — the frontend talks to this for REST + WebSocket (Socket.IO).
+// In production this is https://orba.fun (same-origin), in dev it's
+// http://localhost:4000. Both http + ws schemes are added so CSP allows
+// the API REST calls and the Socket.IO WebSocket upgrade.
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+const API_WS_URL = process.env.NEXT_PUBLIC_WS_URL || API_URL;
+// Normalize: derive ws:// from http:// for the WebSocket connect-src entry.
+const API_WS_SCHEME = API_WS_URL.replace(/^http/, 'ws');
+
 const cspDirectives = [
   "default-src 'self'",
   // Next.js needs 'unsafe-eval' for dev, 'unsafe-inline' for styles (styled-jsx / CSS modules)
   process.env.NODE_ENV === 'production'
     ? "script-src 'self' 'unsafe-inline'"
     : "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "img-src 'self' data: blob: https: " + IPFS_GATEWAYS.join(' '),
-  "font-src 'self' data:",
+  "font-src 'self' data: https://fonts.gstatic.com",
   "connect-src 'self' " +
+    API_URL + ' ' +
+    API_WS_URL + ' ' +
+    API_WS_SCHEME + ' ' +
     ARC_RPC_HOSTS.join(' ') + ' ' +
     IPFS_GATEWAYS.join(' ') + ' ' +
     WALLETCONNECT_RELAY,
@@ -67,10 +79,10 @@ const nextConfig = {
     NEXT_PUBLIC_ARC_RPC_URL: process.env.NEXT_PUBLIC_ARC_RPC_URL || 'https://rpc.testnet.arc.io',
     NEXT_PUBLIC_ARC_CHAIN_ID: process.env.NEXT_PUBLIC_ARC_CHAIN_ID || '5042002',
     NEXT_PUBLIC_ARC_USDC_ADDRESS: process.env.NEXT_PUBLIC_ARC_USDC_ADDRESS || '0x3600000000000000000000000000000000000000',
-    NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS: process.env.NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS || '0xA0a06666a065f2fE83d49D72934c54e692907296',
-    NEXT_PUBLIC_TREASURY_ADDRESS: process.env.NEXT_PUBLIC_TREASURY_ADDRESS || '0xe70CdaC18008857b9BCbBa0c94A41e11C54Fb033',
-    NEXT_PUBLIC_MIGRATOR_ADDRESS: process.env.NEXT_PUBLIC_MIGRATOR_ADDRESS || '0x8Bd1D9187C157CCe74881976A0d532210328fC50',
-    NEXT_PUBLIC_AMM_FACTORY_ADDRESS: process.env.NEXT_PUBLIC_AMM_FACTORY_ADDRESS || '0x09109941796E004d86e5383dA0222DCdB43d4b13',
+    NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS: process.env.NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS || '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b',
+    NEXT_PUBLIC_TREASURY_ADDRESS: process.env.NEXT_PUBLIC_TREASURY_ADDRESS || '0x2cAc61423fe5d7e74e5f3504901478F52a71156D',
+    NEXT_PUBLIC_MIGRATOR_ADDRESS: process.env.NEXT_PUBLIC_MIGRATOR_ADDRESS || '0x34d4eC02a916164F178885B7ed05127D40847212',
+    NEXT_PUBLIC_AMM_FACTORY_ADDRESS: process.env.NEXT_PUBLIC_AMM_FACTORY_ADDRESS || '0x4058646F179a4f5dF430E8e125b8F30fF3489BF9',
   },
   webpack: (config) => {
     // Ignore optional Coinbase/CDP SDK / x402 deps that wagmi's connector

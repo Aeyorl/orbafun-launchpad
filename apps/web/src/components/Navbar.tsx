@@ -1,6 +1,7 @@
 ﻿'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useAccount, useDisconnect, useBalance, useConnectors, useConnect } from 'wagmi';
 import { formatUsdc, formatNativeUsdc, shortenAddress } from '@/lib/utils';
 import { arcTestnet } from 'viem/chains';
@@ -14,8 +15,14 @@ export function Navbar() {
   const [mounted, setMounted] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => setMounted(true), []);
+
+  // Whether a given href is the active tab. "/" is only active on exact match;
+  // other routes are active when the pathname starts with the href.
+  const isActive = (href: string) =>
+    href === '/' ? pathname === '/' : pathname.startsWith(href);
 
   const { data: balance } = useBalance({
     address: address,
@@ -45,30 +52,30 @@ export function Navbar() {
 
         {/* Nav links — desktop */}
         <div className="hidden md:flex items-center gap-1 flex-shrink-0">
-          <Link href="/" className="tab">
+          <Link href="/" className={`tab ${isActive('/') ? 'tab-active' : ''}`}>
             Board
           </Link>
-          <Link href="/explore" className="tab">
+          <Link href="/explore" className={`tab ${isActive('/explore') ? 'tab-active' : ''}`}>
             Explore
           </Link>
-          <Link href="/launch" className="tab">
+          <Link href="/launch" className={`tab ${isActive('/launch') ? 'tab-active' : ''}`}>
             Launch
           </Link>
-          <Link href="/agents" className="tab">
+          <Link href="/agents" className={`tab ${isActive('/agents') ? 'tab-active' : ''}`}>
             Agents
           </Link>
-          <Link href="/leaderboard" className="tab">
+          <Link href="/leaderboard" className={`tab ${isActive('/leaderboard') ? 'tab-active' : ''}`}>
             Leaders
           </Link>
-          <Link href="/docs" className="tab">
+          <Link href="/docs" className={`tab ${isActive('/docs') ? 'tab-active' : ''}`}>
             Docs
           </Link>
           {address && (
             <>
-              <Link href="/watchlist" className="tab">
+              <Link href="/watchlist" className={`tab ${isActive('/watchlist') ? 'tab-active' : ''}`}>
                 Watchlist
               </Link>
-              <Link href={`/profile/${address}`} className="tab">
+              <Link href={`/profile/${address}`} className={`tab ${isActive('/profile/') ? 'tab-active' : ''}`}>
                 Profile
               </Link>
             </>
@@ -137,42 +144,42 @@ export function Navbar() {
         <div className="md:hidden border-t border-bg-border px-4 py-3 space-y-1 bg-bg-base/95 backdrop-blur-md">
           <Link
             href="/"
-            className="block py-2 px-3 rounded-lg hover:bg-bg-card transition-colors text-text-primary"
+            className={`block py-2 px-3 rounded-lg transition-colors ${isActive('/') ? 'bg-bg-card text-accent-blue font-semibold' : 'hover:bg-bg-card text-text-primary'}`}
             onClick={() => setMobileMenuOpen(false)}
           >
             Board
           </Link>
           <Link
             href="/explore"
-            className="block py-2 px-3 rounded-lg hover:bg-bg-card transition-colors text-text-primary"
+            className={`block py-2 px-3 rounded-lg transition-colors ${isActive('/explore') ? 'bg-bg-card text-accent-blue font-semibold' : 'hover:bg-bg-card text-text-primary'}`}
             onClick={() => setMobileMenuOpen(false)}
           >
             Explore
           </Link>
           <Link
             href="/launch"
-            className="block py-2 px-3 rounded-lg hover:bg-bg-card transition-colors text-text-primary"
+            className={`block py-2 px-3 rounded-lg transition-colors ${isActive('/launch') ? 'bg-bg-card text-accent-blue font-semibold' : 'hover:bg-bg-card text-text-primary'}`}
             onClick={() => setMobileMenuOpen(false)}
           >
             Launch
           </Link>
           <Link
             href="/agents"
-            className="block py-2 px-3 rounded-lg hover:bg-bg-card transition-colors text-text-primary"
+            className={`block py-2 px-3 rounded-lg transition-colors ${isActive('/agents') ? 'bg-bg-card text-accent-blue font-semibold' : 'hover:bg-bg-card text-text-primary'}`}
             onClick={() => setMobileMenuOpen(false)}
           >
             Agents
           </Link>
           <Link
             href="/leaderboard"
-            className="block py-2 px-3 rounded-lg hover:bg-bg-card transition-colors text-text-primary"
+            className={`block py-2 px-3 rounded-lg transition-colors ${isActive('/leaderboard') ? 'bg-bg-card text-accent-blue font-semibold' : 'hover:bg-bg-card text-text-primary'}`}
             onClick={() => setMobileMenuOpen(false)}
           >
             Leaders
           </Link>
           <Link
             href="/docs"
-            className="block py-2 px-3 rounded-lg hover:bg-bg-card transition-colors text-text-primary"
+            className={`block py-2 px-3 rounded-lg transition-colors ${isActive('/docs') ? 'bg-bg-card text-accent-blue font-semibold' : 'hover:bg-bg-card text-text-primary'}`}
             onClick={() => setMobileMenuOpen(false)}
           >
             Docs
@@ -181,14 +188,14 @@ export function Navbar() {
             <>
               <Link
                 href="/watchlist"
-                className="block py-2 px-3 rounded-lg hover:bg-bg-card transition-colors text-text-primary"
+                className={`block py-2 px-3 rounded-lg transition-colors ${isActive('/watchlist') ? 'bg-bg-card text-accent-blue font-semibold' : 'hover:bg-bg-card text-text-primary'}`}
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Watchlist
               </Link>
               <Link
                 href={`/profile/${address}`}
-                className="block py-2 px-3 rounded-lg hover:bg-bg-card transition-colors text-text-primary"
+                className={`block py-2 px-3 rounded-lg transition-colors ${isActive('/profile/') ? 'bg-bg-card text-accent-blue font-semibold' : 'hover:bg-bg-card text-text-primary'}`}
                 onClick={() => setMobileMenuOpen(false)}
               >
                 Profile

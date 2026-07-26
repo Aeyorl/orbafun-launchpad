@@ -19,6 +19,7 @@ export default function AgentsPage() {
   const [templateCategory, setTemplateCategory] = useState<string | undefined>();
   const [leaderboardMetric, setLeaderboardMetric] = useState<'launches' | 'volume' | 'tips'>('launches');
   const [deployingId, setDeployingId] = useState<number | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const limit = 24;
 
   const { data, isLoading } = useQuery({
@@ -39,12 +40,22 @@ export default function AgentsPage() {
     refetchInterval: 60_000,
   });
 
+  // Agents deployed by the connected wallet (self-serve). Only fetched when
+  // the user is authenticated + has a wallet.
+  const { data: myAgentsData, refetch: refetchMyAgents } = useQuery({
+    queryKey: ['my-deployed-agents', address],
+    queryFn: () => api.listMyDeployedAgents(20, 0, getAuthToken(), address),
+    enabled: !!address,
+    refetchInterval: 60_000,
+  });
+
   const agents = data?.agents || [];
   const total = data?.total || 0;
   const hasMore = offset + limit < total;
   const hasPrev = offset > 0;
   const templates = templatesData?.templates || [];
   const leaderboard = leaderboardData?.agents || [];
+  const myAgents = myAgentsData?.agents || [];
 
   const categories = ['general', 'trend', 'trader', 'community'];
 

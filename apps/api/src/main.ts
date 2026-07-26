@@ -18,8 +18,23 @@ async function bootstrap() {
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   }));
 
+  // CORS — accept a comma-separated list of origins in CORS_ORIGIN so the
+  // same API can serve both production (https://orba.fun) and local dev
+  // (http://localhost:3000, :3001, :3004, etc.) without rebuilding.
+  const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:3000')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: (origin, callback) => {
+      // Allow same-origin / server-to-server (no Origin header) and any
+      // whitelisted origin. Reject everything else.
+      if (!origin || corsOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false); // don't throw — just don't send the header
+      }
+    },
     credentials: true,
   });
 

@@ -8,7 +8,7 @@ pragma solidity ^0.8.26;
 ///      - Total supply: 1B tokens (88% on curve, 12% reserved for DEX)
 ///      - Virtual USDC reserve: 5866.67 USDC (6-dec internal accounting)
 ///      - Virtual token reserve: 1,466,666,667 tokens (18-dec, ERC-20 standard)
-///      - Initial market cap: $4,000, graduation at $25,000
+///      - Initial market cap: $4,000, graduation at $30,000
 ///      - Fee: 1% (0.5% creator / 0.5% protocol), taken on buys (from input)
 ///        and sells (from output), accrued separately, claimable anytime
 ///      - USDC: 6-dec ERC-20 view throughout (see DECISION_LOG D2). No native
@@ -44,8 +44,8 @@ contract BondingCurve is ReentrancyGuard {
     uint256 public constant VIRTUAL_TOKENS = 1_466_666_667 * 10 ** 18;
     /// @notice k = VIRTUAL_USDC * VIRTUAL_TOKENS (constant product).
     uint256 public constant K = VIRTUAL_USDC * VIRTUAL_TOKENS;
-    /// @notice Graduation market cap threshold: $25,000 (6-dec USDC).
-    uint256 public constant GRADUATION_MARKET_CAP = 25_000 * 10 ** 6;
+    /// @notice Graduation market cap threshold: $30,000 (6-dec USDC).
+    uint256 public constant GRADUATION_MARKET_CAP = 30_000 * 10 ** 6;
     /// @notice USDC to seed DEX liquidity on graduation: $8,500 (6-dec).
     uint256 public constant LP_SEED_USDC = 8_500 * 10 ** 6;
     /// @notice Trading fee: 1% (in basis points = 100).
@@ -354,7 +354,7 @@ contract BondingCurve is ReentrancyGuard {
     /// @notice Sweep excess USDC left in the curve after graduation.
     /// @dev After graduation, graduateToAmm() transfers LP_SEED_USDC ($8,500) to
     ///      the migrator for AMM liquidity. The remaining realUsdc (typically
-    ///      ~$6,170 at $25K graduation) would otherwise be permanently locked.
+    ///      ~$6,170 at $30K graduation) would otherwise be permanently locked.
     ///      This function sends the excess to the protocol owner (treasury).
     ///      Unclaimed creator/protocol fees are reserved and not swept.
     ///      Only callable after graduation, by the owner.

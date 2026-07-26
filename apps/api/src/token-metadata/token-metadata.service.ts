@@ -8,6 +8,7 @@ export interface TokenMetadata {
   telegram: string | null;
   discord: string | null;
   description: string | null;
+  banner: string | null;
   updated_at: string;
 }
 
@@ -17,10 +18,12 @@ export interface TokenMetadataInput {
   telegram?: string;
   discord?: string;
   description?: string;
+  banner?: string;
 }
 
 const MAX_URL_LENGTH = 200;
 const MAX_DESCRIPTION_LENGTH = 500;
+const MAX_BANNER_LENGTH = 200;
 
 /**
  * Validate that a URL uses a safe scheme (http/https only).
@@ -66,6 +69,26 @@ function sanitizeTwitter(value: string): string | null {
   return null;
 }
 
+/**
+ * Sanitize a banner image URI. Accepts ipfs:// URIs or http(s):// URLs.
+ * Rejects other schemes (javascript:, data:, etc.) and overly long strings.
+ */
+function sanitizeImageUri(value: string, maxLength: number): string | null {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > maxLength) return null;
+  if (trimmed.startsWith('ipfs://')) return trimmed;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const url = new URL(trimmed);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+      return trimmed;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 @Injectable()
 export class TokenMetadataService {
   private readonly logger = new Logger(TokenMetadataService.name);
@@ -76,7 +99,7 @@ export class TokenMetadataService {
   async getMetadata(tokenAddress: string): Promise<TokenMetadata | null> {
     const addr = tokenAddress.toLowerCase();
     const row = await this.db.queryOne<TokenMetadata>(
-      `SELECT token_address, website, twitter, telegram, discord, description, updated_at
+      `SELECT token_address, website, twitter, telegram, discord, description, banner, updated_at
        FROM token_metadata
        WHERE token_address = $1`,
       [addr],
@@ -131,10 +154,15 @@ export class TokenMetadataService {
       throw new Error(`Description must be ${MAX_DESCRIPTION_LENGTH} characters or less`);
     }
 
+    const banner = input.banner ? sanitizeImageUri(input.banner, MAX_BANNER_LENGTH) : null;
+    if (input.banner && !banner) {
+      throw new Error('Banner must be a valid ipfs:// URI or http(s):// URL');
+    }
+
     // Upsert.
     const result = await this.db.queryOne<TokenMetadata>(
-      `INSERT INTO token_metadata (token_address, website, twitter, telegram, discord, description, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      `INSERT INTO token_metadata (token_address, website, twitter, telegram, discord, description, banner, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
        ON CONFLICT (token_address)
        DO UPDATE SET
          website = EXCLUDED.website,
@@ -142,9 +170,10 @@ export class TokenMetadataService {
          telegram = EXCLUDED.telegram,
          discord = EXCLUDED.discord,
          description = EXCLUDED.description,
+         banner = EXCLUDED.banner,
          updated_at = NOW()
-       RETURNING token_address, website, twitter, telegram, discord, description, updated_at`,
-      [addr, website, twitter, telegram, discord, description],
+       RETURNING token_address, website, twitter, telegram, discord, description, banner, updated_at`,
+      [addr, website, twitter, telegram, discord, description, banner],
     );
     return result!;
   }

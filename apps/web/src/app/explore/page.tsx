@@ -41,8 +41,9 @@ export default function ExplorePage() {
         />
       </div>
 
-      {/* Filters */}
+      {/* Filters — two independent groups: sort (tabs) + status (pills) */}
       <div className="flex flex-wrap items-center gap-4">
+        {/* Sort — tab style */}
         <div className="flex gap-1" role="tablist" aria-label="Sort tokens">
           {(['newest', 'market_cap', 'volume'] as SortOption[]).map((s) => (
             <button
@@ -59,6 +60,9 @@ export default function ExplorePage() {
             </button>
           ))}
         </div>
+        {/* Divider between the two filter groups */}
+        <div className="h-5 w-px bg-bg-border" aria-hidden="true" />
+        {/* Status — pill style, visually distinct from sort tabs */}
         <div className="flex gap-1" role="tablist" aria-label="Filter by status">
           {(['active', 'graduated', 'all'] as StatusFilter[]).map((s) => (
             <button
@@ -69,7 +73,11 @@ export default function ExplorePage() {
                 setStatus(s);
                 setOffset(0);
               }}
-              className={`tab ${status === s ? 'tab-active' : ''}`}
+              className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                status === s
+                  ? 'bg-accent-blue/15 text-accent-blue'
+                  : 'text-text-muted hover:text-text-primary hover:bg-bg-card'
+              }`}
             >
               {s.charAt(0).toUpperCase() + s.slice(1)}
             </button>

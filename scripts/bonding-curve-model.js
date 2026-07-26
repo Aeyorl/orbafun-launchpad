@@ -24,7 +24,7 @@ const PARAMS = {
   supplyOnCurvePct: 88,             // % of supply sold through curve (rest reserved for DEX)
   virtualUsdcReserve: 5866.67,      // virtual USDC (sets initial price)
   virtualTokenReserve: 1_466_666_667, // virtual tokens (curve shape)
-  graduationMarketCap: 25_000,      // market cap at which graduation triggers (USDC)
+  graduationMarketCap: 30_000,      // market cap at which graduation triggers (USDC)
   feePct: 1,                        // trading fee % (0.5% creator + 0.5% protocol)
   creatorFeeShare: 0.5,             // creator gets 50% of fees
   protocolFeeShare: 0.5,            // protocol gets 50% of fees
@@ -387,7 +387,7 @@ if (args.includes('--help') || args.includes('-h')) {
   console.log('  --on-curve <pct>     % of supply on curve (default: 88)');
   console.log('  --vusdc <n>          Virtual USDC reserve (default: 5866.67)');
   console.log('  --vtokens <n>        Virtual token reserve (default: 1466666667)');
-  console.log('  --grad-mcap <n>      Graduation market cap threshold (default: 25000)');
+  console.log('  --grad-mcap <n>      Graduation market cap threshold (default: 30000)');
   console.log('  --fee <pct>          Trading fee % (default: 1)');
   console.log('  --lp-seed <n>        USDC to seed DEX on graduation (default: 8500)');
   console.log('  --buy-size <n>       Simulated buy size in USDC (default: 100)');

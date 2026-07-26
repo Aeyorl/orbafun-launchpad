@@ -70,7 +70,7 @@ export default async function OgImage({
   }
 
   const marketCap = Number(token.market_cap);
-  const progress = Math.min(100, (marketCap / 25_000) * 100);
+  const progress = Math.min(100, (marketCap / 30_000) * 100);
   const isGraduated = token.status === 'graduated';
   const accentColor = isGraduated ? purple : green;
 

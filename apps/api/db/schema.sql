@@ -258,6 +258,7 @@ CREATE TABLE IF NOT EXISTS token_metadata (
     telegram        TEXT,                     -- group/channel URL or handle
     discord         TEXT,                     -- invite URL
     description     TEXT,                     -- longer description (optional)
+    banner          TEXT,                     -- IPFS URI or URL for cover image (off-chain)
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -270,12 +271,16 @@ CREATE TABLE IF NOT EXISTS agents (
     name            TEXT NOT NULL,               -- display name
     description     TEXT,
     wallet          TEXT,                        -- optional linked wallet address
+    owner_wallet    TEXT,                        -- user who deployed this agent (self-serve); null for admin-deployed
     -- Spending limits (USDC, 6-dec micro-units)
     daily_limit     BIGINT NOT NULL DEFAULT 50000000,  -- 50 USDC/day default
     monthly_limit   BIGINT NOT NULL DEFAULT 1000000000, -- 1000 USDC/month default
     -- Template config (JSON) — strategy parameters from the template this
     -- agent was deployed from. E.g. trading pairs, launch thresholds, etc.
     config          JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- Autonomous executor opt-in (per-agent). Global kill switch is the
+    -- AGENT_EXECUTOR_ENABLED env var; both must be true to run.
+    executor_enabled BOOLEAN NOT NULL DEFAULT false,
     -- Status
     active          BOOLEAN NOT NULL DEFAULT true,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -284,9 +289,14 @@ CREATE TABLE IF NOT EXISTS agents (
 CREATE INDEX IF NOT EXISTS idx_agents_agent_id ON agents(agent_id);
 CREATE INDEX IF NOT EXISTS idx_agents_wallet ON agents(wallet);
 
--- Add config column to existing agents table (idempotent — safe to re-run).
+-- Add columns to existing agents table (idempotent — safe to re-run).
 -- CREATE TABLE IF NOT EXISTS won't add new columns to an existing table.
+-- Indexes on the new columns come AFTER the ALTERs so they don't fail on
+-- pre-existing tables that don't yet have the columns.
 ALTER TABLE agents ADD COLUMN IF NOT EXISTS config JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS owner_wallet TEXT;
+ALTER TABLE agents ADD COLUMN IF NOT EXISTS executor_enabled BOOLEAN NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS idx_agents_owner_wallet ON agents(owner_wallet) WHERE owner_wallet IS NOT NULL;
 
 -- ─── Agent API Keys ────────────────────────────────────────────────────────
 -- API keys for agent authentication. Keys are hashed (SHA-256) — the raw key
@@ -351,6 +361,22 @@ CREATE TABLE IF NOT EXISTS agent_trades (
 
 CREATE INDEX IF NOT EXISTS idx_agent_trades_agent ON agent_trades(agent_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_trades_token ON agent_trades(token_address);
+
+-- ─── Agent Executor State ───────────────────────────────────────────────────
+-- Cooldown tracking for the autonomous agent executor. One row per
+-- (agent, action). The executor reads last_run_at to respect per-strategy
+-- intervals (e.g. 1 launch/day, 1 buy/hr) and updates it after each attempt.
+CREATE TABLE IF NOT EXISTS agent_executor_state (
+    agent_id        BIGINT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    action          TEXT NOT NULL CHECK (action IN ('launch', 'buy', 'sell', 'post')),
+    last_run_at     TIMESTAMPTZ,
+    last_tx_hash    TEXT,
+    run_count       INTEGER NOT NULL DEFAULT 0,
+    fail_count      INTEGER NOT NULL DEFAULT 0,
+    last_error      TEXT,
+    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (agent_id, action)
+);
 
 -- ─── Agent Templates ───────────────────────────────────────────────────────
 -- Pre-built agent strategies that users can deploy from the marketplace.

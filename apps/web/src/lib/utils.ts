@@ -80,12 +80,12 @@ export function formatMarketCap(mcap: string | number): string {
 }
 
 /** Calculate bonding curve progress (0-100%).
- * Market cap starts at $4,000 and graduates at $25,000. */
+ * Market cap starts at $4,000 and graduates at $30,000. */
 export function bondingCurveProgress(marketCap: string | number): number {
   const mcap = Number(marketCap);
   if (isNaN(mcap)) return 0;
   const start = 4000;
-  const graduate = 25000;
+  const graduate = 30000;
   const progress = ((mcap - start) / (graduate - start)) * 100;
   return Math.max(0, Math.min(100, progress));
 }

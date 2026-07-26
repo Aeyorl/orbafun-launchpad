@@ -50,6 +50,7 @@ interface AgentRequest extends Request {
     dailyLimit: bigint;
     monthlyLimit: bigint;
   };
+  wallet?: string; // set by AuthGuard (wallet signature auth)
 }
 
 @Controller('agents')
@@ -392,6 +393,87 @@ export class AgentsController {
     const idNum = parseInt(id, 10);
     if (isNaN(idNum)) throw new BadRequestException('Invalid template ID');
     return this.templateService.deployFromTemplate(idNum, body);
+  }
+
+  /**
+   * POST /agents/templates/:id/deploy-self
+   * Self-serve deploy: any authenticated wallet can deploy an agent from a
+   * template. The authenticated wallet becomes the agent's owner_wallet
+   * (for management + executor toggle). The platform deployer wallet still
+   * funds launches — the owner pays nothing.
+   * Body: { name?, description? }
+   * Returns: { agentId, apiKey, name }
+   */
+  @Post('templates/:id/deploy-self')
+  @Throttle({ default: { ttl: 60_000, limit: 3 } })
+  @UseGuards(AuthGuard)
+  async deployFromTemplateSelf(
+    @Param('id') id: string,
+    @Body() body: { name?: string; description?: string },
+    @Req() req: AgentRequest,
+  ) {
+    const idNum = parseInt(id, 10);
+    if (isNaN(idNum)) throw new BadRequestException('Invalid template ID');
+    if (!req.wallet) throw new BadRequestException('Wallet not authenticated');
+    return this.templateService.deployFromTemplate(idNum, {
+      name: body.name,
+      description: body.description,
+      ownerWallet: req.wallet,
+    });
+  }
+
+  // ─── Self-serve: my deployed agents ────────────────────────────────────
+
+  /**
+   * GET /agents/me/deployed
+   * List agents deployed by the authenticated wallet (via self-serve deploy).
+   * Auth: wallet signature (AuthGuard).
+   */
+  @Get('me/deployed')
+  @UseGuards(AuthGuard)
+  async listMyDeployedAgents(
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Req() req?: AgentRequest,
+  ) {
+    const limitNum = limit ? parseInt(limit, 10) : 20;
+    const offsetNum = offset ? parseInt(offset, 10) : 0;
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+      throw new BadRequestException('Invalid limit (1-100)');
+    }
+    if (isNaN(offsetNum) || offsetNum < 0) {
+      throw new BadRequestException('Invalid offset');
+    }
+    if (!req.wallet) throw new BadRequestException('Wallet not authenticated');
+    return this.agentsService.listAgentsByOwner(req.wallet, limitNum, offsetNum);
+  }
+
+  // ─── Self-serve: executor toggle ───────────────────────────────────────
+
+  /**
+   * POST /agents/:agentId/executor/toggle
+   * Toggle the autonomous executor on/off for an agent the caller owns.
+   * Ownership verified inside the service (owner_wallet match).
+   * Auth: wallet signature (AuthGuard).
+   */
+  @Post(':agentId/executor/toggle')
+  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  @UseGuards(AuthGuard)
+  async toggleExecutor(
+    @Param('agentId') agentId: string,
+    @Req() req: AgentRequest,
+  ) {
+    if (!req.wallet) throw new BadRequestException('Wallet not authenticated');
+    return this.agentsService.toggleExecutor(agentId, req.wallet);
+  }
+
+  /**
+   * GET /agents/:agentId/executor/state
+   * Get the executor cooldown state + run counts for an agent (public).
+   */
+  @Get(':agentId/executor/state')
+  async getExecutorState(@Param('agentId') agentId: string) {
+    return this.agentsService.getExecutorState(agentId);
   }
 
   // ─── Marketplace: Leaderboard ──────────────────────────────────────────

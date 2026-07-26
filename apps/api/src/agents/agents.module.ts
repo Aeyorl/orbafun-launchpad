@@ -5,6 +5,7 @@ import { ApiKeyGuard } from './api-key.guard';
 import { DeployerService } from './deployer.service';
 import { TemplateService } from './template.service';
 import { TipService } from './tip.service';
+import { AgentExecutorService } from './agent-executor.service';
 import { MessagesModule } from '../messages/messages.module';
 import { TokenMetadataModule } from '../token-metadata/token-metadata.module';
 import { AuthModule } from '../auth/auth.module';
@@ -12,7 +13,7 @@ import { AuthModule } from '../auth/auth.module';
 @Module({
   imports: [MessagesModule, TokenMetadataModule, AuthModule],
   controllers: [AgentsController],
-  providers: [AgentsService, ApiKeyGuard, DeployerService, TemplateService, TipService],
-  exports: [AgentsService, ApiKeyGuard, DeployerService, TemplateService, TipService],
+  providers: [AgentsService, ApiKeyGuard, DeployerService, TemplateService, TipService, AgentExecutorService],
+  exports: [AgentsService, ApiKeyGuard, DeployerService, TemplateService, TipService, AgentExecutorService],
 })
 export class AgentsModule {}

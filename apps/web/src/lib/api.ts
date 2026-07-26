@@ -118,6 +118,7 @@ export interface TokenMetadata {
   telegram: string | null;
   discord: string | null;
   description: string | null;
+  banner: string | null;
 }
 
 export interface UserProfile {
@@ -291,7 +292,23 @@ export const api = {
   getTemplate: (id: number) =>
     fetchApi<AgentTemplate>(`/agents/templates/${id}`),
 
+  /**
+   * Self-serve deploy — any authenticated wallet can deploy an agent from a
+   * template. The authenticated wallet becomes the agent's owner. Uses the
+   * /deploy-self endpoint (AuthGuard, not AdminGuard).
+   */
   deployTemplate: (id: number, overrides?: { name?: string; description?: string }, authToken?: string | null, wallet?: string) =>
+    fetchApi<{ agentId: string; apiKey: string; name: string }>(
+      `/agents/templates/${id}/deploy-self`,
+      {
+        method: 'POST',
+        body: JSON.stringify(overrides || {}),
+        headers: authHeaders(authToken, wallet),
+      },
+    ),
+
+  /** Admin-only deploy (legacy endpoint, kept for platform operators). */
+  deployTemplateAdmin: (id: number, overrides?: { name?: string; description?: string }, authToken?: string | null, wallet?: string) =>
     fetchApi<{ agentId: string; apiKey: string; name: string }>(
       `/agents/templates/${id}/deploy`,
       {
@@ -299,6 +316,26 @@ export const api = {
         body: JSON.stringify(overrides || {}),
         headers: authHeaders(authToken, wallet),
       },
+    ),
+
+  /** List agents deployed by the authenticated wallet (self-serve). */
+  listMyDeployedAgents: (limit = 20, offset = 0, authToken?: string | null, wallet?: string) =>
+    fetchApi<{ agents: DeployedAgent[]; total: number }>(
+      `/agents/me/deployed?limit=${limit}&offset=${offset}`,
+      { headers: authHeaders(authToken, wallet) },
+    ),
+
+  /** Toggle the autonomous executor on/off for an agent the caller owns. */
+  toggleExecutor: (agentId: string, authToken?: string | null, wallet?: string) =>
+    fetchApi<{ executorEnabled: boolean }>(
+      `/agents/${agentId}/executor/toggle`,
+      { method: 'POST', headers: authHeaders(authToken, wallet) },
+    ),
+
+  /** Get executor cooldown state + run counts for an agent (public). */
+  getExecutorState: (agentId: string) =>
+    fetchApi<{ executorEnabled: boolean; state: ExecutorStateEntry[] }>(
+      `/agents/${agentId}/executor/state`,
     ),
 
   // Agent leaderboard
@@ -433,8 +470,10 @@ export interface Agent {
   name: string;
   description: string | null;
   wallet: string | null;
+  owner_wallet?: string | null;
   daily_limit: string;
   monthly_limit: string;
+  executor_enabled?: boolean;
   active: boolean;
   created_at: string;
   stats?: {
@@ -449,4 +488,29 @@ export interface Agent {
   total_volume?: string;
   total_tips?: string;
   metric_value?: string;
+}
+
+/** Agent deployed by the current user via self-serve deploy (GET /agents/me/deployed). */
+export interface DeployedAgent {
+  agent_id: string;
+  name: string;
+  description: string | null;
+  wallet: string | null;
+  daily_limit: string;
+  monthly_limit: string;
+  executor_enabled: boolean;
+  active: boolean;
+  created_at: string;
+  launch_count: string;
+  trade_count: string;
+}
+
+export interface ExecutorStateEntry {
+  action: 'launch' | 'buy' | 'sell' | 'post';
+  last_run_at: string | null;
+  last_tx_hash: string | null;
+  run_count: number;
+  fail_count: number;
+  last_error: string | null;
+  updated_at: string;
 }
