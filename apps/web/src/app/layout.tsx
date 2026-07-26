@@ -29,8 +29,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
+        {/* No-flash theme script — runs before hydration to set the correct
+            theme class on <html> from localStorage (or default to dark).
+            Must be inline + in <head> so it executes before the body renders. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('orba-theme');if(t==='light'){document.documentElement.classList.remove('dark');}else{document.documentElement.classList.add('dark');}}catch(e){document.documentElement.classList.add('dark');}})();`,
+          }}
+        />
         <link
           rel="preconnect"
           href="https://fonts.googleapis.com"
@@ -49,9 +57,9 @@ export default function RootLayout({
         {/* Faint bonding-curve linework motif — traces an upward convex curve
             (the constant-product bonding-curve shape) behind the content,
             echoing the product without being literal. Fixed so it stays
-            composed as you scroll; sienna-tinted at ~4% so it reads as
-            texture, not decoration. A soft blurred duplicate underneath gives
-            the line a barely-there halo. */}
+            composed as you scroll; USDC-blue-tinted via CSS variables so it
+            adapts to the active theme. A soft blurred duplicate underneath
+            gives the line a barely-there halo. */}
         <div aria-hidden="true" className="fixed inset-0 -z-10 pointer-events-none overflow-hidden">
           <svg
             viewBox="0 0 1200 800"
@@ -69,14 +77,14 @@ export default function RootLayout({
             <path
               d="M -60 860 Q 280 860 580 520 T 1260 -60"
               fill="none"
-              stroke="rgba(93, 42, 26, 0.05)"
+              stroke="var(--curve-halo)"
               strokeWidth="48"
               filter="url(#curve-blur)"
             />
             <path
               d="M -60 860 Q 280 860 580 520 T 1260 -60"
               fill="none"
-              stroke="rgba(93, 42, 26, 0.075)"
+              stroke="var(--curve-stroke)"
               strokeWidth="1.25"
             />
           </svg>
@@ -92,19 +100,19 @@ export default function RootLayout({
             toastOptions={{
               duration: 4000,
               style: {
-                background: '#ffffff',
-                color: '#17191c',
-                border: '1px solid #ececec',
+                background: 'var(--color-bg-card)',
+                color: 'var(--color-text-primary)',
+                border: '1px solid var(--color-bg-border)',
                 borderRadius: '0px',
                 fontSize: '14px',
-                boxShadow: '0 0 0 1px rgba(4, 23, 43, 0.05), 0 8px 40px 0 rgba(0, 0, 0, 0.1)',
+                boxShadow: 'var(--shadow-subtle-2)',
               },
               success: {
-                iconTheme: { primary: '#17191c', secondary: '#ffffff' },
+                iconTheme: { primary: '#2775CA', secondary: '#ffffff' },
                 ariaProps: { role: 'status', 'aria-live': 'polite' },
               },
               error: {
-                iconTheme: { primary: '#9b2c2c', secondary: '#ffffff' },
+                iconTheme: { primary: '#ef4444', secondary: '#ffffff' },
                 ariaProps: { role: 'alert', 'aria-live': 'assertive' },
               },
             }}

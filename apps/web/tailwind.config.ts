@@ -1,6 +1,7 @@
 import type { Config } from 'tailwindcss';
 
 const config: Config = {
+  darkMode: 'class',
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -9,32 +10,36 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Steep design system — serif analytics on warm paper (light theme).
-        // Semantic tokens remapped so existing components adopt the new
-        // palette without per-file edits. See DESIGN.md for the source spec.
+        // Theme-aware semantic tokens — values are space-separated RGB
+        // channels defined in globals.css (:root for light, .dark for dark).
+        // Using rgb(var(--...) / <alpha-value>) so Tailwind's /opacity
+        // modifier (e.g. bg-accent-blue/10) works correctly. Switching the
+        // `dark` class on <html> swaps all colors instantly. Arc/USDC blue
+        // (#2775CA) is the primary accent in both modes. Dark mode is the
+        // default (degens prefer it); light mode is opt-in via the toggle.
         bg: {
-          base: '#ffffff',      // Paper White — page canvas
-          card: '#f2f2f3',      // Mist Gray — card surfaces, nested content
-          hover: '#fafafb',     // Fog White — hover surfaces, alt sections
-          input: '#ffffff',     // Paper White — input fills (border carries definition)
-          border: '#ececec',    // Hairline border
+          base: 'rgb(var(--color-bg-base) / <alpha-value>)',
+          card: 'rgb(var(--color-bg-card) / <alpha-value>)',
+          hover: 'rgb(var(--color-bg-hover) / <alpha-value>)',
+          input: 'rgb(var(--color-bg-input) / <alpha-value>)',
+          border: 'rgb(var(--color-bg-border) / <alpha-value>)',
         },
         accent: {
-          green: '#17191c',     // Ink Black — primary action (filled pill buttons)
-          greenDim: '#2a2d33',  // dimmed ink for hover/secondary
-          blue: '#5d2a1a',      // Sienna Brown — secondary accent (on peach surfaces)
-          blueDim: '#4a2115',   // dimmed sienna
-          purple: '#5d2a1a',    // Sienna Brown — graduation/special → warm accent
-          red: '#9b2c2c',       // muted brick red — sell / danger (functional)
-          orange: '#b45309',    // muted amber — warning / near migration
-          yellow: '#a16207',    // muted gold — caution
-          peach: '#fbe1d1',     // Blush Peach — editorial accent card surface
-          sienna: '#5d2a1a',    // Sienna Brown — text/stroke on peach
+          green: 'rgb(var(--color-accent-primary) / <alpha-value>)',
+          greenDim: 'rgb(var(--color-accent-primary-dim) / <alpha-value>)',
+          blue: 'rgb(var(--color-accent-primary) / <alpha-value>)',
+          blueDim: 'rgb(var(--color-accent-primary-dim) / <alpha-value>)',
+          purple: 'rgb(var(--color-accent-grad) / <alpha-value>)',
+          red: 'rgb(var(--color-accent-red) / <alpha-value>)',
+          orange: 'rgb(var(--color-accent-orange) / <alpha-value>)',
+          yellow: 'rgb(var(--color-accent-yellow) / <alpha-value>)',
+          peach: 'rgb(var(--color-accent-surface) / <alpha-value>)',
+          sienna: 'rgb(var(--color-accent-on-surface) / <alpha-value>)',
         },
         text: {
-          primary: '#17191c',   // Ink Black — main text
-          secondary: '#777b86', // Slate Gray — secondary text, links
-          muted: '#979799',     // Ash Gray — tertiary labels, category tags
+          primary: 'rgb(var(--color-text-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--color-text-secondary) / <alpha-value>)',
+          muted: 'rgb(var(--color-text-muted) / <alpha-value>)',
         },
       },
       fontFamily: {
@@ -55,9 +60,9 @@ const config: Config = {
         full: '0',
       },
       boxShadow: {
-        subtle: '0 0 0 1px rgba(4, 23, 43, 0.05), 0 4px 24px 0 rgba(0, 0, 0, 0.08)',
-        'subtle-2': '0 0 0 1px rgba(4, 23, 43, 0.05), 0 8px 40px 0 rgba(0, 0, 0, 0.1)',
-        'subtle-3': '0 0 0 1px rgba(4, 23, 43, 0.05), 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+        subtle: 'var(--shadow-subtle)',
+        'subtle-2': 'var(--shadow-subtle-2)',
+        'subtle-3': 'var(--shadow-subtle-3)',
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-out',
@@ -75,8 +80,8 @@ const config: Config = {
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
         pulseGreen: {
-          '0%, 100%': { boxShadow: '0 0 0 0 rgba(23, 25, 28, 0.25)' },
-          '50%': { boxShadow: '0 0 0 8px rgba(23, 25, 28, 0)' },
+          '0%, 100%': { boxShadow: '0 0 0 0 var(--accent-glow)' },
+          '50%': { boxShadow: '0 0 0 8px transparent' },
         },
         ticker: {
           '0%': { transform: 'translateX(0)' },

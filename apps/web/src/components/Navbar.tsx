@@ -6,6 +6,7 @@ import { formatUsdc, formatNativeUsdc, shortenAddress } from '@/lib/utils';
 import { arcTestnet } from 'viem/chains';
 import { useState, useEffect } from 'react';
 import { SearchBar } from './SearchBar';
+import { ThemeToggle } from './ThemeToggle';
 
 export function Navbar() {
   const { address, isConnected, chain } = useAccount();
@@ -76,6 +77,8 @@ export function Navbar() {
 
         {/* Wallet + mobile toggles */}
         <div className="flex items-center gap-2 flex-shrink-0">
+          {/* Theme toggle (dark/light) */}
+          <ThemeToggle />
           {/* Mobile search toggle button */}
           <button
             onClick={() => {

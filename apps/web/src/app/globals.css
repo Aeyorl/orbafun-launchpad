@@ -8,29 +8,92 @@
     --font-jetbrains: 'JetBrains Mono', monospace;
     --font-signifier: 'Source Serif 4', ui-serif, Georgia, Cambria, serif;
     --font-sohne: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+    /* ─── Light mode ───────────────────────────────────────────────
+       Paper-white canvas with USDC blue (#2775CA) accent. Blue-tinted
+       grays for card surfaces keep the palette cohesive with Arc.
+       Colors are stored as space-separated RGB channels (no rgb() wrapper)
+       so Tailwind's /opacity modifier works via rgb(var(--...) / <alpha>). */
+    --color-bg-base: 255 255 255;
+    --color-bg-card: 244 246 250;
+    --color-bg-hover: 238 242 248;
+    --color-bg-input: 255 255 255;
+    --color-bg-border: 228 232 240;
+
+    --color-text-primary: 10 22 40;
+    --color-text-secondary: 90 101 128;
+    --color-text-muted: 139 149 168;
+
+    --color-accent-primary: 39 117 202;       /* Arc / USDC blue #2775CA */
+    --color-accent-primary-dim: 26 90 176;     /* hover / secondary */
+    --color-accent-grad: 39 117 202;           /* graduation → blue */
+    --color-accent-red: 220 38 38;             /* sell / danger */
+    --color-accent-orange: 194 65 12;          /* warning */
+    --color-accent-yellow: 161 98 7;           /* caution */
+    --color-accent-surface: 219 234 254;       /* editorial accent surface (light blue) */
+    --color-accent-on-surface: 30 58 95;       /* text on accent surface */
+
+    /* Glow + grid tints (blue) — full rgba values, not RGB channels */
+    --glow-primary: rgba(39, 117, 202, 0.10);
+    --glow-soft: rgba(219, 234, 254, 0.45);
+    --glow-lower: rgba(39, 117, 202, 0.04);
+    --grid-line: rgba(39, 117, 202, 0.025);
+    --curve-stroke: rgba(39, 117, 202, 0.075);
+    --curve-halo: rgba(39, 117, 202, 0.05);
+    --accent-glow: rgba(39, 117, 202, 0.35);
+
+    /* Shadows */
+    --shadow-subtle: 0 0 0 1px rgba(4, 23, 43, 0.06), 0 4px 24px 0 rgba(0, 0, 0, 0.06);
+    --shadow-subtle-2: 0 0 0 1px rgba(4, 23, 43, 0.06), 0 8px 40px 0 rgba(0, 0, 0, 0.08);
+    --shadow-subtle-3: 0 0 0 1px rgba(4, 23, 43, 0.06), 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+  }
+
+  .dark {
+    /* ─── Dark mode (default for degens) ───────────────────────────
+       Deep navy-black with blue tint, USDC blue accent. Cards are a
+       slightly lifted navy; borders carry a blue-gray hairline. The
+       blue glow is more prominent than in light mode to give depth. */
+    --color-bg-base: 10 14 26;
+    --color-bg-card: 17 23 38;
+    --color-bg-hover: 26 34 54;
+    --color-bg-input: 15 21 36;
+    --color-bg-border: 30 42 68;
+
+    --color-text-primary: 232 234 240;
+    --color-text-secondary: 139 149 168;
+    --color-text-muted: 90 101 128;
+
+    --color-accent-primary: 39 117 202;       /* Arc / USDC blue — same in both modes */
+    --color-accent-primary-dim: 74 154 224;   /* brighter hover (dark mode needs lift) */
+    --color-accent-grad: 96 165 250;          /* graduation → brighter blue on dark */
+    --color-accent-red: 239 68 68;            /* sell / danger — brighter on dark */
+    --color-accent-orange: 249 115 22;        /* warning */
+    --color-accent-yellow: 234 179 8;         /* caution */
+    --color-accent-surface: 26 42 74;         /* editorial accent surface (deep blue) */
+    --color-accent-on-surface: 147 197 253;   /* text on accent surface */
+
+    --glow-primary: rgba(39, 117, 202, 0.14);
+    --glow-soft: rgba(26, 42, 74, 0.5);
+    --glow-lower: rgba(39, 117, 202, 0.06);
+    --grid-line: rgba(39, 117, 202, 0.03);
+    --curve-stroke: rgba(39, 117, 202, 0.09);
+    --curve-halo: rgba(39, 117, 202, 0.06);
+    --accent-glow: rgba(39, 117, 202, 0.4);
+
+    --shadow-subtle: 0 0 0 1px rgba(0, 0, 0, 0.3), 0 4px 24px 0 rgba(0, 0, 0, 0.3);
+    --shadow-subtle-2: 0 0 0 1px rgba(0, 0, 0, 0.3), 0 8px 40px 0 rgba(0, 0, 0, 0.4);
+    --shadow-subtle-3: 0 0 0 1px rgba(0, 0, 0, 0.3), 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
   }
 
   body {
     @apply bg-bg-base text-text-primary font-sans antialiased;
-    /* Warm terracotta glow tied to the sienna #5d2a1a of "Orba" in the headline.
-       Off-center (slightly left, upper third) so it reads as intentional rather
-       than a stock centered hero glow. A lifted terracotta rgba(150,72,42,...)
-       is used instead of raw sienna so the wash reads as warmth, not a brown
-       stain. A second very faint wash lower on the page + a barely-there
-       terracotta-tinted grid carry the texture past the hero so the stat cards
-       and token board don't sit on flat cream. */
-    background-color: #ffffff;
+    background-color: rgb(var(--color-bg-base));
     background-image:
-      /* Primary off-center terracotta glow — sits behind the headline */
-      radial-gradient(ellipse 65% 42% at 40% 6%, rgba(150, 72, 42, 0.11), transparent 62%),
-      /* Soft warm wash continuing down the page — keeps warmth past the hero */
-      radial-gradient(ellipse 95% 70% at 50% 38%, rgba(251, 225, 209, 0.16), transparent 72%),
-      /* Lower-page warmth — faint, so the footer area isn't flat white */
-      radial-gradient(ellipse 80% 50% at 60% 92%, rgba(150, 72, 42, 0.05), transparent 70%),
-      /* Barely-there grid — terracotta-tinted at ~2% opacity, continues the
-         considered-texture feel down the whole page */
-      linear-gradient(rgba(93, 42, 26, 0.022) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(93, 42, 26, 0.022) 1px, transparent 1px);
+      radial-gradient(ellipse 65% 42% at 40% 6%, var(--glow-primary), transparent 62%),
+      radial-gradient(ellipse 95% 70% at 50% 38%, var(--glow-soft), transparent 72%),
+      radial-gradient(ellipse 80% 50% at 60% 92%, var(--glow-lower), transparent 70%),
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
     background-size:
       100% 100%,
       100% 100%,
@@ -47,18 +110,18 @@
     letter-spacing: -0.015em;
   }
 
-  /* Visible focus ring for keyboard users only (mouse clicks don't show it) */
+  /* Visible focus ring for keyboard users only */
   :focus-visible {
-    @apply outline-none ring-2 ring-accent-green ring-offset-2 ring-offset-bg-base;
+    @apply outline-none ring-2 ring-accent-blue ring-offset-2 ring-offset-bg-base;
   }
 
   /* Skip-to-content link for screen readers / keyboard users */
   .skip-link {
-    @apply absolute left-2 top-2 z-[100] bg-accent-green text-white px-3 py-1.5 text-sm font-semibold
+    @apply absolute left-2 top-2 z-[100] bg-accent-blue text-white px-3 py-1.5 text-sm font-semibold
            -translate-y-20 transition-transform focus:translate-y-0;
   }
 
-  /* Scrollbar styling — light theme */
+  /* Scrollbar styling */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -67,7 +130,7 @@
     @apply bg-bg-base;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-bg-border rounded-full;
+    @apply bg-bg-border;
   }
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-text-muted;
@@ -84,67 +147,76 @@
 }
 
 @layer components {
-  /* Card component — Mist Gray surface, 24px radius, no shadow (Steep Neutral Card) */
+  /* Card component — surface, sharp corners (0px radius per spec) */
   .card {
-    @apply bg-bg-card rounded-xl p-5 transition-colors;
+    @apply bg-bg-card p-5 transition-colors;
   }
   .card-hover {
     @apply hover:bg-bg-hover cursor-pointer;
   }
 
-  /* Floating product artifact — white surface with subtle shadow (Steep elevated card) */
+  /* Floating product artifact — elevated surface with subtle shadow */
   .card-elevated {
-    @apply bg-white rounded-lg p-5 shadow-subtle-3;
+    @apply bg-bg-base p-5 shadow-subtle-3 border border-bg-border;
   }
 
-  /* Accent Peach card — editorial highlight (use at most once per page) */
+  /* Accent card — editorial highlight (light/dark blue surface) */
   .card-peach {
-    @apply bg-accent-peach text-accent-sienna rounded-xl p-5;
+    @apply bg-accent-peach text-accent-sienna p-5;
   }
 
-  /* Button variants — pill shape (9999px), Steep signature */
+  /* Button variants — sharp corners (0px radius per spec) */
   .btn {
-    @apply px-5 py-2 rounded-full font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed;
+    @apply px-5 py-2 font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed;
   }
   .btn-primary {
-    @apply btn bg-accent-green text-white hover:bg-accent-greenDim;
+    @apply btn bg-accent-blue text-white hover:bg-accent-blueDim;
   }
   .btn-secondary {
-    @apply btn bg-transparent text-accent-green border border-accent-green hover:bg-accent-green hover:text-white;
+    @apply btn bg-transparent text-accent-blue border border-accent-blue hover:bg-accent-blue hover:text-white;
   }
   .btn-buy {
-    @apply btn bg-accent-green text-white hover:bg-accent-greenDim;
+    @apply btn bg-accent-blue text-white hover:bg-accent-blueDim;
   }
   .btn-sell {
-    @apply btn bg-accent-red text-white hover:bg-red-800;
+    @apply btn bg-accent-red text-white hover:opacity-90;
   }
 
-  /* Input fields — white fill, hairline border, 16px radius */
+  /* Input fields — surface fill, hairline border, sharp corners */
   .input,
   .input-field {
-    @apply bg-white border border-bg-border rounded-md px-4 py-2.5 text-text-primary
-           placeholder:text-text-muted focus:outline-none focus:border-accent-green/40
+    @apply bg-bg-input border border-bg-border px-4 py-2.5 text-text-primary
+           placeholder:text-text-muted focus:outline-none
            transition-colors w-full;
   }
+  .input:focus,
+  .input-field:focus {
+    border-color: rgb(var(--color-accent-primary) / 0.6);
+  }
 
-  /* Badge — pill shape */
+  /* Badge */
   .badge {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium;
   }
   .badge-green {
-    @apply badge bg-accent-green/10 text-accent-green;
+    @apply badge text-accent-blue;
+    background-color: rgb(var(--color-accent-primary) / 0.1);
   }
   .badge-blue {
-    @apply badge bg-accent-peach text-accent-sienna;
+    @apply badge text-accent-sienna;
+    background-color: rgb(var(--color-accent-surface));
   }
   .badge-purple {
-    @apply badge bg-accent-peach text-accent-sienna;
+    @apply badge text-accent-purple;
+    background-color: rgb(var(--color-accent-grad) / 0.15);
   }
   .badge-red {
-    @apply badge bg-accent-red/10 text-accent-red;
+    @apply badge text-accent-red;
+    background-color: rgb(var(--color-accent-red) / 0.1);
   }
   .badge-orange {
-    @apply badge bg-accent-orange/10 text-accent-orange;
+    @apply badge text-accent-orange;
+    background-color: rgb(var(--color-accent-orange) / 0.1);
   }
   .badge-muted {
     @apply badge bg-bg-card text-text-secondary;
@@ -152,33 +224,31 @@
 
   /* Progress bar (bonding curve) */
   .progress-bar {
-    @apply w-full h-2 bg-bg-card rounded-full overflow-hidden;
+    @apply w-full h-2 bg-bg-card overflow-hidden;
   }
   .progress-fill {
-    @apply h-full bg-accent-green transition-all duration-500;
+    @apply h-full bg-accent-blue transition-all duration-500;
   }
 
-  /* Tab navigation — whisper-quiet, no background */
+  /* Tab navigation — whisper-quiet */
   .tab {
-    @apply px-3 py-1.5 rounded-full text-sm font-medium text-text-secondary
+    @apply px-3 py-1.5 text-sm font-medium text-text-secondary
            hover:text-text-primary hover:bg-bg-card transition-colors cursor-pointer;
   }
   .tab-active {
-    @apply bg-bg-card text-text-primary;
+    @apply bg-bg-card text-accent-blue;
   }
 }
 
 @layer utilities {
-  /* Number formatting */
   .tabular-nums {
     font-variant-numeric: tabular-nums;
   }
 
-  /* Glow effect for active elements — subtle on light theme */
   .glow-green {
-    box-shadow: 0 0 20px rgba(23, 25, 28, 0.08);
+    box-shadow: 0 0 20px var(--accent-glow);
   }
   .glow-blue {
-    box-shadow: 0 0 20px rgba(93, 42, 26, 0.08);
+    box-shadow: 0 0 20px var(--accent-glow);
   }
 }

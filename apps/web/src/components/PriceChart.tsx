@@ -1,9 +1,44 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import { Trade } from '@/lib/api';
 import { formatUsdDirect, formatMarketCap, formatPrice, timeAgo } from '@/lib/utils';
+
+/** Reads theme-aware CSS variables so recharts SVG attributes (which can't
+ *  use var() directly) stay in sync with the active dark/light theme.
+ *  Colors are stored as space-separated RGB channels, so we wrap in rgb(). */
+function useThemeColors() {
+  const [colors, setColors] = useState({
+    stroke: '#2775CA',
+    axisLine: '#1e2a44',
+    tick: '#8b95a8',
+    tooltipBg: '#111726',
+    tooltipBorder: '#1e2a44',
+    tooltipText: '#e8eaf0',
+  });
+
+  useEffect(() => {
+    const read = () => {
+      const cs = getComputedStyle(document.documentElement);
+      const get = (v: string) => `rgb(${cs.getPropertyValue(v).trim()})`;
+      setColors({
+        stroke: get('--color-accent-primary') || '#2775CA',
+        axisLine: get('--color-bg-border') || '#1e2a44',
+        tick: get('--color-text-muted') || '#8b95a8',
+        tooltipBg: get('--color-bg-card') || '#111726',
+        tooltipBorder: get('--color-bg-border') || '#1e2a44',
+        tooltipText: get('--color-text-primary') || '#e8eaf0',
+      });
+    };
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
+  return colors;
+}
 
 type Timeframe = '5m' | '15m' | '1h' | '6h' | '24h' | 'all';
 
@@ -22,6 +57,7 @@ const TIMEFRAMES: { key: Timeframe; label: string; ms: number }[] = [
  */
 export function PriceChart({ trades }: { trades: Trade[] }) {
   const [timeframe, setTimeframe] = useState<Timeframe>('all');
+  const tc = useThemeColors();
 
   // Filter trades by timeframe, then sort chronologically.
   const data = useMemo(() => {
@@ -100,33 +136,32 @@ export function PriceChart({ trades }: { trades: Trade[] }) {
         <AreaChart data={data}>
           <defs>
             <linearGradient id="colorMcap" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#5d2a1a" stopOpacity={0.18} />
-              <stop offset="95%" stopColor="#5d2a1a" stopOpacity={0} />
+              <stop offset="5%" stopColor={tc.stroke} stopOpacity={0.2} />
+              <stop offset="95%" stopColor={tc.stroke} stopOpacity={0} />
             </linearGradient>
           </defs>
           <XAxis
             dataKey="time"
             tickFormatter={(t) => timeAgo(t)}
-            tick={{ fill: '#979799', fontSize: 11 }}
-            axisLine={{ stroke: '#ececec' }}
+            tick={{ fill: tc.tick, fontSize: 11 }}
+            axisLine={{ stroke: tc.axisLine }}
             tickLine={false}
           />
           <YAxis
             domain={[minMcap - padding, maxMcap + padding]}
             tickFormatter={(v) => formatUsdDirect(v)}
-            tick={{ fill: '#979799', fontSize: 11 }}
-            axisLine={{ stroke: '#ececec' }}
+            tick={{ fill: tc.tick, fontSize: 11 }}
+            axisLine={{ stroke: tc.axisLine }}
             tickLine={false}
             width={60}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: '#ffffff',
-              border: '1px solid #ececec',
+              backgroundColor: tc.tooltipBg,
+              border: `1px solid ${tc.tooltipBorder}`,
               borderRadius: '0px',
               fontSize: '12px',
-              color: '#17191c',
-              boxShadow: '0 0 0 1px rgba(4, 23, 43, 0.05), 0 8px 40px 0 rgba(0, 0, 0, 0.1)',
+              color: tc.tooltipText,
             }}
             labelFormatter={(t) => new Date(t as number).toLocaleString()}
             formatter={(value: number, name: string) => [
@@ -137,7 +172,7 @@ export function PriceChart({ trades }: { trades: Trade[] }) {
           <Area
             type="monotone"
             dataKey="marketCap"
-            stroke="#5d2a1a"
+            stroke={tc.stroke}
             strokeWidth={2}
             fill="url(#colorMcap)"
           />

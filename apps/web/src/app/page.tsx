@@ -68,7 +68,7 @@ export default function LandingPage() {
       <section className="text-center py-16 animate-fade-in">
         <h1 className="text-4xl md:text-6xl lg:text-7xl font-serif font-normal tracking-tight mb-5 leading-tight">
           Launch a token on{' '}
-          <em className="not-italic text-accent-sienna">Orba</em>
+          <em className="not-italic text-accent-blue">Orba</em>
         </h1>
         <p className="text-lg text-text-secondary max-w-2xl mx-auto mb-8">
           The stablecoin-native launchpad. Fair bonding curves priced in USDC,
