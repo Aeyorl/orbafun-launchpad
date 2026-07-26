@@ -58,4 +58,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://localhost:4000/tokens?limit=1').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 # Start the API.
-CMD ["node", "apps/api/dist/main.js"]
+# Runs db:migrate first (idempotent — uses IF NOT EXISTS / ON CONFLICT, safe
+# on every boot) then starts the NestJS server. If migration fails the
+# container exits and Render restarts it.
+CMD ["sh", "-c", "node apps/api/dist/db/migrate.js && node apps/api/dist/main.js"]
