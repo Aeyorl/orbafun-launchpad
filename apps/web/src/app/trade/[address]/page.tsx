@@ -153,17 +153,12 @@ export default function TradePage() {
       )}
 
       {/* Top Token Header & Hero Price */}
-      <div className="relative">
-        <TokenHeader
-          token={token}
-          change24h={change24h}
-          totalHolders={totalHolders}
-        />
-        <div className="absolute right-4 top-2.5 flex items-center gap-2">
-          <FavoriteButton tokenAddress={token.contract_address} />
-          <ShareButton tokenName={token.name} tokenSymbol={token.symbol} />
-        </div>
-      </div>
+      <TokenHeader
+        token={token}
+        change24h={change24h}
+        totalHolders={totalHolders}
+        onSelectInfoTab={() => setActiveTab('info')}
+      />
 
       {/* Main Terminal Section: Chart (~70%) + Buy/Sell (~30%) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
