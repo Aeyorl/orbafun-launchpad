@@ -86,17 +86,26 @@ export class TokensService {
       volume: 'ORDER BY t.volume_24h DESC',
     }[sort];
 
-    const statusClause = status === 'all' ? '' : `AND t.status = $1`;
-    const searchClause = search
-      ? `AND (t.name ILIKE $2 OR t.symbol ILIKE $2 OR t.contract_address ILIKE $2)`
-      : '';
-
-    const params: (string | number)[] = [];
+    // Build WHERE clauses and params with correct $N indexing
+    const filterParams: (string | number)[] = [];
     let paramIdx = 1;
-    if (status !== 'all') params.push(status), paramIdx++;
-    if (search) params.push(`%${search}%`), paramIdx++;
-    params.push(limit), paramIdx++;
-    params.push(offset), paramIdx++;
+
+    let statusClause = '';
+    if (status !== 'all') {
+      statusClause = `AND t.status = $${paramIdx}`;
+      filterParams.push(status);
+      paramIdx++;
+    }
+
+    let searchClause = '';
+    if (search) {
+      searchClause = `AND (t.name ILIKE $${paramIdx} OR t.symbol ILIKE $${paramIdx} OR t.contract_address ILIKE $${paramIdx})`;
+      filterParams.push(`%${search}%`);
+      paramIdx++;
+    }
+
+    const limitIdx = paramIdx;
+    const offsetIdx = paramIdx + 1;
 
     const query = `
       SELECT t.*, u.username as creator_username
@@ -104,7 +113,7 @@ export class TokensService {
       LEFT JOIN users u ON t.creator_wallet = u.wallet
       WHERE 1=1 ${statusClause} ${searchClause}
       ${orderClause}
-      LIMIT $${paramIdx - 2} OFFSET $${paramIdx - 1}
+      LIMIT $${limitIdx} OFFSET $${offsetIdx}
     `;
 
     const countQuery = `
@@ -113,9 +122,11 @@ export class TokensService {
       WHERE 1=1 ${statusClause} ${searchClause}
     `;
 
+    const queryParams = [...filterParams, limit, offset];
+
     const [tokensResult, countResult] = await Promise.all([
-      this.db.query(query, params),
-      this.db.query(countQuery, params.slice(0, paramIdx - 3)),
+      this.db.query(query, queryParams),
+      this.db.query(countQuery, filterParams),
     ]);
 
     const result = {
