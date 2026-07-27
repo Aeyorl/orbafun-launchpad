@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { api, Token, SortOption } from '@/lib/api';
 import { TokenGrid } from '@/components/TokenGrid';
 import { useTokenEvents } from '@/lib/useWebSocket';
-import { formatUsdc, formatUsdDirect } from '@/lib/utils';
+import { formatUsdc, formatUsdDirect, formatMarketCap } from '@/lib/utils';
 
 type Tab = 'newest' | 'market_cap' | 'volume' | 'graduated';
 
@@ -39,11 +39,17 @@ export default function LandingPage() {
     refetchInterval: 30_000,
   });
 
+  // Fetch top 4 tokens for the live market pulse ticker
+  const { data: tickerData } = useQuery({
+    queryKey: ['tokens-ticker'],
+    queryFn: () => api.listTokens({ sort: 'market_cap', limit: 4 }),
+    refetchInterval: 15_000,
+  });
+
   // WebSocket: add new tokens to the top of the list in real time
   useTokenEvents(null, (event) => {
     if (event.type === 'NEW_TOKEN' && tab === 'newest') {
       setLiveTokens((prev) => {
-        // Avoid duplicates
         if (prev.some((t) => t.contract_address === event.data.contract_address)) {
           return prev;
         }
@@ -54,7 +60,6 @@ export default function LandingPage() {
 
   // Merge live tokens with fetched tokens
   const tokens = [...liveTokens, ...(data?.tokens || [])];
-  // Deduplicate
   const seen = new Set<string>();
   const deduped = tokens.filter((t) => {
     if (seen.has(t.contract_address)) return false;
@@ -62,15 +67,24 @@ export default function LandingPage() {
     return true;
   });
 
+  const tickerTokens = tickerData?.tokens || deduped.slice(0, 4);
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       {/* Hero */}
-      <section className="text-center py-16 animate-fade-in">
+      <section className="text-center py-12 lg:py-16 animate-fade-in">
+        {/* Arc positioning badge */}
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent-blue/10 text-accent-blue text-xs font-mono font-semibold mb-4 tracking-wider">
+          <span>USDC-NATIVE</span>
+          <span className="opacity-40">·</span>
+          <span>POWERED BY ARC</span>
+        </div>
+
         <h1 className="text-4xl md:text-6xl lg:text-7xl font-serif font-normal tracking-tight mb-5 leading-tight">
           Launch a token on{' '}
           <em className="not-italic text-accent-blue">Orba</em>
         </h1>
-        <p className="text-lg text-text-secondary max-w-2xl mx-auto mb-8">
+        <p className="text-lg text-text-secondary max-w-2xl mx-auto mb-8 leading-relaxed">
           The stablecoin-native launchpad. Fair bonding curves priced in USDC,
           automatic DEX graduation, sub-second finality. No presale, no team
           allocation.
@@ -83,21 +97,49 @@ export default function LandingPage() {
             Explore the board
           </Link>
         </div>
+
+        {/* Live Market Activity Ticker */}
+        {tickerTokens.length > 0 && (
+          <div className="mt-8 inline-flex items-center gap-3 px-4 py-2 rounded-full bg-bg-card border border-bg-border text-xs max-w-full overflow-x-auto">
+            <div className="flex items-center gap-1.5 font-mono text-accent-blue flex-shrink-0">
+              <span className="w-2 h-2 rounded-full bg-accent-blue animate-pulse" />
+              <span className="font-semibold tracking-wider">LIVE ON ARC</span>
+            </div>
+            <span className="text-text-muted opacity-40">|</span>
+            <div className="flex items-center gap-4 text-text-secondary whitespace-nowrap overflow-x-auto scrollbar-none">
+              {tickerTokens.map((t) => (
+                <Link
+                  key={t.contract_address}
+                  href={`/trade/${t.contract_address}`}
+                  className="flex items-center gap-1.5 hover:text-text-primary transition-colors"
+                >
+                  <span className="font-bold text-text-primary">${t.symbol}</span>
+                  <span className="font-mono text-text-muted tabular-nums">
+                    {formatMarketCap(t.market_cap)} MC
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
-      {/* Stats bar */}
+      {/* Stats bar — data-terminal metric cards */}
       <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
-          label="Tokens launched"
+          label="TOKENS LAUNCHED"
           value={stats ? String(stats.total_tokens) : '—'}
+          helper="USDC-Native bonding"
         />
         <StatCard
-          label="24h volume"
+          label="24H VOLUME"
           value={stats ? formatUsdc(stats.volume_24h) : '—'}
+          helper="Settled in USDC"
         />
         <StatCard
-          label="Graduated to DEX"
+          label="GRADUATED TO DEX"
           value={stats ? String(stats.graduated_tokens) : '—'}
+          helper="$30K MC DEX threshold"
         />
       </section>
 
@@ -164,13 +206,20 @@ export default function LandingPage() {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
-    <div className="card-elevated text-center">
-      <div className="text-2xl font-medium tabular-nums">
+    <div className="card-elevated text-center py-4">
+      <div className="text-2xl md:text-3xl font-bold tabular-nums tracking-tight">
         {value}
       </div>
-      <div className="text-xs text-text-muted mt-1">{label}</div>
+      <div className="text-[11px] font-semibold tracking-wider text-text-muted mt-1 uppercase">
+        {label}
+      </div>
+      {helper && (
+        <div className="text-[11px] font-mono text-accent-blue mt-0.5 opacity-85">
+          {helper}
+        </div>
+      )}
     </div>
   );
 }
