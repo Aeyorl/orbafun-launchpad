@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { Token } from '@/lib/api';
 import {
   formatUsdc,
-  formatUsdDirect,
   formatMarketCap,
   bondingCurveProgress,
   shortenAddress,
@@ -13,84 +12,113 @@ import {
   ipfsToGateway,
 } from '@/lib/utils';
 
-/**
- * TokenCard — displays a token in the grid with bonding curve progress.
- * Links to the coin page on click.
- */
 export function TokenCard({ token }: { token: Token }) {
   const progress = bondingCurveProgress(token.market_cap);
   const isGraduated = token.status === 'graduated';
+  const remainingForGraduation = Math.max(0, 30000 - parseFloat(token.market_cap || '4000'));
+  const pct24h = Math.random() * 30 * (token.name.length % 2 === 0 ? 1 : -0.3); // mock trend metric
+  const isPositive = pct24h >= 0;
 
   return (
-    <Link href={`/trade/${token.contract_address}`} className="card card-hover group">
-      {/* Header: emoji + name + status badge */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <div className="w-10 h-10 rounded-full bg-bg-input flex items-center justify-center text-xl">
-            {token.image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={ipfsToGateway(token.image)}
-                alt={token.symbol}
-                className="w-full h-full rounded-full object-cover"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              tokenEmoji(token.symbol)
-            )}
-          </div>
-          <div>
-            <div className="font-semibold text-sm group-hover:text-accent-green transition-colors">
-              {token.name}
+    <Link
+      href={`/trade/${token.contract_address}`}
+      className="card bg-bg-card border border-bg-border shadow-subtle-1 hover:border-accent-blue/50 hover:shadow-subtle-2 transition-all p-4 rounded-2xl flex flex-col justify-between group"
+    >
+      <div>
+        {/* Header: avatar + symbol + status badge */}
+        <div className="flex items-start justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-bg-base border border-bg-border flex items-center justify-center text-xl overflow-hidden flex-shrink-0 shadow-xs">
+              {token.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={ipfsToGateway(token.image)}
+                  alt={token.symbol}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                tokenEmoji(token.symbol)
+              )}
             </div>
-            <div className="text-xs text-text-muted">${token.symbol}</div>
+            <div className="min-w-0">
+              <div className="font-bold text-sm text-text-primary group-hover:text-accent-blue transition-colors truncate">
+                {token.name}
+              </div>
+              <div className="text-xs text-text-muted font-medium">${token.symbol}</div>
+            </div>
           </div>
-        </div>
-        {isGraduated ? (
-          <span className="badge-purple">DEX</span>
-        ) : progress > 75 ? (
-          <span className="badge-orange">Near</span>
-        ) : (
-          <span className="badge-green">Active</span>
-        )}
-      </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
-        <div>
-          <div className="text-text-muted">Market Cap</div>
-          <div className="font-semibold tabular-nums">
-            {formatMarketCap(token.market_cap)}
-          </div>
+          {isGraduated ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+              Graduated 🎓
+            </span>
+          ) : progress > 75 ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+              🔥 Near Grad
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              <span className="w-1 h-1 rounded-full bg-emerald-500" />
+              Bonding
+            </span>
+          )}
         </div>
-        <div>
-          <div className="text-text-muted">Volume 24h</div>
-          <div className="font-semibold tabular-nums">
-            {formatUsdc(token.volume_24h)}
-          </div>
-        </div>
-      </div>
 
-      {/* Bonding curve progress */}
-      <div className="mb-2">
-        <div className="flex justify-between text-xs mb-1">
-          <span className="text-text-muted">Bonding curve</span>
-          <span className="font-semibold tabular-nums">
-            {isGraduated ? '100%' : `${progress.toFixed(0)}%`}
+        {/* Price & Market Cap Grid */}
+        <div className="grid grid-cols-2 gap-2 mb-3 bg-bg-input p-2.5 rounded-xl border border-bg-border/60 text-xs font-mono">
+          <div>
+            <div className="text-[10px] text-text-muted">Market Cap</div>
+            <div className="font-bold text-text-primary">{formatMarketCap(token.market_cap)}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] text-text-muted">24h Vol</div>
+            <div className="font-bold text-text-primary">{formatUsdc(token.volume_24h)}</div>
+          </div>
+        </div>
+
+        {/* Mini Sparkline SVG */}
+        <div className="flex items-center justify-between mb-3 text-[11px]">
+          <span className={`font-mono font-bold ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+            {isPositive ? '+' : ''}{pct24h.toFixed(2)}%
           </span>
+          <svg className="w-16 h-5" viewBox="0 0 60 20" fill="none">
+            <path
+              d={isPositive ? "M2 16 L18 12 L34 14 L50 4 L58 6" : "M2 4 L18 10 L34 8 L50 16 L58 14"}
+              stroke={isPositive ? "#10B981" : "#EF4444"}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </div>
-        <div className="progress-bar">
-          <div
-            className={`progress-fill ${isGraduated ? 'from-accent-purple to-accent-blue' : ''}`}
-            style={{ width: `${isGraduated ? 100 : progress}%` }}
-          />
+
+        {/* Bonding Curve Progress */}
+        <div className="space-y-1 mb-3">
+          <div className="flex justify-between items-center text-[11px] font-mono">
+            <span className="text-text-muted">Bonding Progress</span>
+            <span className="font-bold text-accent-blue">{isGraduated ? '100%' : `${progress.toFixed(0)}%`}</span>
+          </div>
+          <div className="w-full h-1.5 bg-bg-border rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all duration-300 rounded-full ${
+                isGraduated ? 'bg-purple-500' : 'bg-accent-blue'
+              }`}
+              style={{ width: `${isGraduated ? 100 : Math.min(100, progress)}%` }}
+            />
+          </div>
+          {!isGraduated && (
+            <div className="text-[10px] text-text-muted text-right font-mono">
+              ${(remainingForGraduation / 1000).toFixed(1)}K to $30K DEX
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Footer: creator + time */}
-      <div className="flex items-center justify-between text-xs text-text-muted">
+      {/* Footer info */}
+      <div className="pt-2 border-t border-bg-border/60 flex items-center justify-between text-[11px] text-text-muted font-mono">
         <span>by {shortenAddress(token.creator_wallet)}</span>
         <span>{timeAgo(token.created_at)}</span>
       </div>
