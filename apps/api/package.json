@@ -9,7 +9,9 @@
     "start": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "db:migrate": "node dist/db/migrate.js",
-    "db:seed": "node dist/db/seed.js"
+    "db:seed": "node dist/db/seed.js",
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "@orbafun/shared": "*",
@@ -34,9 +36,13 @@
   },
   "devDependencies": {
     "@nestjs/cli": "^10.4.9",
+    "@nestjs/testing": "^10.4.15",
+    "@types/jest": "^29.5.14",
     "@types/multer": "^1.4.13",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.3.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.2"
   }
