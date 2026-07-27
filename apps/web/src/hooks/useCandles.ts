@@ -1,0 +1,117 @@
+'use client';
+
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useRef, useEffect, useState } from 'react';
+import { api, OhlcvCandle, CandleTimeframe } from '@/lib/api';
+import { useTokenEvents, TokenEvent } from '@/lib/useWebSocket';
+
+/**
+ * useCandles — fetches historical OHLCV candles from the API and
+ * incrementally updates the current candle from WebSocket trade events.
+ *
+ * Architecture:
+ *   1. Initial load: GET /tokens/:address/candles?timeframe=5m
+ *   2. Live updates: WebSocket NEW_BUY/NEW_SELL events update the
+ *      last candle's high/low/close/volume without refetching.
+ *   3. Periodic refetch every 30s as a consistency backstop.
+ */
+export function useCandles(
+  tokenAddress: string | null,
+  timeframe: CandleTimeframe = '5m',
+  mode: 'price' | 'mcap' = 'price',
+) {
+  const queryClient = useQueryClient();
+  const candlesRef = useRef<OhlcvCandle[]>([]);
+  const [liveCandles, setLiveCandles] = useState<OhlcvCandle[]>([]);
+
+  const TIMEFRAME_SECONDS: Record<CandleTimeframe, number> = {
+    '1m': 60, '5m': 300, '15m': 900, '30m': 1800,
+    '1h': 3600, '4h': 14400, '1d': 86400,
+  };
+
+  const { data: historicalCandles, isLoading, error } = useQuery({
+    queryKey: ['candles', tokenAddress, timeframe, mode],
+    queryFn: () => api.getCandles(tokenAddress!, timeframe, mode),
+    enabled: !!tokenAddress,
+    refetchInterval: 30_000, // backstop refetch
+    staleTime: 10_000,
+  });
+
+  // Sync historical data to ref + state
+  useEffect(() => {
+    if (historicalCandles && historicalCandles.length > 0) {
+      candlesRef.current = [...historicalCandles];
+      setLiveCandles([...historicalCandles]);
+    }
+  }, [historicalCandles]);
+
+  // WebSocket: update current candle incrementally
+  const handleEvent = useCallback(
+    (event: TokenEvent) => {
+      if (event.type !== 'NEW_BUY' && event.type !== 'NEW_SELL') return;
+      if (!event.data) return;
+
+      const trade = event.data;
+      const tradePrice = Number(trade.price || 0);
+      const tradeMcap = Number(trade.market_cap_after || 0);
+      const tradeVolume = Number(trade.usdc_amount || 0) / 1e6;
+      const value = mode === 'price' ? tradePrice : tradeMcap;
+      if (value <= 0) return;
+
+      const nowSec = Math.floor(Date.now() / 1000);
+      const bucketSec = TIMEFRAME_SECONDS[timeframe];
+      const currentBucket = Math.floor(nowSec / bucketSec) * bucketSec;
+
+      setLiveCandles((prev) => {
+        const candles = [...prev];
+        if (candles.length === 0) {
+          // First candle
+          candles.push({
+            timestamp: currentBucket,
+            open: value,
+            high: value,
+            low: value,
+            close: value,
+            volume: tradeVolume,
+          });
+        } else {
+          const last = candles[candles.length - 1];
+          if (last.timestamp === currentBucket) {
+            // Update existing candle
+            candles[candles.length - 1] = {
+              ...last,
+              high: Math.max(last.high, value),
+              low: Math.min(last.low, value),
+              close: value,
+              volume: last.volume + tradeVolume,
+            };
+          } else if (currentBucket > last.timestamp) {
+            // New candle bucket
+            candles.push({
+              timestamp: currentBucket,
+              open: last.close,
+              high: Math.max(last.close, value),
+              low: Math.min(last.close, value),
+              close: value,
+              volume: tradeVolume,
+            });
+          }
+        }
+        candlesRef.current = candles;
+        return candles;
+      });
+
+      // Also invalidate token data so stats update
+      queryClient.invalidateQueries({ queryKey: ['token', tokenAddress] });
+    },
+    [mode, timeframe, tokenAddress, queryClient],
+  );
+
+  useTokenEvents(tokenAddress, handleEvent);
+
+  return {
+    candles: liveCandles,
+    isLoading,
+    error,
+  };
+}

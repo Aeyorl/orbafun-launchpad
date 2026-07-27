@@ -1,0 +1,322 @@
+'use client';
+
+import { useRef, useEffect, useCallback, useState, memo } from 'react';
+import { OhlcvCandle, CandleTimeframe } from '@/lib/api';
+import { formatMarketCap, formatPrice } from '@/lib/utils';
+import { ChartToolbar, ChartType, MetricMode, ScaleType } from './ChartToolbar';
+
+// Dynamic imports for lightweight-charts (client-side only)
+let createChart: any;
+let ColorType: any;
+let CrosshairMode: any;
+let LineType: any;
+let PriceScaleMode: any;
+let CandlestickSeries: any;
+let AreaSeries: any;
+let LineSeries: any;
+let HistogramSeries: any;
+
+/**
+ * TradingChart — professional trading chart powered by TradingView Lightweight Charts.
+ *
+ * Key differences from the old PriceChart:
+ *   - Uses server-side OHLCV candles (not client-side aggregation from raw trades)
+ *   - Dark terminal theme forced regardless of site theme
+ *   - Isolated chart state — only the current candle is updated on trades
+ *   - Volume overlay at the bottom
+ *   - Professional crosshair with OHLCV tooltip
+ */
+export const TradingChart = memo(function TradingChart({
+  candles,
+  tokenSymbol,
+  timeframe,
+  onTimeframeChange,
+  metricMode: externalMode,
+  onMetricModeChange: externalModeChange,
+}: {
+  candles: OhlcvCandle[];
+  tokenSymbol?: string;
+  timeframe: CandleTimeframe;
+  onTimeframeChange: (tf: CandleTimeframe) => void;
+  metricMode?: MetricMode;
+  onMetricModeChange?: (mode: MetricMode) => void;
+}) {
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<any>(null);
+  const mainSeriesRef = useRef<any>(null);
+  const volumeSeriesRef = useRef<any>(null);
+  const [ready, setReady] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [chartType, setChartType] = useState<ChartType>('candlestick');
+  const [metricMode, setMetricMode] = useState<MetricMode>(externalMode || 'price');
+  const [scale, setScale] = useState<ScaleType>('linear');
+  const [showMarkers, setShowMarkers] = useState(false);
+
+  // Sync external mode
+  useEffect(() => {
+    if (externalMode) setMetricMode(externalMode);
+  }, [externalMode]);
+
+  // Load lightweight-charts dynamically
+  useEffect(() => {
+    import('lightweight-charts').then((mod) => {
+      createChart = mod.createChart;
+      ColorType = mod.ColorType;
+      CrosshairMode = mod.CrosshairMode;
+      LineType = mod.LineType;
+      PriceScaleMode = mod.PriceScaleMode;
+      CandlestickSeries = mod.CandlestickSeries;
+      AreaSeries = mod.AreaSeries;
+      LineSeries = mod.LineSeries;
+      HistogramSeries = mod.HistogramSeries;
+      setReady(true);
+    });
+  }, []);
+
+  const formatValue = useCallback(
+    (val: number) => {
+      if (val === undefined || val === null || isNaN(val)) return '$0.00';
+      return metricMode === 'price' ? formatPrice(val) : formatMarketCap(val);
+    },
+    [metricMode],
+  );
+
+  // Render chart
+  useEffect(() => {
+    if (!ready || !chartContainerRef.current || candles.length === 0) return;
+
+    // Clean up previous chart
+    if (chartRef.current) {
+      try { chartRef.current.remove(); } catch { /* */ }
+      chartRef.current = null;
+      mainSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+    }
+
+    const isDark = true; // Terminal always dark
+
+    const chart = createChart(chartContainerRef.current, {
+      layout: {
+        background: { type: ColorType.Solid, color: isDark ? '#0a0e1a' : '#ffffff' },
+        textColor: isDark ? '#8b95a8' : '#17191c',
+        fontFamily: "'Inter', 'JetBrains Mono', system-ui, monospace",
+        fontSize: 11,
+      },
+      grid: {
+        vertLines: { color: isDark ? 'rgba(39, 117, 202, 0.06)' : 'rgba(0, 0, 0, 0.04)', style: 1 },
+        horzLines: { color: isDark ? 'rgba(39, 117, 202, 0.06)' : 'rgba(0, 0, 0, 0.04)', style: 1 },
+      },
+      crosshair: {
+        mode: CrosshairMode.Normal,
+        vertLine: {
+          color: isDark ? 'rgba(39, 117, 202, 0.4)' : '#5d2a1a',
+          width: 1,
+          style: 3,
+          labelBackgroundColor: isDark ? '#1e2a44' : '#5d2a1a',
+        },
+        horzLine: {
+          color: isDark ? 'rgba(39, 117, 202, 0.4)' : '#5d2a1a',
+          width: 1,
+          style: 3,
+          labelBackgroundColor: isDark ? '#1e2a44' : '#5d2a1a',
+        },
+      },
+      rightPriceScale: {
+        borderColor: isDark ? '#1e2a44' : '#ececec',
+        scaleMargins: { top: 0.08, bottom: 0.22 },
+        mode: scale === 'log' ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+        autoScale: true,
+      },
+      timeScale: {
+        borderColor: isDark ? '#1e2a44' : '#ececec',
+        timeVisible: true,
+        secondsVisible: false,
+        rightOffset: 5,
+        barSpacing: 8,
+      },
+      handleScroll: { vertTouchDrag: false },
+      handleScale: { axisPressedMouseMove: true },
+    });
+
+    // Volume series (overlay at bottom)
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      priceScaleId: 'volume_overlay',
+      priceFormat: { type: 'volume' },
+    });
+    chart.priceScale('volume_overlay').applyOptions({
+      scaleMargins: { top: 0.82, bottom: 0 },
+    });
+
+    const volumeData = candles.map((c) => ({
+      time: c.timestamp,
+      value: c.volume,
+      color: c.close >= c.open
+        ? 'rgba(34, 197, 94, 0.3)'
+        : 'rgba(239, 68, 68, 0.3)',
+    }));
+    volumeSeries.setData(volumeData);
+    volumeSeriesRef.current = volumeSeries;
+
+    // Main series
+    const priceFormat = {
+      type: 'custom' as const,
+      minMove: metricMode === 'price' ? 0.00000001 : 0.01,
+      formatter: (p: number) => formatValue(p),
+    };
+
+    let mainSeries: any;
+
+    if (chartType === 'candlestick') {
+      mainSeries = chart.addSeries(CandlestickSeries, {
+        upColor: '#22c55e',
+        downColor: '#ef4444',
+        wickUpColor: '#22c55e',
+        wickDownColor: '#ef4444',
+        borderVisible: false,
+        priceFormat,
+      });
+      mainSeries.setData(
+        candles.map((c) => ({
+          time: c.timestamp,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+        }))
+      );
+    } else if (chartType === 'line') {
+      mainSeries = chart.addSeries(LineSeries || AreaSeries, {
+        color: '#2775CA',
+        lineWidth: 2,
+        priceFormat,
+      });
+      mainSeries.setData(
+        candles.map((c) => ({ time: c.timestamp, value: c.close }))
+      );
+    } else {
+      // area
+      const lastCandle = candles[candles.length - 1];
+      const firstCandle = candles[0];
+      const isUp = lastCandle && firstCandle ? lastCandle.close >= firstCandle.close : true;
+      mainSeries = chart.addSeries(AreaSeries, {
+        lineColor: isUp ? '#22c55e' : '#ef4444',
+        topColor: isUp ? 'rgba(34, 197, 94, 0.18)' : 'rgba(239, 68, 68, 0.18)',
+        bottomColor: isUp ? 'rgba(34, 197, 94, 0.0)' : 'rgba(239, 68, 68, 0.0)',
+        lineWidth: 2,
+        lineType: LineType?.Curved || 0,
+        priceFormat,
+      });
+      mainSeries.setData(
+        candles.map((c) => ({ time: c.timestamp, value: c.close }))
+      );
+    }
+
+    mainSeriesRef.current = mainSeries;
+    chart.timeScale().fitContent();
+    chartRef.current = chart;
+
+    // Responsive resize
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        if (width > 0 && height > 0) {
+          chart.applyOptions({ width, height });
+        }
+      }
+    });
+    ro.observe(chartContainerRef.current);
+
+    return () => {
+      ro.disconnect();
+      try { chart.remove(); } catch { /* */ }
+      chartRef.current = null;
+      mainSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+    };
+  }, [ready, candles, chartType, scale, metricMode, formatValue]);
+
+  const handleMetricChange = useCallback(
+    (mode: MetricMode) => {
+      setMetricMode(mode);
+      externalModeChange?.(mode);
+    },
+    [externalModeChange],
+  );
+
+  const handleFullscreen = useCallback(() => {
+    setIsFullscreen((prev) => !prev);
+  }, []);
+
+  const handleReset = useCallback(() => {
+    if (chartRef.current) {
+      chartRef.current.timeScale().fitContent();
+    }
+  }, []);
+
+  return (
+    <div
+      className={`flex flex-col bg-[#0a0e1a] ${
+        isFullscreen
+          ? 'fixed inset-0 z-50'
+          : 'border border-bg-border'
+      }`}
+    >
+      {/* Toolbar */}
+      <ChartToolbar
+        timeframe={timeframe}
+        chartType={chartType}
+        metricMode={metricMode}
+        scale={scale}
+        showMarkers={showMarkers}
+        onTimeframeChange={onTimeframeChange}
+        onChartTypeChange={setChartType}
+        onMetricModeChange={handleMetricChange}
+        onScaleChange={setScale}
+        onToggleMarkers={() => setShowMarkers(!showMarkers)}
+        onFullscreen={handleFullscreen}
+        onResetChart={handleReset}
+      />
+
+      {/* Chart canvas */}
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={chartContainerRef}
+          className={`w-full ${isFullscreen ? 'h-full' : 'h-[420px] lg:h-[520px]'}`}
+        />
+
+        {/* Empty state */}
+        {candles.length === 0 && ready && (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center text-text-muted text-sm">
+              <div className="text-2xl mb-2">📊</div>
+              <div>No trades yet</div>
+              <div className="text-xs mt-1">Be the first to trade {tokenSymbol ? `$${tokenSymbol}` : 'this token'}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Loading state */}
+        {!ready && (
+          <div className="absolute inset-0 flex items-center justify-center bg-[#0a0e1a]">
+            <div className="w-6 h-6 border-2 border-accent-blue border-t-transparent rounded-full animate-spin" />
+          </div>
+        )}
+
+        {/* Watermark */}
+        <div className="absolute bottom-2 left-2 text-[9px] text-text-muted/40 font-mono pointer-events-none">
+          Orba.fun · {tokenSymbol ? `$${tokenSymbol}` : ''} · {timeframe}
+        </div>
+
+        {/* Fullscreen exit */}
+        {isFullscreen && (
+          <button
+            onClick={handleFullscreen}
+            className="absolute top-2 right-2 px-3 py-1 bg-bg-card text-text-primary text-xs border border-bg-border hover:bg-bg-hover transition-colors z-10"
+          >
+            ✕ Exit
+          </button>
+        )}
+      </div>
+    </div>
+  );
+});

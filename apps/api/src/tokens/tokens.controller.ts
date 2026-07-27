@@ -1,10 +1,17 @@
 import { Controller, Get, Param, Query, NotFoundException, BadRequestException } from '@nestjs/common';
 import { TokensService, SortOption, StatusFilter } from './tokens.service';
+import { CandlesService, CandleTimeframe } from './candles.service';
 import { isValidEvmAddress } from '../common/utils';
+
+const VALID_TIMEFRAMES: CandleTimeframe[] = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
+const VALID_MODES = ['price', 'mcap'] as const;
 
 @Controller('tokens')
 export class TokensController {
-  constructor(private tokensService: TokensService) {}
+  constructor(
+    private tokensService: TokensService,
+    private candlesService: CandlesService,
+  ) {}
 
   /**
    * GET /tokens
@@ -59,6 +66,33 @@ export class TokensController {
   @Get('stats')
   async getStats() {
     return this.tokensService.getPlatformStats();
+  }
+
+  /**
+   * GET /tokens/:address/candles
+   * Returns OHLCV candle data for the trading chart.
+   * Query params:
+   *   timeframe=1m|5m|15m|30m|1h|4h|1d (default: 5m)
+   *   mode=price|mcap                   (default: price)
+   *   limit=500  (max 2000)
+   */
+  @Get(':address/candles')
+  async getCandles(
+    @Param('address') address: string,
+    @Query('timeframe') timeframe?: string,
+    @Query('mode') mode?: string,
+    @Query('limit') limit?: string,
+  ) {
+    if (!isValidEvmAddress(address)) {
+      throw new BadRequestException('Invalid token address');
+    }
+    const tf = VALID_TIMEFRAMES.includes(timeframe as CandleTimeframe)
+      ? (timeframe as CandleTimeframe)
+      : '5m';
+    const m = VALID_MODES.includes(mode as any) ? (mode as 'price' | 'mcap') : 'price';
+    const limitNum = limit ? Math.min(parseInt(limit, 10) || 500, 2000) : 500;
+
+    return this.candlesService.getCandles(address, tf, m, limitNum);
   }
 
   /**

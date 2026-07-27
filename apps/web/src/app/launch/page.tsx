@@ -322,7 +322,7 @@ export default function LaunchPage() {
         });
       }
       const destination = tokenAddress
-        ? `/coin/${tokenAddress}`
+        ? `/trade/${tokenAddress}`
         : '/explore?sort=newest';
       const t = setTimeout(() => router.push(destination), 1000);
       return () => clearTimeout(t);

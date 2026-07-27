@@ -99,6 +99,17 @@ export interface HolderListResponse {
   total: number;
 }
 
+export interface OhlcvCandle {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+export type CandleTimeframe = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
+
 export interface Message {
   id: number;
   token_id: number;
@@ -216,6 +227,26 @@ export const api = {
     fetchApi<HolderListResponse>(
       `/tokens/${address.toLowerCase()}/holders?limit=${limit}`
     ),
+
+  getCandles: async (
+    address: string,
+    timeframe: CandleTimeframe = '5m',
+    mode: 'price' | 'mcap' = 'price',
+    limit = 500,
+  ): Promise<OhlcvCandle[]> => {
+    try {
+      const qs = new URLSearchParams({
+        timeframe,
+        mode,
+        limit: String(limit),
+      });
+      return await fetchApi<OhlcvCandle[]>(
+        `/tokens/${address.toLowerCase()}/candles?${qs.toString()}`
+      );
+    } catch {
+      return [];
+    }
+  },
 
   // Token metadata (social links, website, description)
   getTokenMetadata: async (address: string): Promise<TokenMetadata> => {

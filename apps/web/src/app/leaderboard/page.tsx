@@ -159,7 +159,7 @@ function TokensLeaderboard({ rows, showVolume }: { rows: any[]; showVolume: bool
               </td>
               <td className="py-3 px-4">
                 <Link
-                  href={`/coin/${token.contract_address}`}
+                  href={`/trade/${token.contract_address}`}
                   className="flex items-center gap-3 hover:text-accent-green transition-colors"
                 >
                   <div className="w-8 h-8 rounded-full bg-bg-input flex items-center justify-center text-base flex-shrink-0">

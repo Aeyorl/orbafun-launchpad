@@ -372,7 +372,7 @@ function ActivityRow({ activity }: { activity: import('@/lib/api').AgentActivity
   if (activity_type === 'launch') {
     return (
       <Link
-        href={`/coin/${payload.token_address}`}
+        href={`/trade/${payload.token_address}`}
         className="flex items-center gap-3 p-3 rounded-lg hover:bg-bg-card transition-colors group"
       >
         <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center text-lg flex-shrink-0">
@@ -403,7 +403,7 @@ function ActivityRow({ activity }: { activity: import('@/lib/api').AgentActivity
     const isBuy = payload.trade_type === 'buy';
     return (
       <Link
-        href={`/coin/${payload.token_address}`}
+        href={`/trade/${payload.token_address}`}
         className="flex items-center gap-3 p-3 rounded-lg hover:bg-bg-card transition-colors group"
       >
         <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg flex-shrink-0 ${
@@ -488,7 +488,7 @@ function AgentLaunches({ agentId }: { agentId: string }) {
       {launches.map((launch) => (
         <Link
           key={launch.token_address}
-          href={`/coin/${launch.token_address}`}
+          href={`/trade/${launch.token_address}`}
           className="flex items-center justify-between p-3 rounded-lg hover:bg-bg-card transition-colors group"
         >
           <div className="flex items-center gap-3">

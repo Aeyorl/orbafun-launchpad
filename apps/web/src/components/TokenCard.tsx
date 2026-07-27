@@ -22,7 +22,7 @@ export function TokenCard({ token }: { token: Token }) {
   const isGraduated = token.status === 'graduated';
 
   return (
-    <Link href={`/coin/${token.contract_address}`} className="card card-hover group">
+    <Link href={`/trade/${token.contract_address}`} className="card card-hover group">
       {/* Header: emoji + name + status badge */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">

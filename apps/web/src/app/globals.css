@@ -238,6 +238,11 @@
   .tab-active {
     @apply bg-bg-card text-accent-blue;
   }
+
+  /* Trading terminal panel */
+  .terminal-panel {
+    @apply p-3 sm:p-4 transition-colors;
+  }
 }
 
 @layer utilities {

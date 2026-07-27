@@ -266,7 +266,7 @@ function HoldingCard({ holding }: { holding: UserHolding }) {
         {/* Token info header */}
         <div className="flex items-center justify-between mb-3">
           <Link
-            href={`/coin/${token.contract_address}`}
+            href={`/trade/${token.contract_address}`}
             className="flex items-center gap-2.5 min-w-0 hover:opacity-80 transition-opacity"
           >
             {token.image ? (
@@ -355,7 +355,7 @@ function HoldingCard({ holding }: { holding: UserHolding }) {
 
       {/* Action button */}
       <Link
-        href={`/coin/${token.contract_address}`}
+        href={`/trade/${token.contract_address}`}
         className="btn-secondary text-xs py-1.5 w-full text-center block mt-2"
       >
         Trade {token.symbol} →

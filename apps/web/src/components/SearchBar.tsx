@@ -73,7 +73,7 @@ export function SearchBar({ compact = false }: { compact?: boolean }) {
       setOpen(false);
       setQuery('');
       setResults([]);
-      router.push(`/coin/${token.contract_address}`);
+      router.push(`/trade/${token.contract_address}`);
     },
     [router],
   );
