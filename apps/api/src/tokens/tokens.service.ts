@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
 
@@ -56,6 +57,20 @@ export class TokensService {
     private db: DatabaseService,
     private redis: RedisService,
   ) {}
+
+  /**
+   * Cron task running every 60s to refresh 24h rolling volume window
+   * across all active tokens and clear cached token lists.
+   */
+  @Cron('*/60 * * * * *')
+  async refreshVolume24h(): Promise<void> {
+    try {
+      await this.db.query(`SELECT refresh_volume_24h()`);
+      await this.redis.delPattern('tokens:list:*');
+    } catch (err) {
+      this.logger.error(`Failed to refresh 24h volume: ${err.message}`);
+    }
+  }
 
   /**
    * List tokens with sorting and filtering.

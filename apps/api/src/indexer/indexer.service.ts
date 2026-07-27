@@ -173,7 +173,13 @@ export class IndexerService {
            real_usdc = real_usdc + $4,
            tokens_sold = tokens_sold + $5,
            creator_fees_accrued = creator_fees_accrued + $6,
-           protocol_fees_accrued = protocol_fees_accrued + $7
+           protocol_fees_accrued = protocol_fees_accrued + $7,
+           volume_24h = COALESCE((
+             SELECT SUM(usdc_amount)::numeric(20,6)
+             FROM trades
+             WHERE token_id = $1
+               AND timestamp > NOW() - INTERVAL '24 hours'
+           ), 0) + $8
          WHERE id = $1`,
         [
           tokenId,
@@ -183,6 +189,7 @@ export class IndexerService {
           tokenAmount.toString(),
           creatorFee.toString(),
           protocolFee.toString(),
+          usdcAmount.toString(),
         ],
       );
 
@@ -272,6 +279,9 @@ export class IndexerService {
         trade,
       );
     }
+
+    // Invalidate caches so updated volume/price propagates immediately
+    await this.invalidateTokenCaches(event.curveAddress.toLowerCase());
   }
 
   // ─── Sell ────────────────────────────────────────────────────────────────
@@ -310,7 +320,13 @@ export class IndexerService {
            real_usdc = GREATEST(0, real_usdc - $4),
            tokens_sold = GREATEST(0, tokens_sold - $5),
            creator_fees_accrued = creator_fees_accrued + $6,
-           protocol_fees_accrued = protocol_fees_accrued + $7
+           protocol_fees_accrued = protocol_fees_accrued + $7,
+           volume_24h = COALESCE((
+             SELECT SUM(usdc_amount)::numeric(20,6)
+             FROM trades
+             WHERE token_id = $1
+               AND timestamp > NOW() - INTERVAL '24 hours'
+           ), 0) + $8
          WHERE id = $1`,
         [
           tokenId,
@@ -320,6 +336,7 @@ export class IndexerService {
           tokenAmount.toString(),
           creatorFee.toString(),
           protocolFee.toString(),
+          usdcAmount.toString(),
         ],
       );
 
@@ -403,6 +420,9 @@ export class IndexerService {
         trade,
       );
     }
+
+    // Invalidate caches so updated volume/price propagates immediately
+    await this.invalidateTokenCaches(event.curveAddress.toLowerCase());
   }
 
   // ─── Graduated ───────────────────────────────────────────────────────────
@@ -503,6 +523,33 @@ export class IndexerService {
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
+
+  /**
+   * Invalidate all Redis caches that surface token data (lists, leaderboard,
+   * individual token detail). Called after every buy/sell so updated volume,
+   * price, and market cap propagate immediately to the frontend.
+   */
+  private async invalidateTokenCaches(curveAddress: string): Promise<void> {
+    try {
+      // Find the token's contract_address from its curve_address
+      const token = await this.db.queryOne<{ contract_address: string }>(
+        `SELECT contract_address FROM tokens WHERE curve_address = $1`,
+        [curveAddress],
+      );
+      if (token) {
+        // Invalidate individual token cache
+        await this.redis.del(`token:${token.contract_address}`);
+      }
+      // Invalidate token list caches (explore page, all sort/filter combos)
+      await this.redis.delPattern('tokens:list:*');
+      // Invalidate leaderboard caches
+      await this.redis.delPattern('leaderboard:*');
+      // Invalidate platform stats
+      await this.redis.del('stats:platform');
+    } catch (err) {
+      this.logger.warn(`Cache invalidation failed: ${err.message}`);
+    }
+  }
 
   /**
    * Compute price (USDC per token) from 6-dec USDC and 18-dec token amounts.

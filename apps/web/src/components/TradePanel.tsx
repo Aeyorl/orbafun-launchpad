@@ -166,9 +166,14 @@ export function TradePanel({ token }: { token: Token }) {
       queryClient.invalidateQueries({ queryKey: ['balance'] });
       queryClient.invalidateQueries({ queryKey: ['readContract'] });
       queryClient.invalidateQueries({ queryKey: ['user-portfolio'] });
+      queryClient.invalidateQueries({ queryKey: ['user-holdings'] });
+      queryClient.invalidateQueries({ queryKey: ['user-pnl'] });
       queryClient.invalidateQueries({ queryKey: ['tokenHolders', token.contract_address] });
       queryClient.invalidateQueries({ queryKey: ['tokenTrades', token.contract_address] });
       queryClient.invalidateQueries({ queryKey: ['token', token.contract_address] });
+      queryClient.invalidateQueries({ queryKey: ['candles', token.contract_address] });
+      queryClient.invalidateQueries({ queryKey: ['explore'] });
+      queryClient.invalidateQueries({ queryKey: ['leaderboard'] });
 
       setAmount('');
 
@@ -308,7 +313,8 @@ export function TradePanel({ token }: { token: Token }) {
       const bal = usdcBalance?.value ?? 0n;
       if (bal === 0n) return;
       const target = (bal * BigInt(pct)) / 100n;
-      setAmount(formatUnits(target, USDC_DECIMALS));
+      // usdcBalance.value is 18-decimal Arc native USDC
+      setAmount(formatUnits(target, usdcBalance?.decimals ?? 18));
     } else {
       const bal = tokenBalance ?? 0n;
       if (bal === 0n) return;

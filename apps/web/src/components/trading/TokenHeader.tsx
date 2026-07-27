@@ -69,6 +69,10 @@ export const TokenHeader = memo(function TokenHeader({
     statusText = 'Near Graduation';
     statusBadgeStyle = 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20';
     statusDotStyle = 'bg-amber-500 animate-pulse';
+  } else if (progress <= 0) {
+    statusText = 'New';
+    statusBadgeStyle = 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20';
+    statusDotStyle = 'bg-blue-500';
   }
 
   const copyContract = async () => {

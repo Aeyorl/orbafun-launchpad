@@ -16,8 +16,11 @@ export function TokenCard({ token }: { token: Token }) {
   const progress = bondingCurveProgress(token.market_cap);
   const isGraduated = token.status === 'graduated';
   const remainingForGraduation = Math.max(0, 30000 - parseFloat(token.market_cap || '4000'));
-  const pct24h = Math.random() * 30 * (token.name.length % 2 === 0 ? 1 : -0.3); // mock trend metric
-  const isPositive = pct24h >= 0;
+  
+  // Real percentage gain calculated from starting $4,000 market cap
+  const mcapNum = parseFloat(token.market_cap || '4000');
+  const pctChange = mcapNum > 4000 ? ((mcapNum - 4000) / 4000) * 100 : 0;
+  const isPositive = pctChange >= 0;
 
   return (
     <Link
@@ -59,6 +62,11 @@ export function TokenCard({ token }: { token: Token }) {
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
               🔥 Near Grad
             </span>
+          ) : progress <= 0 ? (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
+              <span className="w-1 h-1 rounded-full bg-blue-500" />
+              New
+            </span>
           ) : (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
               <span className="w-1 h-1 rounded-full bg-emerald-500" />
@@ -79,10 +87,10 @@ export function TokenCard({ token }: { token: Token }) {
           </div>
         </div>
 
-        {/* Mini Sparkline SVG */}
+        {/* Real Gain Trend SVG */}
         <div className="flex items-center justify-between mb-3 text-[11px]">
           <span className={`font-mono font-bold ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-            {isPositive ? '+' : ''}{pct24h.toFixed(2)}%
+            {isPositive ? '+' : ''}{pctChange.toFixed(2)}%
           </span>
           <svg className="w-16 h-5" viewBox="0 0 60 20" fill="none">
             <path

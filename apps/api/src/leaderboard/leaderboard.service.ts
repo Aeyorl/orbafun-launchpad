@@ -27,18 +27,20 @@ export class LeaderboardService {
            u.wallet,
            u.username,
            u.tokens_launched,
-           COALESCE(tr.vol, 0)::text as total_volume_usdc,
-           COUNT(DISTINCT t.id) as active_tokens,
-           COALESCE(SUM(t.market_cap), 0) as total_market_cap
+           COALESCE(tv.vol, 0)::text as total_volume_usdc,
+           COUNT(DISTINCT t.id) FILTER (WHERE t.status = 'active') as active_tokens,
+           COALESCE(SUM(t.market_cap) FILTER (WHERE t.status = 'active'), 0) as total_market_cap
          FROM users u
          LEFT JOIN (
-           SELECT wallet, SUM(usdc_amount) as vol
-           FROM trades
-           GROUP BY wallet
-         ) tr ON tr.wallet = u.wallet
-         LEFT JOIN tokens t ON t.creator_wallet = u.wallet AND t.status = 'active'
-         GROUP BY u.wallet, u.username, u.tokens_launched, tr.vol
-         ORDER BY COALESCE(tr.vol, 0) DESC
+           SELECT t.creator_wallet, SUM(tr.usdc_amount) as vol
+           FROM tokens t
+           JOIN trades tr ON tr.token_id = t.id
+           GROUP BY t.creator_wallet
+         ) tv ON tv.creator_wallet = u.wallet
+         LEFT JOIN tokens t ON t.creator_wallet = u.wallet
+         WHERE u.tokens_launched > 0 OR t.id IS NOT NULL
+         GROUP BY u.wallet, u.username, u.tokens_launched, tv.vol
+         ORDER BY COALESCE(tv.vol, 0) DESC
          LIMIT $1`,
         [limit],
       );
