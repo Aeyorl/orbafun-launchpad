@@ -205,7 +205,7 @@ export class IndexerService {
            creator_fees_accrued = creator_fees_accrued + $6,
            protocol_fees_accrued = protocol_fees_accrued + $7,
            volume_24h = COALESCE((
-             SELECT SUM(usdc_amount) / 1000000.0
+             SELECT (SUM(usdc_amount)::numeric / 1000000.0)::numeric(20,6)
              FROM trades
              WHERE token_id = $1
                AND timestamp > NOW() - INTERVAL '24 hours'
@@ -353,7 +353,7 @@ export class IndexerService {
            creator_fees_accrued = creator_fees_accrued + $6,
            protocol_fees_accrued = protocol_fees_accrued + $7,
            volume_24h = COALESCE((
-             SELECT SUM(usdc_amount) / 1000000.0
+             SELECT (SUM(usdc_amount)::numeric / 1000000.0)::numeric(20,6)
              FROM trades
              WHERE token_id = $1
                AND timestamp > NOW() - INTERVAL '24 hours'
