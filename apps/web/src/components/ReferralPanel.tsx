@@ -5,7 +5,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
-import { formatUsdDirect, shortenAddress } from '@/lib/utils';
+import { formatUsdc, shortenAddress } from '@/lib/utils';
 import { useAccount } from 'wagmi';
 
 /**
@@ -87,12 +87,12 @@ export function ReferralPanel({ wallet }: { wallet: string }) {
           </div>
           <div>
             <div className="text-text-muted text-xs">Volume</div>
-            <div className="font-bold tabular-nums">{formatUsdDirect(stats.total_volume_usdc)}</div>
+            <div className="font-bold tabular-nums">{formatUsdc(stats.total_volume_usdc)}</div>
           </div>
           <div>
             <div className="text-text-muted text-xs">Rewards</div>
             <div className="font-bold tabular-nums text-accent-green">
-              {formatUsdDirect(stats.reward_earned_usdc)}
+              {formatUsdc(stats.reward_earned_usdc)}
             </div>
           </div>
         </div>
@@ -120,7 +120,7 @@ export function ReferralPanel({ wallet }: { wallet: string }) {
                     </span>
                     <div className="flex gap-4 text-xs text-text-muted tabular-nums">
                       <span>{r.trade_count} trades</span>
-                      <span>{formatUsdDirect(r.total_volume_usdc)}</span>
+                      <span>{formatUsdc(r.total_volume_usdc)}</span>
                     </div>
                   </Link>
                 ))}

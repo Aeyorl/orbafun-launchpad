@@ -118,7 +118,7 @@ function CreatorsLeaderboard({ rows }: { rows: any[] }) {
                 {row.active_tokens || 0}
               </td>
               <td className="py-3 px-4 text-right tabular-nums font-semibold">
-                {formatUsdDirect(row.total_volume_usdc || 0)}
+                {formatUsdc(row.total_volume_usdc || 0)}
               </td>
               <td className="py-3 px-4 text-right tabular-nums">
                 {formatMarketCap(row.total_market_cap || 0)}
@@ -188,7 +188,7 @@ function TokensLeaderboard({ rows, showVolume }: { rows: any[]; showVolume: bool
               </td>
               <td className="py-3 px-4 text-right tabular-nums">
                 {showVolume
-                  ? formatUsdDirect(token.volume_24h)
+                  ? formatUsdc(token.volume_24h)
                   : `$${Number(token.price || 0).toExponential(2)}`}
               </td>
               <td className="py-3 px-4 text-right">

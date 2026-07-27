@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Token } from '@/lib/api';
 import {
+  formatUsdc,
   formatUsdDirect,
   formatMarketCap,
   bondingCurveProgress,
@@ -67,7 +68,7 @@ export function TokenCard({ token }: { token: Token }) {
         <div>
           <div className="text-text-muted">Volume 24h</div>
           <div className="font-semibold tabular-nums">
-            {formatUsdDirect(token.volume_24h)}
+            {formatUsdc(token.volume_24h)}
           </div>
         </div>
       </div>

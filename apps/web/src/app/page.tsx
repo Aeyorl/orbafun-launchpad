@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { api, Token, SortOption } from '@/lib/api';
 import { TokenGrid } from '@/components/TokenGrid';
 import { useTokenEvents } from '@/lib/useWebSocket';
-import { formatUsdDirect } from '@/lib/utils';
+import { formatUsdc, formatUsdDirect } from '@/lib/utils';
 
 type Tab = 'newest' | 'market_cap' | 'volume' | 'graduated';
 
@@ -93,7 +93,7 @@ export default function LandingPage() {
         />
         <StatCard
           label="24h volume"
-          value={stats ? formatUsdDirect(stats.volume_24h) : '—'}
+          value={stats ? formatUsdc(stats.volume_24h) : '—'}
         />
         <StatCard
           label="Graduated to DEX"

@@ -258,7 +258,7 @@ export default function CoinPage() {
             <div>
               <div className="text-text-muted text-xs">Volume 24h</div>
               <div className="font-bold text-lg tabular-nums">
-                {formatUsdDirect(token.volume_24h)}
+                {formatUsdc(token.volume_24h)}
               </div>
             </div>
           </div>
