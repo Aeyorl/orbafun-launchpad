@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAccount, useBalance, useReadContract, useWriteContract, useWaitForTransactionReceipt, useSwitchChain } from 'wagmi';
 import { arcTestnet } from 'viem/chains';
 import { parseUnits, formatUnits, erc20Abi, maxUint256 } from 'viem';
@@ -55,6 +56,7 @@ const QUICK_AMOUNTS = [10, 50, 100, 500];
  * Shows live quote before signature, slippage tolerance setting.
  */
 export function TradePanel({ token }: { token: Token }) {
+  const queryClient = useQueryClient();
   const [mode, setMode] = useState<'buy' | 'sell'>('buy');
   const [amount, setAmount] = useState('');
   const [slippage, setSlippage] = useState(5); // 5% default
@@ -83,7 +85,41 @@ export function TradePanel({ token }: { token: Token }) {
   const fallback = useArcReceiptFallback(currentTxHash);
   const txConfirmed = isSuccess || fallback.confirmed;
 
-  // Fire toast notifications on transaction success / failure.
+  // Pin chainId on all reads for the same reason — reads must go through the
+  // Arc transports regardless of what network the wallet reports.
+  const { data: usdcBalance, refetch: refetchUsdcBalance } = useBalance({
+    address,
+    chainId: arcTestnet.id,
+    query: { refetchInterval: 5_000, enabled: !!address },
+  });
+  const { data: tokenBalance, refetch: refetchTokenBalance } = useReadContract({
+    address: token.contract_address as `0x${string}`,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [address!],
+    chainId: arcTestnet.id,
+    query: { enabled: !!address, refetchInterval: 5_000 },
+  });
+
+  const { data: usdcAllowance, refetch: refetchAllowance } = useReadContract({
+    address: CONTRACTS.USDC,
+    abi: erc20Abi,
+    functionName: 'allowance',
+    args: [address!, token.curve_address as `0x${string}`],
+    chainId: arcTestnet.id,
+    query: { enabled: !!address },
+  });
+
+  const { data: tokenAllowance, refetch: refetchTokenAllowance } = useReadContract({
+    address: token.contract_address as `0x${string}`,
+    abi: erc20Abi,
+    functionName: 'allowance',
+    args: [address!, token.curve_address as `0x${string}`],
+    chainId: arcTestnet.id,
+    query: { enabled: !!address && mode === 'sell' },
+  });
+
+  // Fire toast notifications & instant balance refetches on transaction success / failure.
   useEffect(() => {
     if (!txConfirmed || !txAction) return;
 
@@ -110,6 +146,21 @@ export function TradePanel({ token }: { token: Token }) {
       toast.success(`${verb} ${token.symbol}${amt ? ` for ${amt} USDC` : ''}`, {
         id: `trade-${currentTxHash}`,
       });
+
+      // Instantly refetch all balances, allowances, and query caches without reloading the page
+      refetchUsdcBalance();
+      refetchTokenBalance();
+      refetchAllowance();
+      refetchTokenAllowance();
+      queryClient.invalidateQueries({ queryKey: ['balance'] });
+      queryClient.invalidateQueries({ queryKey: ['readContract'] });
+      queryClient.invalidateQueries({ queryKey: ['user-portfolio'] });
+      queryClient.invalidateQueries({ queryKey: ['tokenHolders', token.contract_address] });
+      queryClient.invalidateQueries({ queryKey: ['tokenTrades', token.contract_address] });
+      queryClient.invalidateQueries({ queryKey: ['token', token.contract_address] });
+
+      setAmount('');
+
       // Auto-reset trade success state after 3s so user can make another trade
       const timer = setTimeout(() => {
         setCurrentTxHash(undefined);
@@ -119,47 +170,6 @@ export function TradePanel({ token }: { token: Token }) {
       return () => clearTimeout(timer);
     }
   }, [txConfirmed, txAction]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (fallback.failed) {
-      toast.error('Transaction failed on-chain. Please try again.', {
-        id: `trade-fail-${currentTxHash}`,
-      });
-    }
-  }, [fallback.failed]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Pin chainId on all reads for the same reason — reads must go through the
-  // Arc transports regardless of what network the wallet reports.
-  const { data: usdcBalance } = useBalance({ address, chainId: arcTestnet.id });
-  const { data: tokenBalance } = useReadContract({
-    address: token.contract_address as `0x${string}`,
-    abi: erc20Abi,
-    functionName: 'balanceOf',
-    args: [address!],
-    chainId: arcTestnet.id,
-    query: { enabled: !!address },
-  });
-
-  const { data: usdcAllowance, refetch: refetchAllowance } = useReadContract({
-    address: CONTRACTS.USDC,
-    abi: erc20Abi,
-    functionName: 'allowance',
-    args: [address!, token.curve_address as `0x${string}`],
-    chainId: arcTestnet.id,
-    query: { enabled: !!address },
-  });
-
-  // For sells: the BondingCurve pulls tokens via transferFrom, so the user
-  // must approve the MemeToken for the curve first. Without this, every
-  // sell tx reverts on-chain with TransferFailed().
-  const { data: tokenAllowance, refetch: refetchTokenAllowance } = useReadContract({
-    address: token.contract_address as `0x${string}`,
-    abi: erc20Abi,
-    functionName: 'allowance',
-    args: [address!, token.curve_address as `0x${string}`],
-    chainId: arcTestnet.id,
-    query: { enabled: !!address && mode === 'sell' },
-  });
 
   // Quote
   const parsedAmount = amount
