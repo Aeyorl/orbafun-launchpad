@@ -258,6 +258,7 @@ export const TradingChart = memo(function TradingChart({
     });
 
     mainSeriesRef.current = mainSeries;
+    volumeSeriesRef.current = volumeSeries;
     chart.timeScale().fitContent();
     chartRef.current = chart;
 
@@ -279,7 +280,36 @@ export const TradingChart = memo(function TradingChart({
       mainSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [ready, candles, chartType, scale, metricMode, formatValue]);
+  }, [ready, chartType, scale, metricMode, formatValue]);
+
+  // Update series data when candles change without destroying chart
+  useEffect(() => {
+    if (!mainSeriesRef.current || !volumeSeriesRef.current || candles.length === 0) return;
+
+    const volumeData = candles.map((c) => ({
+      time: c.timestamp,
+      value: c.volume,
+      color: c.close >= c.open ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)',
+    }));
+
+    volumeSeriesRef.current.setData(volumeData);
+
+    if (chartType === 'candlestick') {
+      mainSeriesRef.current.setData(
+        candles.map((c) => ({
+          time: c.timestamp,
+          open: c.open,
+          high: c.high,
+          low: c.low,
+          close: c.close,
+        }))
+      );
+    } else {
+      mainSeriesRef.current.setData(
+        candles.map((c) => ({ time: c.timestamp, value: c.close }))
+      );
+    }
+  }, [candles, chartType]);
 
   const handleMetricChange = useCallback(
     (mode: MetricMode) => {

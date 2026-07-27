@@ -134,12 +134,13 @@ export class IndexerService {
   // ─── Buy ─────────────────────────────────────────────────────────────────
   private async handleBuy(event: BuyEvent): Promise<void> {
     const client = await this.db.connect();
+    let tokenContractAddress: string | null = null;
     try {
       await client.query('BEGIN');
 
       // Find token by curve address
       const tokenResult = await client.query(
-        `SELECT id FROM tokens WHERE curve_address = $1`,
+        `SELECT id, contract_address FROM tokens WHERE curve_address = $1`,
         [event.curveAddress.toLowerCase()],
       );
       if (tokenResult.rows.length === 0) {
@@ -148,6 +149,7 @@ export class IndexerService {
         return;
       }
       const tokenId = tokenResult.rows[0].id;
+      tokenContractAddress = tokenResult.rows[0].contract_address;
 
       // Compute price and market cap
       const usdcAmount = BigInt(event.usdcIn);
@@ -273,9 +275,9 @@ export class IndexerService {
       `SELECT * FROM trades WHERE tx_hash = $1 AND log_index = $2`,
       [event.txHash, event.logIndex],
     );
-    if (trade) {
+    if (trade && tokenContractAddress) {
       await this.redis.publishTokenEvent(
-        event.curveAddress.toLowerCase(),
+        tokenContractAddress.toLowerCase(),
         'NEW_BUY',
         trade,
       );
@@ -288,11 +290,12 @@ export class IndexerService {
   // ─── Sell ────────────────────────────────────────────────────────────────
   private async handleSell(event: SellEvent): Promise<void> {
     const client = await this.db.connect();
+    let tokenContractAddress: string | null = null;
     try {
       await client.query('BEGIN');
 
       const tokenResult = await client.query(
-        `SELECT id FROM tokens WHERE curve_address = $1`,
+        `SELECT id, contract_address FROM tokens WHERE curve_address = $1`,
         [event.curveAddress.toLowerCase()],
       );
       if (tokenResult.rows.length === 0) {
@@ -300,6 +303,7 @@ export class IndexerService {
         return;
       }
       const tokenId = tokenResult.rows[0].id;
+      tokenContractAddress = tokenResult.rows[0].contract_address;
 
       const usdcAmount = BigInt(event.usdcOut);
       const tokenAmount = BigInt(event.tokensIn);
@@ -416,9 +420,9 @@ export class IndexerService {
       `SELECT * FROM trades WHERE tx_hash = $1 AND log_index = $2`,
       [event.txHash, event.logIndex],
     );
-    if (trade) {
+    if (trade && tokenContractAddress) {
       await this.redis.publishTokenEvent(
-        event.curveAddress.toLowerCase(),
+        tokenContractAddress.toLowerCase(),
         'NEW_SELL',
         trade,
       );
