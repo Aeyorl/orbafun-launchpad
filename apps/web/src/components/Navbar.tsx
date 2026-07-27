@@ -58,14 +58,7 @@ export function Navbar() {
           <Link href="/explore" className={`tab ${isActive('/explore') ? 'tab-active' : ''}`}>
             Explore
           </Link>
-          <Link
-            href="/launch"
-            className={`px-3 py-1 text-xs font-semibold rounded transition-colors ${
-              isActive('/launch')
-                ? 'bg-accent-blue text-white'
-                : 'bg-accent-blue/10 text-accent-blue hover:bg-accent-blue hover:text-white'
-            }`}
-          >
+          <Link href="/launch" className={`tab ${isActive('/launch') ? 'tab-active' : ''}`}>
             Launch
           </Link>
           <Link href="/agents" className={`tab ${isActive('/agents') ? 'tab-active' : ''}`}>
