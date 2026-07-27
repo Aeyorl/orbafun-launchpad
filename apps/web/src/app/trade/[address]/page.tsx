@@ -22,6 +22,8 @@ import { SocialLinks } from '@/components/SocialLinks';
 import {
   formatUsdc,
   formatTokens,
+  formatMarketCap,
+  bondingCurveProgress,
   shortenAddress,
   ipfsToGateway,
 } from '@/lib/utils';
@@ -134,7 +136,7 @@ export default function TradePage() {
   const bannerUri = metadata?.banner || null;
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-3 pb-8">
+    <div className="max-w-[1600px] mx-auto space-y-3 pb-20 lg:pb-8">
       {/* Banner cover image if present */}
       {bannerUri && (
         <div className="card overflow-hidden !p-0 max-h-36 sm:max-h-48">
@@ -150,7 +152,7 @@ export default function TradePage() {
         </div>
       )}
 
-      {/* Top Token Header */}
+      {/* Top Token Header & Hero Price */}
       <div className="relative">
         <TokenHeader
           token={token}
@@ -178,9 +180,37 @@ export default function TradePage() {
           />
         </div>
 
-        {/* Trade Terminal Column */}
-        <div className="lg:col-span-4">
+        {/* Trade Terminal Column + Bonding Curve Progress */}
+        <div id="trading-terminal-panel" className="lg:col-span-4 space-y-3 scroll-mt-20">
           <TradeTerminal token={token} />
+
+          {/* Dedicated Bonding Curve Progress Card */}
+          <div className="card space-y-2.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-text-primary">Bonding Curve Progress</span>
+              <span className="font-bold text-accent-blue tabular-nums">
+                {token.status === 'graduated' ? '100% (Graduated)' : `${bondingCurveProgress(token.market_cap).toFixed(1)}%`}
+              </span>
+            </div>
+
+            <div className="progress-bar h-2.5 rounded-full overflow-hidden">
+              <div
+                className="progress-fill h-full bg-accent-blue transition-all duration-500"
+                style={{ width: `${token.status === 'graduated' ? 100 : bondingCurveProgress(token.market_cap)}%` }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-text-muted tabular-nums">
+              <span>{formatMarketCap(token.market_cap)} Current MC</span>
+              <span>$30.0K Graduation</span>
+            </div>
+
+            {token.status !== 'graduated' && (
+              <div className="text-right text-[11px] font-mono text-accent-blue font-medium">
+                {formatUsdc(Math.max(0, 30000000000 - Number(token.market_cap || '0')))} until DEX graduation
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -259,6 +289,28 @@ export default function TradePage() {
         {activeTab === 'chat' && (
           <TokenChat tokenAddress={address} />
         )}
+      </div>
+
+      {/* Sticky Mobile Trade Action Bar */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-bg-base/95 backdrop-blur-md border-t border-bg-border p-3 flex gap-2.5 shadow-subtle-3">
+        <button
+          onClick={() => {
+            const tradePanel = document.getElementById('trading-terminal-panel');
+            tradePanel?.scrollIntoView({ behavior: 'smooth' });
+          }}
+          className="btn-buy flex-1 py-3 text-sm font-bold shadow-sm rounded-lg"
+        >
+          Buy ${token.symbol}
+        </button>
+        <button
+          onClick={() => {
+            const tradePanel = document.getElementById('trading-terminal-panel');
+            tradePanel?.scrollIntoView({ behavior: 'smooth' });
+          }}
+          className="btn-sell flex-1 py-3 text-sm font-bold shadow-sm rounded-lg"
+        >
+          Sell ${token.symbol}
+        </button>
       </div>
     </div>
   );

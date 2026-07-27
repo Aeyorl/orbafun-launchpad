@@ -363,8 +363,7 @@ export function TradePanel({ token }: { token: Token }) {
             {mode === 'buy' ? 'USDC' : token.symbol}
           </span>
         </div>
-        {/* Quick amount presets */}
-        <div className="flex gap-1 mt-2" role="group" aria-label="Quick amount presets">
+        <div className="flex gap-1.5 mt-2" role="group" aria-label="Quick amount presets">
           {mode === 'buy' ? (
             QUICK_AMOUNTS.map((amt) => (
               <button
@@ -372,7 +371,7 @@ export function TradePanel({ token }: { token: Token }) {
                 type="button"
                 onClick={() => setAmount(String(amt))}
                 aria-label={`Set amount to $${amt} USDC`}
-                className="flex-1 py-1 text-xs rounded-md bg-bg-input hover:bg-bg-border text-text-secondary transition-colors"
+                className="flex-1 py-2 min-h-[38px] text-xs font-medium rounded-md bg-bg-input hover:bg-bg-border text-text-secondary transition-colors"
               >
                 ${amt}
               </button>
@@ -390,9 +389,9 @@ export function TradePanel({ token }: { token: Token }) {
                 }}
                 disabled={!tokenBalance || tokenBalance === 0n}
                 aria-label={`Set sell amount to ${pct}%`}
-                className="flex-1 py-1 text-xs rounded-md bg-bg-input hover:bg-bg-border text-text-secondary transition-colors disabled:opacity-50"
+                className="flex-1 py-2 min-h-[38px] text-xs font-medium rounded-md bg-bg-input hover:bg-bg-border text-text-secondary transition-colors disabled:opacity-50"
               >
-                {pct === 100 ? '100% (MAX)' : `${pct}%`}
+                {pct === 100 ? 'MAX' : `${pct}%`}
               </button>
             ))
           )}
