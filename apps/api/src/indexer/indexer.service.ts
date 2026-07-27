@@ -166,6 +166,36 @@ export class IndexerService {
       const creatorFee = fee / 2n;
       const protocolFee = fee - creatorFee;
 
+      // 1. Insert trade (idempotent)
+      await client.query(
+        `INSERT INTO trades (
+           token_id, wallet, type,
+           usdc_amount, token_amount, price,
+           market_cap_after, real_usdc_after, tokens_sold_after,
+           tx_hash, block_number, log_index, timestamp
+         )
+         VALUES ($1, $2, 'buy', $3, $4, $5, $6,
+           (SELECT real_usdc + $7 FROM tokens WHERE id = $1),
+           (SELECT tokens_sold + $8 FROM tokens WHERE id = $1),
+           $9, $10, $11, NOW()
+         )
+         ON CONFLICT (tx_hash, log_index) DO NOTHING`,
+        [
+          tokenId,
+          event.buyer.toLowerCase(),
+          usdcAmount.toString(),
+          tokenAmount.toString(),
+          price,
+          marketCap,
+          netUsdc.toString(),
+          tokenAmount.toString(),
+          event.txHash,
+          event.blockNumber.toString(),
+          event.logIndex,
+        ],
+      );
+
+      // 2. Update token state (price, market cap, real usdc, tokens sold, fees, volume_24h in dollars)
       await client.query(
         `UPDATE tokens SET
            price = $2,
@@ -175,11 +205,11 @@ export class IndexerService {
            creator_fees_accrued = creator_fees_accrued + $6,
            protocol_fees_accrued = protocol_fees_accrued + $7,
            volume_24h = COALESCE((
-             SELECT SUM(usdc_amount)::numeric(20,6)
+             SELECT SUM(usdc_amount) / 1000000.0
              FROM trades
              WHERE token_id = $1
                AND timestamp > NOW() - INTERVAL '24 hours'
-           ), 0) + $8
+           ), 0)
          WHERE id = $1`,
         [
           tokenId,
@@ -189,35 +219,6 @@ export class IndexerService {
           tokenAmount.toString(),
           creatorFee.toString(),
           protocolFee.toString(),
-          usdcAmount.toString(),
-        ],
-      );
-
-      // Insert trade (idempotent)
-      await client.query(
-        `INSERT INTO trades (
-           token_id, wallet, type,
-           usdc_amount, token_amount, price,
-           market_cap_after, real_usdc_after, tokens_sold_after,
-           tx_hash, block_number, log_index, timestamp
-         )
-         SELECT $1, $2, 'buy', $3, $4, $5, $6,
-           (SELECT real_usdc FROM tokens WHERE id = $1),
-           (SELECT tokens_sold FROM tokens WHERE id = $1),
-           $7, $8, $9, NOW()
-         WHERE NOT EXISTS (
-           SELECT 1 FROM trades WHERE tx_hash = $7 AND log_index = $9
-         )`,
-        [
-          tokenId,
-          event.buyer.toLowerCase(),
-          usdcAmount.toString(),
-          tokenAmount.toString(),
-          price,
-          marketCap,
-          event.txHash,
-          event.blockNumber.toString(),
-          event.logIndex,
         ],
       );
 
@@ -313,6 +314,36 @@ export class IndexerService {
       const creatorFee = fee / 2n;
       const protocolFee = fee - creatorFee;
 
+      // 1. Insert trade (idempotent)
+      await client.query(
+        `INSERT INTO trades (
+           token_id, wallet, type,
+           usdc_amount, token_amount, price,
+           market_cap_after, real_usdc_after, tokens_sold_after,
+           tx_hash, block_number, log_index, timestamp
+         )
+         VALUES ($1, $2, 'sell', $3, $4, $5, $6,
+           (SELECT GREATEST(0, real_usdc - $7) FROM tokens WHERE id = $1),
+           (SELECT GREATEST(0, tokens_sold - $8) FROM tokens WHERE id = $1),
+           $9, $10, $11, NOW()
+         )
+         ON CONFLICT (tx_hash, log_index) DO NOTHING`,
+        [
+          tokenId,
+          event.seller.toLowerCase(),
+          usdcAmount.toString(),
+          tokenAmount.toString(),
+          price,
+          marketCap,
+          netUsdcOut.toString(),
+          tokenAmount.toString(),
+          event.txHash,
+          event.blockNumber.toString(),
+          event.logIndex,
+        ],
+      );
+
+      // 2. Update token state (price, market cap, real usdc, tokens sold, fees, volume_24h in dollars)
       await client.query(
         `UPDATE tokens SET
            price = $2,
@@ -322,11 +353,11 @@ export class IndexerService {
            creator_fees_accrued = creator_fees_accrued + $6,
            protocol_fees_accrued = protocol_fees_accrued + $7,
            volume_24h = COALESCE((
-             SELECT SUM(usdc_amount)::numeric(20,6)
+             SELECT SUM(usdc_amount) / 1000000.0
              FROM trades
              WHERE token_id = $1
                AND timestamp > NOW() - INTERVAL '24 hours'
-           ), 0) + $8
+           ), 0)
          WHERE id = $1`,
         [
           tokenId,
@@ -336,34 +367,6 @@ export class IndexerService {
           tokenAmount.toString(),
           creatorFee.toString(),
           protocolFee.toString(),
-          usdcAmount.toString(),
-        ],
-      );
-
-      await client.query(
-        `INSERT INTO trades (
-           token_id, wallet, type,
-           usdc_amount, token_amount, price,
-           market_cap_after, real_usdc_after, tokens_sold_after,
-           tx_hash, block_number, log_index, timestamp
-         )
-         SELECT $1, $2, 'sell', $3, $4, $5, $6,
-           (SELECT real_usdc FROM tokens WHERE id = $1),
-           (SELECT tokens_sold FROM tokens WHERE id = $1),
-           $7, $8, $9, NOW()
-         WHERE NOT EXISTS (
-           SELECT 1 FROM trades WHERE tx_hash = $7 AND log_index = $9
-         )`,
-        [
-          tokenId,
-          event.seller.toLowerCase(),
-          usdcAmount.toString(),
-          tokenAmount.toString(),
-          price,
-          marketCap,
-          event.txHash,
-          event.blockNumber.toString(),
-          event.logIndex,
         ],
       );
 

@@ -32,7 +32,7 @@ export class LeaderboardService {
            COALESCE(SUM(t.market_cap) FILTER (WHERE t.status = 'active'), 0) as total_market_cap
          FROM users u
          LEFT JOIN (
-           SELECT t.creator_wallet, SUM(tr.usdc_amount) as vol
+           SELECT t.creator_wallet, (SUM(tr.usdc_amount) / 1000000.0) as vol
            FROM tokens t
            JOIN trades tr ON tr.token_id = t.id
            GROUP BY t.creator_wallet
