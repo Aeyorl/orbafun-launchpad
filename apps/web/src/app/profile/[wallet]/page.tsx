@@ -115,8 +115,8 @@ export default function ProfilePage() {
 
       {/* PnL Card */}
       <div className="card">
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <h2 className="text-lg font-bold">Profit & Loss</h2>
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h2 className="text-base font-bold">Profit & Loss</h2>
           <div className="flex items-center gap-1" role="tablist" aria-label="PnL period">
             {(['7d', '30d', 'all'] as PnlPeriod[]).map((p) => (
               <button
@@ -124,9 +124,9 @@ export default function ProfilePage() {
                 role="tab"
                 aria-selected={pnlPeriod === p}
                 onClick={() => setPnlPeriod(p)}
-                className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                className={`px-2.5 py-0.5 text-xs font-medium rounded-full transition-colors ${
                   pnlPeriod === p
-                    ? 'bg-text-primary/10 text-text-primary'
+                    ? 'bg-accent-blue text-white'
                     : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
                 }`}
               >
@@ -137,42 +137,68 @@ export default function ProfilePage() {
         </div>
 
         {pnlLoading ? (
-          <div className="h-20 animate-pulse bg-bg-input rounded-lg" />
+          <div className="h-24 animate-pulse bg-bg-input rounded-lg" />
         ) : (
-          <div className="space-y-4">
-            {/* Main PnL number */}
-            <div className="text-center py-3">
-              <div className="text-xs text-text-muted mb-1">
+          <div className="space-y-3">
+            {/* Realized PnL summary header */}
+            <div className="flex items-baseline justify-between pt-1">
+              <span className="text-xs text-text-muted font-medium">
                 Realized PnL ({pnlPeriod === 'all' ? 'All Time' : pnlPeriod.toUpperCase()})
-              </div>
-              <div
-                className={`text-3xl font-bold tabular-nums ${
+              </span>
+              <span
+                className={`text-2xl font-bold tabular-nums tracking-tight ${
                   pnlValue === 0
                     ? 'text-text-primary'
                     : isPositivePnl
-                    ? 'text-green-600'
-                    : 'text-red-600'
+                    ? 'text-accent-green'
+                    : 'text-accent-red'
                 }`}
               >
                 {isPositivePnl && pnlValue > 0 ? '+' : ''}
                 {formatUsdc(pnlValue)}
-              </div>
+              </span>
             </div>
 
-            {/* Breakdown */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-red-50 rounded-lg p-3">
-                <div className="text-xs text-red-600 font-medium mb-0.5">Total Bought</div>
-                <div className="font-bold tabular-nums text-red-700">{formatUsdc(totalBought)}</div>
-                <div className="text-xs text-red-500 tabular-nums mt-0.5">
-                  {pnlData?.buy_count ?? 0} trades
+            {/* Unified Compact Trading Flow Component (Buy / Sell summary) */}
+            <div className="grid grid-cols-2 rounded-lg border border-bg-border bg-bg-base overflow-hidden relative">
+              {/* BUY Side */}
+              <div className="p-3 bg-red-500/[0.03] dark:bg-red-500/[0.04] space-y-1">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <span className="text-[11px] font-semibold tracking-wider text-red-600 dark:text-red-400 flex items-center gap-1 uppercase">
+                    Buy
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-red-500">
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <polyline points="19 12 12 19 5 12" />
+                    </svg>
+                  </span>
+                  <span className="text-[11px] text-text-muted tabular-nums">
+                    {pnlData?.buy_count ?? 0} {pnlData?.buy_count === 1 ? 'trade' : 'trades'}
+                  </span>
+                </div>
+                <div className="text-lg font-bold tabular-nums text-text-primary">
+                  {formatUsdc(totalBought)}
                 </div>
               </div>
-              <div className="bg-green-50 rounded-lg p-3">
-                <div className="text-xs text-green-600 font-medium mb-0.5">Total Sold</div>
-                <div className="font-bold tabular-nums text-green-700">{formatUsdc(totalSold)}</div>
-                <div className="text-xs text-green-500 tabular-nums mt-0.5">
-                  {pnlData?.sell_count ?? 0} trades
+
+              {/* Subtle Vertical Divider */}
+              <div className="absolute left-1/2 top-2 bottom-2 w-px bg-bg-border -translate-x-1/2 pointer-events-none" />
+
+              {/* SELL Side */}
+              <div className="p-3 bg-green-500/[0.03] dark:bg-green-500/[0.04] space-y-1">
+                <div className="flex items-center justify-between flex-wrap gap-1">
+                  <span className="text-[11px] font-semibold tracking-wider text-green-600 dark:text-green-400 flex items-center gap-1 uppercase">
+                    Sell
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-500">
+                      <line x1="12" y1="19" x2="12" y2="5" />
+                      <polyline points="5 12 12 5 19 12" />
+                    </svg>
+                  </span>
+                  <span className="text-[11px] text-text-muted tabular-nums">
+                    {pnlData?.sell_count ?? 0} {pnlData?.sell_count === 1 ? 'trade' : 'trades'}
+                  </span>
+                </div>
+                <div className="text-lg font-bold tabular-nums text-text-primary">
+                  {formatUsdc(totalSold)}
                 </div>
               </div>
             </div>
