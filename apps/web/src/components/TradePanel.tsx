@@ -209,7 +209,8 @@ export function TradePanel({ token }: { token: Token }) {
       return { priceImpactPct: 0, minOut: 0n, formattedQuote: '0.00' };
     }
 
-    const minOutVal = (quote * BigInt(Math.max(1, Math.floor((100 - slippage) * 10)))) / 1000n;
+    const slippageBps = BigInt(Math.max(1, Math.floor((100 - slippage) * 100)));
+    const minOutVal = (quote * slippageBps) / 10000n;
     const spotPrice = parseFloat(token.price || '0');
     let impact = 0;
 
@@ -278,27 +279,16 @@ export function TradePanel({ token }: { token: Token }) {
     }
   };
 
-  // Execute approval
+  // Execute approval (Standard ERC-20 approve using maxUint256)
   const handleApprove = async () => {
     if (!address || parsedAmount === 0n) return;
     setTxAction('approve');
     if (mode === 'buy') {
       writeContract({
         address: CONTRACTS.USDC,
-        abi: [
-          {
-            name: 'increaseAllowance',
-            type: 'function',
-            stateMutability: 'nonpayable',
-            inputs: [
-              { name: 'spender', type: 'address' },
-              { name: 'addedValue', type: 'uint256' },
-            ],
-            outputs: [{ name: '', type: 'bool' }],
-          },
-        ],
-        functionName: 'increaseAllowance',
-        args: [token.curve_address as `0x${string}`, parsedAmount],
+        abi: erc20Abi,
+        functionName: 'approve',
+        args: [token.curve_address as `0x${string}`, maxUint256],
         chainId: arcTestnet.id,
       });
     } else {

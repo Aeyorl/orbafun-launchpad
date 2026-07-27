@@ -161,20 +161,9 @@ export default function LaunchPage() {
     setTxAction('approve');
     writeContract({
       address: CONTRACTS.USDC,
-      abi: [
-        {
-          name: 'increaseAllowance',
-          type: 'function',
-          stateMutability: 'nonpayable',
-          inputs: [
-            { name: 'spender', type: 'address' },
-            { name: 'addedValue', type: 'uint256' },
-          ],
-          outputs: [{ name: '', type: 'bool' }],
-        },
-      ],
-      functionName: 'increaseAllowance',
-      args: [CONTRACTS.TOKEN_FACTORY, parseUnits(String(CREATION_FEE), USDC_DECIMALS)],
+      abi: erc20Abi,
+      functionName: 'approve',
+      args: [CONTRACTS.TOKEN_FACTORY, maxUint256],
       chainId: arcTestnet.id,
     });
   };
