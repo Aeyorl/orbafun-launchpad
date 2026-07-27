@@ -1,17 +1,32 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAccount, useBalance, useReadContract, useWriteContract, useWaitForTransactionReceipt, useSwitchChain } from 'wagmi';
+import {
+  useAccount,
+  useBalance,
+  useReadContract,
+  useWriteContract,
+  useWaitForTransactionReceipt,
+  useSwitchChain,
+  useConnect,
+  useConnectors,
+} from 'wagmi';
 import { arcTestnet } from 'viem/chains';
 import { parseUnits, formatUnits, erc20Abi, maxUint256 } from 'viem';
 import toast from 'react-hot-toast';
 import { CONTRACTS, USDC_DECIMALS, TOKEN_DECIMALS } from '@/lib/config';
-import { formatUsdc, formatNativeUsdc, formatTokens } from '@/lib/utils';
+import {
+  formatUsdc,
+  formatNativeUsdc,
+  formatTokens,
+  formatPrice,
+  bondingCurveProgress,
+} from '@/lib/utils';
 import { Token } from '@/lib/api';
 import { useArcReceiptFallback } from '@/lib/use-arc-receipt';
 
-// BondingCurve ABI (minimal — just the functions we need)
+// BondingCurve ABI (minimal view & trade functions)
 const BONDING_CURVE_ABI = [
   {
     name: 'buy',
@@ -49,31 +64,29 @@ const BONDING_CURVE_ABI = [
   },
 ] as const;
 
-const QUICK_AMOUNTS = [10, 50, 100, 500];
-
 /**
- * TradePanel — buy/sell interface for a token on the bonding curve.
- * Shows live quote before signature, slippage tolerance setting.
+ * TradePanel — professional, high-density terminal trading form for Orba.
  */
 export function TradePanel({ token }: { token: Token }) {
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<'buy' | 'sell'>('buy');
   const [amount, setAmount] = useState('');
-  const [slippage, setSlippage] = useState(5); // 5% default
+  const [slippage, setSlippage] = useState(1); // 1% default
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   const { address, isConnected, chainId } = useAccount();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
-  // If the wallet is connected to a different network (or has Arc Testnet
-  // configured with a wrong chain ID, e.g. legacy 1516), every wagmi hook
-  // silently fails — balance shows $0, quotes never load, and receipt
-  // polling never resolves. Detect it and prompt the user to switch.
+  const connectors = useConnectors();
+  const { connect } = useConnect();
+
   const wrongNetwork = isConnected && chainId !== arcTestnet.id;
-  // Track active tx hash locally to cleanly separate approval vs trade confirmation states
+
+  // Track active tx hash locally to separate approval vs trade states cleanly
   const [currentTxHash, setCurrentTxHash] = useState<`0x${string}` | undefined>(undefined);
   const [txAction, setTxAction] = useState<'approve' | 'trade' | null>(null);
 
   const { writeContract, data: txHash, isPending, reset } = useWriteContract();
 
-  // Sync writeContract txHash to local state
   useEffect(() => {
     if (txHash) setCurrentTxHash(txHash);
   }, [txHash]);
@@ -85,13 +98,13 @@ export function TradePanel({ token }: { token: Token }) {
   const fallback = useArcReceiptFallback(currentTxHash);
   const txConfirmed = isSuccess || fallback.confirmed;
 
-  // Pin chainId on all reads for the same reason — reads must go through the
-  // Arc transports regardless of what network the wallet reports.
+  // Wallet balances
   const { data: usdcBalance, refetch: refetchUsdcBalance } = useBalance({
     address,
     chainId: arcTestnet.id,
     query: { refetchInterval: 5_000, enabled: !!address },
   });
+
   const { data: tokenBalance, refetch: refetchTokenBalance } = useReadContract({
     address: token.contract_address as `0x${string}`,
     abi: erc20Abi,
@@ -101,6 +114,7 @@ export function TradePanel({ token }: { token: Token }) {
     query: { enabled: !!address, refetchInterval: 5_000 },
   });
 
+  // Allowances
   const { data: usdcAllowance, refetch: refetchAllowance } = useReadContract({
     address: CONTRACTS.USDC,
     abi: erc20Abi,
@@ -119,23 +133,21 @@ export function TradePanel({ token }: { token: Token }) {
     query: { enabled: !!address && mode === 'sell' },
   });
 
-  // Fire toast notifications & instant balance refetches on transaction success / failure.
+  // Notifications & refetches on tx resolution
   useEffect(() => {
     if (!txConfirmed || !txAction) return;
 
     if (txAction === 'approve') {
       const asset = mode === 'buy' ? 'USDC' : token.symbol;
-      toast.success(`${asset} approved! Prompts for ${mode === 'buy' ? 'Buy' : 'Sell'} in wallet…`, {
+      toast.success(`${asset} approved! Prompting ${mode === 'buy' ? 'Buy' : 'Sell'} in wallet…`, {
         id: `approve-${currentTxHash}`,
       });
-      // Refetch allowances, reset approval state, and automatically trigger the trade transaction.
       refetchAllowance();
       refetchTokenAllowance();
       setCurrentTxHash(undefined);
       setTxAction(null);
       reset();
 
-      // Auto-trigger trade transaction after a short delay for state update
       const timer = setTimeout(() => {
         handleTrade();
       }, 500);
@@ -143,11 +155,10 @@ export function TradePanel({ token }: { token: Token }) {
     } else if (txAction === 'trade') {
       const verb = mode === 'buy' ? 'Bought' : 'Sold';
       const amt = amount || '';
-      toast.success(`${verb} ${token.symbol}${amt ? ` for ${amt} USDC` : ''}`, {
+      toast.success(`${verb} ${token.symbol}${amt ? ` (${amt} ${mode === 'buy' ? 'USDC' : token.symbol})` : ''}`, {
         id: `trade-${currentTxHash}`,
       });
 
-      // Instantly refetch all balances, allowances, and query caches without reloading the page
       refetchUsdcBalance();
       refetchTokenBalance();
       refetchAllowance();
@@ -161,7 +172,6 @@ export function TradePanel({ token }: { token: Token }) {
 
       setAmount('');
 
-      // Auto-reset trade success state after 3s so user can make another trade
       const timer = setTimeout(() => {
         setCurrentTxHash(undefined);
         setTxAction(null);
@@ -171,13 +181,19 @@ export function TradePanel({ token }: { token: Token }) {
     }
   }, [txConfirmed, txAction]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Quote
-  const parsedAmount = amount
-    ? mode === 'buy'
-      ? parseUnits(amount, USDC_DECIMALS)
-      : parseUnits(amount, TOKEN_DECIMALS)
-    : 0n;
+  // Parse input amount
+  const parsedAmount = useMemo(() => {
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) return 0n;
+    try {
+      return mode === 'buy'
+        ? parseUnits(amount, USDC_DECIMALS)
+        : parseUnits(amount, TOKEN_DECIMALS);
+    } catch {
+      return 0n;
+    }
+  }, [amount, mode]);
 
+  // Quote lookup
   const { data: quote } = useReadContract({
     address: token.curve_address as `0x${string}`,
     abi: BONDING_CURVE_ABI,
@@ -187,11 +203,37 @@ export function TradePanel({ token }: { token: Token }) {
     query: { enabled: parsedAmount > 0n },
   });
 
-  // Approval logic:
-  //   - BUY: BondingCurve pulls USDC via transferFrom → approve USDC for curve.
-  //   - SELL: BondingCurve pulls tokens via transferFrom → approve token for curve.
-  // If the relevant allowance is undefined (RPC read failed/loading), default
-  // to needing approval — safer than letting the tx revert on-chain.
+  // Calculate Price Impact & Minimum Out
+  const { priceImpactPct, minOut, formattedQuote } = useMemo(() => {
+    if (!quote || parsedAmount === 0n) {
+      return { priceImpactPct: 0, minOut: 0n, formattedQuote: '0.00' };
+    }
+
+    const minOutVal = (quote * BigInt(Math.max(1, Math.floor((100 - slippage) * 10)))) / 1000n;
+    const spotPrice = parseFloat(token.price || '0');
+    let impact = 0;
+
+    if (mode === 'buy') {
+      const usdcPaid = Number(parsedAmount) / 1e6;
+      const tokensRecv = Number(quote) / 1e18;
+      if (tokensRecv > 0 && spotPrice > 0) {
+        const execPrice = usdcPaid / tokensRecv;
+        impact = Math.max(0, ((execPrice - spotPrice) / spotPrice) * 100);
+      }
+    } else {
+      const tokensSold = Number(parsedAmount) / 1e18;
+      const usdcRecv = Number(quote) / 1e6;
+      if (tokensSold > 0 && spotPrice > 0) {
+        const execPrice = usdcRecv / tokensSold;
+        impact = Math.max(0, ((spotPrice - execPrice) / spotPrice) * 100);
+      }
+    }
+
+    const formatted = mode === 'buy' ? formatTokens(quote) : formatUsdc(quote);
+    return { priceImpactPct: impact, minOut: minOutVal, formattedQuote: formatted };
+  }, [quote, parsedAmount, mode, slippage, token.price]);
+
+  // Approval checks
   const usdcAllowanceLoaded = usdcAllowance !== undefined;
   const tokenAllowanceLoaded = tokenAllowance !== undefined;
   const needsApproval =
@@ -200,14 +242,24 @@ export function TradePanel({ token }: { token: Token }) {
       ? (!usdcAllowanceLoaded || usdcAllowance < parsedAmount)
       : (!tokenAllowanceLoaded || tokenAllowance < parsedAmount));
 
+  // Balance validations
+  const hasInsufficientBalance = useMemo(() => {
+    if (!isConnected || parsedAmount === 0n) return false;
+    if (mode === 'buy') {
+      const bal = usdcBalance?.value ?? 0n;
+      return parsedAmount > bal;
+    } else {
+      const bal = tokenBalance ?? 0n;
+      return parsedAmount > bal;
+    }
+  }, [isConnected, parsedAmount, mode, usdcBalance, tokenBalance]);
+
+  // Execute trade
   const handleTrade = async () => {
-    if (!address || !amount) return;
+    if (!address || parsedAmount === 0n) return;
     setTxAction('trade');
 
     if (mode === 'buy') {
-      const minOut = quote
-        ? (quote * BigInt(100 - slippage)) / 100n
-        : 0n;
       writeContract({
         address: token.curve_address as `0x${string}`,
         abi: BONDING_CURVE_ABI,
@@ -216,9 +268,6 @@ export function TradePanel({ token }: { token: Token }) {
         chainId: arcTestnet.id,
       });
     } else {
-      const minOut = quote
-        ? (quote * BigInt(100 - slippage)) / 100n
-        : 0n;
       writeContract({
         address: token.curve_address as `0x${string}`,
         abi: BONDING_CURVE_ABI,
@@ -229,13 +278,11 @@ export function TradePanel({ token }: { token: Token }) {
     }
   };
 
+  // Execute approval
   const handleApprove = async () => {
-    if (!address || !amount) return;
+    if (!address || parsedAmount === 0n) return;
     setTxAction('approve');
     if (mode === 'buy') {
-      // Increase USDC allowance for the bonding curve (used by buy() via transferFrom).
-      // Uses increaseAllowance (selector 0x39509351) instead of approve so wallet extensions
-      // like MetaMask/Rabby strictly classify it as ERC-20 (no NFT warnings).
       writeContract({
         address: CONTRACTS.USDC,
         abi: [
@@ -251,11 +298,10 @@ export function TradePanel({ token }: { token: Token }) {
           },
         ],
         functionName: 'increaseAllowance',
-        args: [token.curve_address as `0x${string}`, parseUnits(amount, USDC_DECIMALS)],
+        args: [token.curve_address as `0x${string}`, parsedAmount],
         chainId: arcTestnet.id,
       });
     } else {
-      // Approve the MemeToken for the bonding curve (used by sell() via transferFrom).
       writeContract({
         address: token.contract_address as `0x${string}`,
         abi: erc20Abi,
@@ -266,275 +312,328 @@ export function TradePanel({ token }: { token: Token }) {
     }
   };
 
+  // Set preset percentages (25%, 50%, 75%, 100%)
+  const setPercentageAmount = (pct: number) => {
+    if (mode === 'buy') {
+      const bal = usdcBalance?.value ?? 0n;
+      if (bal === 0n) return;
+      const target = (bal * BigInt(pct)) / 100n;
+      setAmount(formatUnits(target, USDC_DECIMALS));
+    } else {
+      const bal = tokenBalance ?? 0n;
+      if (bal === 0n) return;
+      const target = (bal * BigInt(pct)) / 100n;
+      setAmount(formatUnits(target, TOKEN_DECIMALS));
+    }
+  };
+
+  // Graduated state
   if (token.status === 'graduated') {
     return (
-      <div className="card">
-        <div className="text-center py-6">
-          <div className="text-accent-purple text-3xl mb-2">🎓</div>
-          <h3 className="font-semibold mb-1">Token Graduated</h3>
-          <p className="text-sm text-text-secondary mb-4">
-            This token has migrated to the DEX and now trades on the open market.
-          </p>
-          {token.amm_pair_address && (
-            <a
-              href={`https://testnet.arcscan.app/address/${token.amm_pair_address}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-primary inline-block"
-              aria-label="View AMM Pair on ArcScan (opens in new tab)"
-            >
-              View AMM Pair → <span className="sr-only">(opens in new tab)</span>
-            </a>
-          )}
-        </div>
+      <div className="card text-center py-6 space-y-3">
+        <div className="text-3xl">🎓</div>
+        <h3 className="font-bold text-base text-text-primary">Token Graduated to DEX</h3>
+        <p className="text-xs text-text-muted max-w-xs mx-auto">
+          This token reached the $30,000 graduation threshold and now trades freely on the Orba AMM pair with liquidity permanently burned.
+        </p>
+        {token.amm_pair_address && (
+          <a
+            href={`https://testnet.arcscan.app/address/${token.amm_pair_address}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-primary inline-flex items-center gap-1.5 text-xs px-4 py-2 rounded-full font-bold"
+          >
+            <span>View AMM Pair on ArcScan</span>
+            <span>↗</span>
+          </a>
+        )}
       </div>
     );
   }
 
+  const progress = bondingCurveProgress(token.market_cap);
+
   return (
-    <div className="card">
-      {/* Buy/Sell toggle */}
-      <div className="flex gap-1 bg-bg-input rounded-lg p-1 mb-4" role="tablist" aria-label="Trade direction">
+    <div className="card space-y-3.5 bg-bg-card border border-bg-border shadow-subtle-1">
+      {/* 1. SEGMENTED BUY / SELL CONTROL */}
+      <div className="bg-bg-input p-1 rounded-xl flex gap-1 border border-bg-border/60" role="tablist">
         <button
           role="tab"
           aria-selected={mode === 'buy'}
-          onClick={() => setMode('buy')}
-          className={`flex-1 py-2 rounded-md text-sm font-semibold transition-colors ${
-            mode === 'buy' ? 'bg-accent-blue text-white' : 'text-text-secondary hover:text-text-primary'
+          onClick={() => {
+            setMode('buy');
+            setAmount('');
+          }}
+          className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
+            mode === 'buy'
+              ? 'bg-accent-blue text-white shadow-sm'
+              : 'text-text-secondary hover:text-text-primary'
           }`}
         >
-          Buy
+          BUY
         </button>
         <button
           role="tab"
           aria-selected={mode === 'sell'}
-          onClick={() => setMode('sell')}
-          className={`flex-1 py-2 rounded-md text-sm font-semibold transition-colors ${
-            mode === 'sell' ? 'bg-accent-red text-white' : 'text-text-secondary hover:text-text-primary'
+          onClick={() => {
+            setMode('sell');
+            setAmount('');
+          }}
+          className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
+            mode === 'sell'
+              ? 'bg-accent-blue text-white shadow-sm'
+              : 'text-text-secondary hover:text-text-primary'
           }`}
         >
-          Sell
+          SELL
         </button>
       </div>
 
-      {/* Current User Holdings Card (if connected and balance > 0) */}
-      {isConnected && tokenBalance && tokenBalance > 0n && (
-        <div className="bg-bg-input rounded-xl p-3 mb-4 flex items-center justify-between text-xs border border-bg-border/60">
-          <div>
-            <div className="text-text-muted">Your Holdings</div>
-            <div className="font-bold text-sm text-text-primary tabular-nums">
-              {formatTokens(tokenBalance)} {token.symbol}
+      {/* 2. YOU PAY / YOU SELL INPUT CONTAINER */}
+      <div className="space-y-1.5">
+        <div className="flex justify-between items-center text-xs text-text-muted">
+          <span className="font-semibold">{mode === 'buy' ? 'You pay' : 'You sell'}</span>
+          {isConnected && (
+            <div className="flex items-center gap-1">
+              <span>
+                Balance:{' '}
+                <span className="font-mono text-text-primary font-medium">
+                  {mode === 'buy'
+                    ? `${usdcBalance ? formatNativeUsdc(usdcBalance.value) : '0.00'} USDC`
+                    : `${tokenBalance ? formatTokens(tokenBalance) : '0'} ${token.symbol}`}
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setPercentageAmount(100)}
+                className="text-[11px] font-bold text-accent-blue hover:underline uppercase ml-1"
+              >
+                MAX
+              </button>
             </div>
-          </div>
-          <div className="text-right">
-            <div className="text-text-muted">Est. Value</div>
-            <div className="font-bold text-sm text-accent-green tabular-nums">
-              {formatUsdc(Math.round((Number(tokenBalance) / 1e18) * parseFloat(token.price || '0') * 1e6).toString())}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Amount input */}
-      <div className="mb-3">
-        <label htmlFor="trade-amount" className="text-xs text-text-muted mb-1 block flex justify-between">
-          <span>{mode === 'buy' ? 'USDC amount' : 'Token amount'}</span>
-          {mode === 'sell' && tokenBalance && tokenBalance > 0n && (
-            <button
-              type="button"
-              onClick={() => setAmount(formatUnits(tokenBalance, TOKEN_DECIMALS))}
-              className="text-accent-red font-semibold hover:underline text-xs"
-            >
-              MAX
-            </button>
           )}
-        </label>
-        <div className="relative">
+        </div>
+
+        <div className="relative flex items-center bg-bg-input rounded-xl border border-bg-border focus-within:border-accent-blue transition-colors">
           <input
-            id="trade-amount"
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0.00"
-            className="input pr-16 text-lg font-semibold"
-            aria-label={`${mode === 'buy' ? 'USDC' : token.symbol} amount to ${mode}`}
+            min="0"
+            step="any"
+            className="w-full bg-transparent px-3.5 py-2.5 text-lg font-bold font-mono text-text-primary placeholder:text-text-muted focus:outline-none"
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-text-muted font-medium">
+          <span className="pr-3.5 text-xs font-bold text-text-secondary font-mono flex-shrink-0">
             {mode === 'buy' ? 'USDC' : token.symbol}
           </span>
         </div>
-        <div className="flex gap-1.5 mt-2" role="group" aria-label="Quick amount presets">
-          {mode === 'buy' ? (
-            QUICK_AMOUNTS.map((amt) => (
-              <button
-                key={amt}
-                type="button"
-                onClick={() => setAmount(String(amt))}
-                aria-label={`Set amount to $${amt} USDC`}
-                className="flex-1 py-2 min-h-[38px] text-xs font-medium rounded-md bg-bg-input hover:bg-bg-border text-text-secondary transition-colors"
-              >
-                ${amt}
-              </button>
-            ))
-          ) : (
-            [25, 50, 75, 100].map((pct) => (
-              <button
-                key={pct}
-                type="button"
-                onClick={() => {
-                  if (tokenBalance && tokenBalance > 0n) {
-                    const pctAmount = (tokenBalance * BigInt(pct)) / 100n;
-                    setAmount(formatUnits(pctAmount, TOKEN_DECIMALS));
-                  }
-                }}
-                disabled={!tokenBalance || tokenBalance === 0n}
-                aria-label={`Set sell amount to ${pct}%`}
-                className="flex-1 py-2 min-h-[38px] text-xs font-medium rounded-md bg-bg-input hover:bg-bg-border text-text-secondary transition-colors disabled:opacity-50"
-              >
-                {pct === 100 ? 'MAX' : `${pct}%`}
-              </button>
-            ))
-          )}
+
+        {/* Percentage Preset Shortcuts */}
+        <div className="grid grid-cols-4 gap-1.5 pt-0.5">
+          {[25, 50, 75, 100].map((pct) => (
+            <button
+              key={pct}
+              type="button"
+              onClick={() => setPercentageAmount(pct)}
+              className="py-1 px-2 text-[11px] font-semibold font-mono rounded-lg bg-bg-input hover:bg-bg-hover text-text-secondary hover:text-text-primary border border-bg-border/60 transition-colors"
+            >
+              {pct === 100 ? 'MAX' : `${pct}%`}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Balance display */}
-      {isConnected && (
-        <div className="text-xs text-text-muted mb-3 flex justify-between">
-          <span>
-            Balance: {mode === 'buy'
-              ? `${usdcBalance ? formatNativeUsdc(usdcBalance.value) : '$0'} USDC`
-              : `${tokenBalance ? formatTokens(tokenBalance) : '0'} ${token.symbol}`}
+      {/* ARROW DIVIDER */}
+      <div className="flex justify-center -my-1">
+        <div className="w-6 h-6 rounded-full bg-bg-input border border-bg-border flex items-center justify-center text-text-muted text-xs shadow-xs">
+          ↓
+        </div>
+      </div>
+
+      {/* 3. YOU RECEIVE READ-ONLY OUTPUT CONTAINER */}
+      <div className="space-y-1.5">
+        <div className="text-xs text-text-muted font-semibold">You receive</div>
+        <div className="flex items-center bg-bg-input/60 rounded-xl border border-bg-border/60 px-3.5 py-2.5">
+          <span className="w-full text-lg font-bold font-mono text-text-primary truncate">
+            {quote && parsedAmount > 0n ? `≈ ${formattedQuote}` : '≈ 0.00'}
           </span>
-          {mode === 'buy' && usdcBalance && (
-            <button
-              type="button"
-              onClick={() => setAmount(formatUnits(usdcBalance.value, USDC_DECIMALS))}
-              className="text-accent-green font-semibold hover:underline"
-              aria-label="Use maximum USDC balance"
-            >
-              MAX
-            </button>
-          )}
-          {mode === 'sell' && tokenBalance && tokenBalance > 0n && (
-            <button
-              type="button"
-              onClick={() => setAmount(formatUnits(tokenBalance, TOKEN_DECIMALS))}
-              className="text-accent-red font-semibold hover:underline"
-              aria-label="Use maximum token balance"
-            >
-              MAX
-            </button>
-          )}
+          <span className="text-xs font-bold text-text-secondary font-mono flex-shrink-0">
+            {mode === 'buy' ? token.symbol : 'USDC'}
+          </span>
         </div>
-      )}
+      </div>
 
-      {/* Quote */}
-      {quote && parsedAmount > 0n && (
-        <div className="bg-bg-input rounded-lg p-3 mb-3 text-sm">
-          <div className="flex justify-between mb-1">
-            <span className="text-text-muted">You receive</span>
-            <span className="font-semibold tabular-nums">
-              {mode === 'buy'
-                ? `${formatTokens(quote)} ${token.symbol}`
-                : `${formatUsdc(quote)} USDC`}
-            </span>
-          </div>
-          <div className="flex justify-between text-xs text-text-muted">
-            <span>Price</span>
-            <span className="tabular-nums">
-              {mode === 'buy'
-                ? `${formatUsdc((parsedAmount * 10n ** 12n) / quote)} / ${token.symbol}`
-                : `${formatUsdc((quote * 10n ** 12n) / parsedAmount)} / ${token.symbol}`}
-            </span>
-          </div>
+      {/* 4. MARKET INFORMATION BREAKDOWN */}
+      <div className="bg-bg-input/40 rounded-xl p-3 border border-bg-border/60 space-y-2 text-xs">
+        <div className="flex justify-between items-center text-text-muted">
+          <span>Estimated price</span>
+          <span className="font-mono font-medium text-text-primary">
+            {formatPrice(token.price)}
+          </span>
         </div>
-      )}
 
-      {/* Slippage */}
-      <div className="flex items-center gap-2 mb-3 text-xs" role="group" aria-label="Slippage tolerance">
-        <span className="text-text-muted">Slippage:</span>
-        {[1, 5, 15].map((s) => (
-          <button
-            key={s}
-            onClick={() => setSlippage(s)}
-            aria-label={`Set slippage to ${s}%`}
-            aria-pressed={slippage === s}
-            className={`px-2 py-0.5 rounded ${
-              slippage === s
-                ? 'bg-accent-green/20 text-accent-green'
-                : 'bg-bg-input text-text-muted hover:text-text-primary'
+        <div className="flex justify-between items-center text-text-muted">
+          <span>Price impact</span>
+          <span
+            className={`font-mono font-semibold ${
+              priceImpactPct > 8
+                ? 'text-rose-500 font-bold'
+                : priceImpactPct > 3
+                ? 'text-amber-500'
+                : 'text-text-primary'
             }`}
           >
-            {s}%
-          </button>
-        ))}
+            {priceImpactPct > 3 ? `⚠ ${priceImpactPct.toFixed(2)}%` : `${priceImpactPct.toFixed(2)}%`}
+          </span>
+        </div>
+
+        <div className="flex justify-between items-center text-text-muted">
+          <span>Trading fee</span>
+          <span className="font-mono text-text-primary">1.0%</span>
+        </div>
+
+        <div className="flex justify-between items-center text-text-muted">
+          <span>Network fee</span>
+          <span className="font-mono text-text-primary">~$0.001 Arc USDC</span>
+        </div>
+
+        {/* Bonding Curve Context */}
+        <div className="pt-2 border-t border-bg-border/60 flex justify-between items-center text-[11px]">
+          <span className="text-text-muted">Bonding curve</span>
+          <span className="font-medium text-accent-blue font-mono">
+            {progress.toFixed(0)}% → $30.0K MC graduation
+          </span>
+        </div>
       </div>
 
-      {/* Action button */}
+      {/* 5. ADVANCED SETTINGS DRAWER */}
+      <div className="pt-0.5">
+        <button
+          type="button"
+          onClick={() => setShowAdvanced((v) => !v)}
+          className="text-xs font-semibold text-text-muted hover:text-text-primary flex items-center justify-between w-full py-1"
+        >
+          <span>Advanced Settings</span>
+          <span className="text-[10px] font-mono">{showAdvanced ? '▲' : '▼'}</span>
+        </button>
+
+        {showAdvanced && (
+          <div className="mt-2 p-3 bg-bg-input rounded-xl border border-bg-border space-y-3 text-xs animate-fade-in">
+            {/* Slippage Selector */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center text-text-muted text-[11px]">
+                <span>Slippage tolerance</span>
+                <span className="font-mono font-bold text-accent-blue">{slippage}%</span>
+              </div>
+              <div className="flex gap-1.5">
+                {[0.5, 1, 3, 5].map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setSlippage(s)}
+                    className={`flex-1 py-1 text-[11px] font-mono font-medium rounded-lg border transition-colors ${
+                      slippage === s
+                        ? 'bg-accent-blue/10 text-accent-blue border-accent-blue/40 font-bold'
+                        : 'bg-bg-base border-bg-border text-text-secondary hover:text-text-primary'
+                    }`}
+                  >
+                    {s}%
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Minimum Received */}
+            {quote && parsedAmount > 0n && (
+              <div className="flex justify-between items-center text-text-muted text-[11px] pt-1 border-t border-bg-border/60">
+                <span>Minimum received</span>
+                <span className="font-mono text-text-primary font-medium">
+                  {mode === 'buy' ? `${formatTokens(minOut)} ${token.symbol}` : `${formatUsdc(minOut)} USDC`}
+                </span>
+              </div>
+            )}
+
+            {/* Network Info */}
+            <div className="flex justify-between items-center text-text-muted text-[11px] pt-1 border-t border-bg-border/60">
+              <span>Execution network</span>
+              <span className="font-mono text-text-secondary">Arc Testnet (5042002)</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 6. PRIMARY ACTION CTA BUTTON WITH POLISHED STATES */}
       {!isConnected ? (
-        <button disabled className="btn-secondary w-full">
-          Connect wallet to trade
+        <button
+          onClick={() => connect({ connector: connectors[0] })}
+          className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl shadow-sm"
+        >
+          Connect Wallet
         </button>
       ) : wrongNetwork ? (
         <button
           onClick={() => switchChain({ chainId: arcTestnet.id })}
           disabled={isSwitching}
-          className="btn-primary w-full"
+          className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl shadow-sm"
         >
-          {isSwitching ? 'Switching…' : `Switch to Arc Testnet (${arcTestnet.id})`}
+          {isSwitching ? 'Switching Network…' : `Switch to Arc Testnet (${arcTestnet.id})`}
         </button>
       ) : isConfirming && !txConfirmed ? (
-        <button disabled className="btn-secondary w-full">
-          {txAction === 'approve' ? 'Confirming approval...' : 'Confirming transaction...'}
+        <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-80">
+          {txAction === 'approve' ? 'Step 1/2: Confirming approval…' : 'Step 2/2: Confirming trade on Arc…'}
         </button>
       ) : txConfirmed ? (
-        <button disabled className="btn-primary w-full">
-          ✓ Transaction successful
+        <button disabled className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl bg-emerald-600">
+          ✓ {mode === 'buy' ? 'Bought' : 'Sold'} ${token.symbol}
+        </button>
+      ) : hasInsufficientBalance ? (
+        <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-60">
+          Insufficient {mode === 'buy' ? 'USDC' : token.symbol} balance
+        </button>
+      ) : parsedAmount === 0n ? (
+        <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-60">
+          Enter amount
         </button>
       ) : needsApproval ? (
-        <>
+        <div className="space-y-1.5">
           <button
             onClick={handleApprove}
-            disabled={isPending || !amount}
-            className="btn-secondary w-full"
+            disabled={isPending}
+            className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl shadow-sm"
           >
             {isPending
-              ? mode === 'buy'
-                ? 'Step 1/2: Approving USDC…'
-                : `Step 1/2: Approving ${token.symbol}…`
+              ? 'Step 1/2: Approving in wallet…'
               : mode === 'buy'
               ? `Step 1/2: Approve USDC`
               : `Step 1/2: Approve ${token.symbol}`}
           </button>
-          <p className="text-[11px] text-text-muted text-center mt-1.5">
-            First time trading this token? Step 1 approves spending, then Step 2 prompts your {mode === 'buy' ? 'Buy' : 'Sell'} trade.
+          <p className="text-[11px] text-text-muted text-center">
+            First time trading this asset? Step 1 approves spending, then Step 2 executes your trade.
           </p>
-        </>
+        </div>
       ) : (
         <button
           onClick={handleTrade}
-          disabled={isPending || !amount || !quote}
-          className={mode === 'buy' ? 'btn-buy w-full' : 'btn-sell w-full'}
+          disabled={isPending || !quote}
+          className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl shadow-sm"
         >
           {isPending
-            ? 'Sending transaction...'
+            ? 'Confirming in wallet…'
             : mode === 'buy'
-            ? `Buy ${token.symbol}`
-            : `Sell ${token.symbol}`}
+            ? `BUY ${token.symbol}`
+            : `SELL ${token.symbol}`}
         </button>
       )}
 
-      {/* Fallback note shown while waiting for on-chain confirmation.
-          We rotate between 4 Arc RPC providers, so this usually resolves
-          in a few seconds; the message is just a UX safety net. */}
+      {/* Confirmation indicator */}
       {isConfirming && !txConfirmed && (
-        <p className="text-xs text-text-muted text-center mt-2">
-          Confirming on Arc… usually a few seconds.
+        <p className="text-xs text-text-muted text-center animate-pulse">
+          Confirming on Arc blockchain (~0.5s block time)…
         </p>
       )}
       {fallback.failed && (
-        <p role="alert" className="text-xs text-accent-red text-center mt-2">
+        <p role="alert" className="text-xs text-rose-500 font-medium text-center">
           Transaction failed on-chain. Please try again.
         </p>
       )}
