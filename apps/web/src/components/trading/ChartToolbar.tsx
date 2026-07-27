@@ -53,15 +53,17 @@ export const ChartToolbar = memo(function ChartToolbar({
   return (
     <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-[rgb(var(--color-bg-card))] border-b border-bg-border text-[11px] flex-wrap">
       {/* Timeframes + Connection Status */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 overflow-x-auto scrollbar-none max-w-full">
         <div className="flex items-center gap-0.5">
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf.key}
               onClick={() => onTimeframeChange(tf.key)}
               className={`px-2 py-1 font-medium transition-colors ${
+                tf.key === '1m' || tf.key === '30m' ? 'hidden sm:inline-block' : ''
+              } ${
                 timeframe === tf.key
-                  ? 'bg-accent-blue text-white'
+                  ? 'bg-accent-blue text-white rounded'
                   : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
               }`}
             >
@@ -71,7 +73,7 @@ export const ChartToolbar = memo(function ChartToolbar({
         </div>
 
         {/* Live / Reconnecting badge */}
-        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border border-bg-border bg-bg-card">
+        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border border-bg-border bg-bg-card flex-shrink-0">
           <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
           <span className="text-text-secondary">{isConnected ? 'Live' : 'Reconnecting'}</span>
         </div>

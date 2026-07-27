@@ -83,6 +83,12 @@ export const TradingChart = memo(function TradingChart({
     [metricMode],
   );
 
+  const [hoverLegend, setHoverLegend] = useState<{
+    time?: string;
+    price?: number;
+    volume?: number;
+  } | null>(null);
+
   // Render chart
   useEffect(() => {
     if (!ready || !chartContainerRef.current || candles.length === 0) return;
@@ -125,7 +131,7 @@ export const TradingChart = memo(function TradingChart({
       },
       rightPriceScale: {
         borderColor: isDark ? '#1e2a44' : '#ececec',
-        scaleMargins: { top: 0.08, bottom: 0.22 },
+        scaleMargins: { top: 0.1, bottom: 0.22 },
         mode: scale === 'log' ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
         autoScale: true,
       },
@@ -213,6 +219,44 @@ export const TradingChart = memo(function TradingChart({
       );
     }
 
+    // Add $30.0K DEX Graduation Threshold line when in Market Cap mode
+    if (metricMode === 'mcap') {
+      try {
+        mainSeries.createPriceLine({
+          price: 30000,
+          color: '#a855f7',
+          lineWidth: 1,
+          lineStyle: 2, // Dashed
+          axisLabelVisible: true,
+          title: 'DEX Graduation ($30K)',
+        });
+      } catch {
+        /* ignore if price line unsupported */
+      }
+    }
+
+    // Subscribe to crosshair move for dynamic header legend
+    chart.subscribeCrosshairMove((param: any) => {
+      if (!param || !param.time || param.point === undefined || param.point.x < 0) {
+        setHoverLegend(null);
+        return;
+      }
+      const data = param.seriesData.get(mainSeries);
+      const volData = param.seriesData.get(volumeSeries);
+      if (data) {
+        const val = data.close !== undefined ? data.close : data.value;
+        const formattedTime = new Date(param.time * 1000).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        setHoverLegend({
+          time: formattedTime,
+          price: val,
+          volume: volData ? volData.value : undefined,
+        });
+      }
+    });
+
     mainSeriesRef.current = mainSeries;
     chart.timeScale().fitContent();
     chartRef.current = chart;
@@ -282,9 +326,26 @@ export const TradingChart = memo(function TradingChart({
 
       {/* Chart canvas */}
       <div className="relative flex-1 min-h-0">
+        {/* Dynamic Crosshair Hover Legend Overlay */}
+        {hoverLegend && (
+          <div className="absolute top-2 left-2 z-10 bg-[#0a0e1a]/90 backdrop-blur-md border border-bg-border px-2.5 py-1 rounded text-[11px] font-mono flex items-center gap-3 text-text-secondary pointer-events-none">
+            <span className="text-text-muted">{hoverLegend.time}</span>
+            <span>
+              <span className="text-text-muted mr-1">{metricMode === 'price' ? 'Price:' : 'MCap:'}</span>
+              <span className="font-bold text-text-primary">{formatValue(hoverLegend.price || 0)}</span>
+            </span>
+            {hoverLegend.volume !== undefined && (
+              <span>
+                <span className="text-text-muted mr-1">Vol:</span>
+                <span className="font-bold text-text-primary">{formatPrice(hoverLegend.volume)}</span>
+              </span>
+            )}
+          </div>
+        )}
+
         <div
           ref={chartContainerRef}
-          className={`w-full ${isFullscreen ? 'h-full' : 'h-[420px] lg:h-[520px]'}`}
+          className={`w-full ${isFullscreen ? 'h-full' : 'h-[340px] sm:h-[440px] lg:h-[520px]'}`}
         />
 
         {/* Empty state — no fake candles manufactured */}
