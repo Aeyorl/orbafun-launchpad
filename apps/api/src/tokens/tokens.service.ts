@@ -88,7 +88,7 @@ export class TokensService {
 
     const statusClause = status === 'all' ? '' : `AND t.status = $1`;
     const searchClause = search
-      ? `AND (t.name ILIKE $2 OR t.symbol ILIKE $2)`
+      ? `AND (t.name ILIKE $2 OR t.symbol ILIKE $2 OR t.contract_address ILIKE $2)`
       : '';
 
     const params: (string | number)[] = [];

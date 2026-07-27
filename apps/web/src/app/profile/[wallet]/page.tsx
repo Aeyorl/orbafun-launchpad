@@ -4,10 +4,18 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, UserHolding } from '@/lib/api';
 import { TokenCard } from '@/components/TokenCard';
 import { ReferralPanel } from '@/components/ReferralPanel';
-import { formatUsdc, shortenAddress } from '@/lib/utils';
+import {
+  formatUsdc,
+  shortenAddress,
+  formatTokens,
+  formatMarketCap,
+  bondingCurveProgress,
+  ipfsToGateway,
+  tokenEmoji,
+} from '@/lib/utils';
 
 type PnlPeriod = '7d' | '30d' | 'all';
 
@@ -27,6 +35,13 @@ export default function ProfilePage() {
     queryFn: () => api.getUserPnl(wallet, pnlPeriod),
     enabled: !!wallet,
     staleTime: 30_000,
+  });
+
+  const { data: holdingsData, isLoading: holdingsLoading } = useQuery({
+    queryKey: ['user-holdings', wallet],
+    queryFn: () => api.getUserHoldings(wallet),
+    enabled: !!wallet,
+    staleTime: 15_000,
   });
 
   if (isLoading) {
@@ -165,6 +180,49 @@ export default function ProfilePage() {
         )}
       </div>
 
+      {/* Portfolio / Coins Holding section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-bold">Coins Holding</h2>
+            {holdingsData && holdingsData.holdings.length > 0 && (
+              <span className="bg-text-primary/10 text-text-primary text-xs font-semibold px-2.5 py-0.5 rounded-full">
+                {holdingsData.holdings.length}
+              </span>
+            )}
+          </div>
+          {holdingsData && Number(holdingsData.total_value_usdc) > 0 && (
+            <div className="text-right">
+              <span className="text-xs text-text-muted">Total Value: </span>
+              <span className="font-bold text-base text-accent-green tabular-nums">
+                {formatUsdc(holdingsData.total_value_usdc)}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {holdingsLoading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {[1, 2].map((i) => (
+              <div key={i} className="card animate-pulse h-36" />
+            ))}
+          </div>
+        ) : holdingsData && holdingsData.holdings.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {holdingsData.holdings.map((holding) => (
+              <HoldingCard key={holding.token.contract_address} holding={holding} />
+            ))}
+          </div>
+        ) : (
+          <div className="card text-center py-8 text-text-muted">
+            <p>No coins held in portfolio currently.</p>
+            <Link href="/explore" className="btn-secondary mt-3 inline-block">
+              Explore Tokens →
+            </Link>
+          </div>
+        )}
+      </div>
+
       {/* Launched tokens */}
       <div>
         <h2 className="text-xl font-bold mb-4">Launched Tokens</h2>
@@ -186,6 +244,122 @@ export default function ProfilePage() {
 
       {/* Referral panel */}
       <ReferralPanel wallet={wallet} />
+    </div>
+  );
+}
+
+function HoldingCard({ holding }: { holding: UserHolding }) {
+  const { token, balance, value_usdc, total_bought_usdc, total_sold_usdc } = holding;
+  const progress = bondingCurveProgress(token.market_cap);
+  const isGraduated = token.status === 'graduated';
+
+  // Compute unrealized/position PnL if trades exist
+  const bought = Number(total_bought_usdc);
+  const sold = Number(total_sold_usdc);
+  const currentValue = Number(value_usdc);
+  const netPnlUsdc = currentValue + sold - bought;
+  const hasTraded = bought > 0 || sold > 0;
+
+  return (
+    <div className="card hover:shadow-subtle-2 transition-all flex flex-col justify-between p-4">
+      <div>
+        {/* Token info header */}
+        <div className="flex items-center justify-between mb-3">
+          <Link
+            href={`/coin/${token.contract_address}`}
+            className="flex items-center gap-2.5 min-w-0 hover:opacity-80 transition-opacity"
+          >
+            {token.image ? (
+              <img
+                src={ipfsToGateway(token.image)}
+                alt={token.name}
+                className="w-10 h-10 rounded-full object-cover flex-shrink-0 bg-bg-input"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent-peach to-accent-sienna/20 flex items-center justify-center font-bold text-base flex-shrink-0">
+                {tokenEmoji(token.symbol)}
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="font-bold text-sm truncate flex items-center gap-1.5">
+                <span>{token.name}</span>
+                <span className="text-xs text-text-muted font-normal">${token.symbol}</span>
+              </div>
+              <div className="text-xs text-text-muted">
+                MCap {formatMarketCap(token.market_cap)}
+              </div>
+            </div>
+          </Link>
+
+          <span
+            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
+              isGraduated
+                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
+                : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+            }`}
+          >
+            {isGraduated ? 'Graduated' : 'Active'}
+          </span>
+        </div>
+
+        {/* Balance & Value Stats */}
+        <div className="grid grid-cols-2 gap-2 bg-bg-input rounded-xl p-2.5 mb-3">
+          <div>
+            <div className="text-[11px] text-text-muted">Tokens Held</div>
+            <div className="font-bold text-sm tabular-nums text-text-primary">
+              {formatTokens(balance)}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-[11px] text-text-muted">Est. Value</div>
+            <div className="font-bold text-sm tabular-nums text-text-primary">
+              {formatUsdc(value_usdc)}
+            </div>
+          </div>
+        </div>
+
+        {/* PnL indicator */}
+        {hasTraded && (
+          <div className="flex items-center justify-between text-xs mb-3 px-1">
+            <span className="text-text-muted">Position PnL:</span>
+            <span
+              className={`font-semibold tabular-nums ${
+                netPnlUsdc >= 0 ? 'text-green-600' : 'text-red-600'
+              }`}
+            >
+              {netPnlUsdc >= 0 ? '+' : ''}
+              {formatUsdc(netPnlUsdc)}
+            </span>
+          </div>
+        )}
+
+        {/* Bonding curve progress bar (if active) */}
+        {!isGraduated && (
+          <div className="space-y-1 mb-3">
+            <div className="flex justify-between text-[11px] text-text-muted">
+              <span>Bonding Curve</span>
+              <span className="tabular-nums font-medium">{progress.toFixed(0)}%</span>
+            </div>
+            <div className="w-full h-1.5 bg-bg-input rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-accent-peach to-accent-sienna transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Action button */}
+      <Link
+        href={`/coin/${token.contract_address}`}
+        className="btn-secondary text-xs py-1.5 w-full text-center block mt-2"
+      >
+        Trade {token.symbol} →
+      </Link>
     </div>
   );
 }

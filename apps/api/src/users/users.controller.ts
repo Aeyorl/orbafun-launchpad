@@ -38,4 +38,16 @@ export class UsersController {
     }
     return this.usersService.getUserPnl(wallet, period as '7d' | '30d' | 'all');
   }
+
+  /**
+   * GET /users/:wallet/holdings
+   * Returns tokens held by user with balance, estimated USDC value, and trade stats per token.
+   */
+  @Get(':wallet/holdings')
+  async getHoldings(@Param('wallet') wallet: string) {
+    if (!isValidEvmAddress(wallet)) {
+      throw new BadRequestException('Invalid wallet address');
+    }
+    return this.usersService.getUserHoldings(wallet);
+  }
 }

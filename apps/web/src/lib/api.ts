@@ -123,6 +123,19 @@ export interface TokenMetadata {
   banner: string | null;
 }
 
+export interface UserHolding {
+  token: Token;
+  balance: string;
+  value_usdc: string;
+  total_bought_usdc: string;
+  total_sold_usdc: string;
+}
+
+export interface UserHoldingsResponse {
+  holdings: UserHolding[];
+  total_value_usdc: string;
+}
+
 export interface UserProfile {
   wallet: string;
   username: string | null;
@@ -282,6 +295,9 @@ export const api = {
       buy_count: number;
       sell_count: number;
     }>(`/users/${wallet.toLowerCase()}/pnl?period=${period}`),
+
+  getUserHoldings: (wallet: string) =>
+    fetchApi<UserHoldingsResponse>(`/users/${wallet.toLowerCase()}/holdings`),
 
   // Leaderboard
   getLeaderboard: (type: 'top_creators' | 'top_gainers' | 'top_volume', limit = 20) =>

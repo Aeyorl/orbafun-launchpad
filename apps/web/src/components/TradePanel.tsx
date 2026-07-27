@@ -307,10 +307,37 @@ export function TradePanel({ token }: { token: Token }) {
         </button>
       </div>
 
+      {/* Current User Holdings Card (if connected and balance > 0) */}
+      {isConnected && tokenBalance && tokenBalance > 0n && (
+        <div className="bg-bg-input rounded-xl p-3 mb-4 flex items-center justify-between text-xs border border-bg-border/60">
+          <div>
+            <div className="text-text-muted">Your Holdings</div>
+            <div className="font-bold text-sm text-text-primary tabular-nums">
+              {formatTokens(tokenBalance)} {token.symbol}
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-text-muted">Est. Value</div>
+            <div className="font-bold text-sm text-accent-green tabular-nums">
+              {formatUsdc(Math.round((Number(tokenBalance) / 1e18) * parseFloat(token.price || '0') * 1e6).toString())}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Amount input */}
       <div className="mb-3">
-        <label htmlFor="trade-amount" className="text-xs text-text-muted mb-1 block">
-          {mode === 'buy' ? 'USDC amount' : 'Token amount'}
+        <label htmlFor="trade-amount" className="text-xs text-text-muted mb-1 block flex justify-between">
+          <span>{mode === 'buy' ? 'USDC amount' : 'Token amount'}</span>
+          {mode === 'sell' && tokenBalance && tokenBalance > 0n && (
+            <button
+              type="button"
+              onClick={() => setAmount(formatUnits(tokenBalance, TOKEN_DECIMALS))}
+              className="text-accent-red font-semibold hover:underline text-xs"
+            >
+              MAX
+            </button>
+          )}
         </label>
         <div className="relative">
           <input
@@ -326,18 +353,39 @@ export function TradePanel({ token }: { token: Token }) {
             {mode === 'buy' ? 'USDC' : token.symbol}
           </span>
         </div>
-        {/* Quick amount buttons */}
+        {/* Quick amount presets */}
         <div className="flex gap-1 mt-2" role="group" aria-label="Quick amount presets">
-          {QUICK_AMOUNTS.map((amt) => (
-            <button
-              key={amt}
-              onClick={() => setAmount(String(amt))}
-              aria-label={`Set amount to ${mode === 'buy' ? `$${amt} USDC` : `${amt} ${token.symbol}`}`}
-              className="flex-1 py-1 text-xs rounded-md bg-bg-input hover:bg-bg-border text-text-secondary transition-colors"
-            >
-              {mode === 'buy' ? `$${amt}` : `${amt}`}
-            </button>
-          ))}
+          {mode === 'buy' ? (
+            QUICK_AMOUNTS.map((amt) => (
+              <button
+                key={amt}
+                type="button"
+                onClick={() => setAmount(String(amt))}
+                aria-label={`Set amount to $${amt} USDC`}
+                className="flex-1 py-1 text-xs rounded-md bg-bg-input hover:bg-bg-border text-text-secondary transition-colors"
+              >
+                ${amt}
+              </button>
+            ))
+          ) : (
+            [25, 50, 75, 100].map((pct) => (
+              <button
+                key={pct}
+                type="button"
+                onClick={() => {
+                  if (tokenBalance && tokenBalance > 0n) {
+                    const pctAmount = (tokenBalance * BigInt(pct)) / 100n;
+                    setAmount(formatUnits(pctAmount, TOKEN_DECIMALS));
+                  }
+                }}
+                disabled={!tokenBalance || tokenBalance === 0n}
+                aria-label={`Set sell amount to ${pct}%`}
+                className="flex-1 py-1 text-xs rounded-md bg-bg-input hover:bg-bg-border text-text-secondary transition-colors disabled:opacity-50"
+              >
+                {pct === 100 ? '100% (MAX)' : `${pct}%`}
+              </button>
+            ))
+          )}
         </div>
       </div>
 
@@ -351,9 +399,20 @@ export function TradePanel({ token }: { token: Token }) {
           </span>
           {mode === 'buy' && usdcBalance && (
             <button
+              type="button"
               onClick={() => setAmount(formatUnits(usdcBalance.value, USDC_DECIMALS))}
-              className="text-accent-green hover:underline"
+              className="text-accent-green font-semibold hover:underline"
               aria-label="Use maximum USDC balance"
+            >
+              MAX
+            </button>
+          )}
+          {mode === 'sell' && tokenBalance && tokenBalance > 0n && (
+            <button
+              type="button"
+              onClick={() => setAmount(formatUnits(tokenBalance, TOKEN_DECIMALS))}
+              className="text-accent-red font-semibold hover:underline"
+              aria-label="Use maximum token balance"
             >
               MAX
             </button>

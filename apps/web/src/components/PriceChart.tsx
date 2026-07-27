@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import { Trade } from '@/lib/api';
-import { formatMarketCap } from '@/lib/utils';
+import { formatMarketCap, formatPrice } from '@/lib/utils';
 
 // Dynamic imports for lightweight-charts
 let createChart: any;
@@ -15,7 +15,7 @@ let AreaSeries: any;
 let HistogramSeries: any;
 let createSeriesMarkers: any;
 
-type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1D' | 'all';
+type Timeframe = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1D' | 'all';
 type ChartType = 'candlestick' | 'area';
 type MetricMode = 'mcap' | 'price';
 type ScaleType = 'normal' | 'log' | 'percent';
@@ -24,6 +24,7 @@ const TIMEFRAMES: { key: Timeframe; label: string; bucketMs: number; windowMs: n
   { key: '1m',  label: '1m',  bucketMs: 60_000,          windowMs: 60 * 60_000 },       // 1h window
   { key: '5m',  label: '5m',  bucketMs: 5 * 60_000,      windowMs: 6 * 60 * 60_000 },   // 6h window
   { key: '15m', label: '15m', bucketMs: 15 * 60_000,      windowMs: 24 * 60 * 60_000 },  // 24h window
+  { key: '30m', label: '30m', bucketMs: 30 * 60_000,      windowMs: 48 * 60 * 60_000 },  // 48h window
   { key: '1h',  label: '1h',  bucketMs: 60 * 60_000,      windowMs: 7 * 24 * 60 * 60_000 }, // 7d window
   { key: '4h',  label: '4h',  bucketMs: 4 * 60 * 60_000,  windowMs: 30 * 24 * 60 * 60_000 }, // 30d
   { key: '1D',  label: '1D',  bucketMs: 24 * 60 * 60_000, windowMs: 365 * 24 * 60 * 60_000 }, // 1y
@@ -58,8 +59,8 @@ export interface ChartMarker {
 }
 
 /**
- * Aggregate trade history into high-precision OHLC candles, volume bars,
- * and buy/sell event markers.
+ * Aggregate trade history into continuous high-precision OHLC candles,
+ * volume bars, carry-forward gaps, and buy/sell event markers.
  */
 function aggregateTradeData(
   trades: Trade[],
@@ -81,17 +82,6 @@ function aggregateTradeData(
   // Base initial starting price/mcap before any trade ($4,000 MC / $0.000004 price)
   const baseInitial = mode === 'price' ? 0.000004 : 4000;
 
-  if (sorted.length === 0) {
-    const active = currentVal || baseInitial;
-    const nowSec = Math.floor(now / 1000);
-    return {
-      candles: [{ time: nowSec, open: active, high: active * 1.001, low: active * 0.999, close: active }],
-      volume: [],
-      area: [{ time: nowSec, value: active }],
-      markers: [],
-    };
-  }
-
   const bucketMs = tf.bucketMs === 0 ? 60_000 : tf.bucketMs;
   const bucketMap = new Map<number, Trade[]>();
 
@@ -103,60 +93,78 @@ function aggregateTradeData(
     bucketMap.get(bucketSec)!.push(trade);
   }
 
-  const sortedBuckets = Array.from(bucketMap.entries()).sort((a, b) => a[0] - b[0]);
+  // Determine continuous timeframe range from earliest timestamp (or 30 mins ago) to now
+  const earliestTs = sorted.length > 0
+    ? new Date(sorted[0].timestamp).getTime()
+    : now - 30 * 60_000;
+
+  const startBucket = Math.floor(earliestTs / bucketMs) * bucketMs;
+  const endBucket = Math.floor(now / bucketMs) * bucketMs;
+
   const candles: CandleData[] = [];
   const volume: VolumeData[] = [];
   const area: AreaPoint[] = [];
   const markers: ChartMarker[] = [];
 
-  let runningOpen = baseInitial;
+  let runningPrice = sorted.length > 0 ? extractVal(sorted[0]) : (currentVal || baseInitial);
 
-  for (const [tSec, bTrades] of sortedBuckets) {
-    const open = runningOpen;
+  // Iterate continuously bucket by bucket from start to end
+  const maxBuckets = 500;
+  const stepMs = Math.max(bucketMs, Math.floor((endBucket - startBucket) / maxBuckets));
+
+  for (let bTime = startBucket; bTime <= endBucket; bTime += stepMs) {
+    const bSec = Math.floor(bTime / 1000);
+    const bTrades = bucketMap.get(bSec);
+
+    let open = runningPrice;
     let high = open;
     let low = open;
     let close = open;
     let bucketVolUsdc = 0;
 
-    for (const tr of bTrades) {
-      const trVal = extractVal(tr);
-      const usdcAmt = Number(tr.usdc_amount) / 1e6;
-      bucketVolUsdc += usdcAmt;
+    if (bTrades && bTrades.length > 0) {
+      open = runningPrice;
+      high = open;
+      low = open;
 
-      close = trVal;
-      if (trVal > high) high = trVal;
-      if (trVal < low) low = trVal;
+      for (const tr of bTrades) {
+        const trVal = extractVal(tr);
+        const usdcAmt = Number(tr.usdc_amount) / 1e6;
+        bucketVolUsdc += usdcAmt;
 
-      // Add Pump.fun buy/sell marker for distinct trades
-      if (usdcAmt >= 1) {
-        markers.push({
-          time: tSec,
-          position: tr.type === 'buy' ? 'belowBar' : 'aboveBar',
-          color: tr.type === 'buy' ? '#16a34a' : '#dc2626',
-          shape: tr.type === 'buy' ? 'arrowUp' : 'arrowDown',
-          text: `${tr.type.toUpperCase()} $${usdcAmt >= 1000 ? `${(usdcAmt / 1000).toFixed(1)}k` : usdcAmt.toFixed(0)}`,
-        });
+        close = trVal;
+        if (trVal > high) high = trVal;
+        if (trVal < low) low = trVal;
+
+        if (usdcAmt >= 1) {
+          markers.push({
+            time: bSec,
+            position: tr.type === 'buy' ? 'belowBar' : 'aboveBar',
+            color: tr.type === 'buy' ? '#16a34a' : '#dc2626',
+            shape: tr.type === 'buy' ? 'arrowUp' : 'arrowDown',
+            text: `${tr.type.toUpperCase()} $${usdcAmt >= 1000 ? `${(usdcAmt / 1000).toFixed(1)}k` : usdcAmt.toFixed(0)}`,
+          });
+        }
       }
+      runningPrice = close;
+    } else {
+      // Empty bucket: carry forward close price with minor visual wick
+      open = runningPrice;
+      close = runningPrice;
+      high = open * 1.0005;
+      low = open * 0.9995;
     }
 
-    // Ensure candle has non-zero height for clear visibility
-    if (high === low) {
-      high = open * 1.002;
-      low = open * 0.998;
-    }
-
-    runningOpen = close;
-
-    candles.push({ time: tSec, open, high, low, close });
+    candles.push({ time: bSec, open, high, low, close });
     volume.push({
-      time: tSec,
+      time: bSec,
       value: bucketVolUsdc,
       color: close >= open ? 'rgba(22, 163, 74, 0.65)' : 'rgba(220, 38, 38, 0.65)',
     });
-    area.push({ time: tSec, value: close });
+    area.push({ time: bSec, value: close });
   }
 
-  // Append live current market cap / price if available
+  // Ensure live price tick at the end
   if (currentVal && candles.length > 0) {
     const last = candles[candles.length - 1];
     const nowSec = Math.floor(now / 1000);
@@ -193,6 +201,7 @@ export function PriceChart({
   const [chartType, setChartType] = useState<ChartType>('candlestick');
   const [timeframe, setTimeframe] = useState<Timeframe>('5m');
   const [scaleMode, setScaleMode] = useState<ScaleType>('normal');
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [ready, setReady] = useState(false);
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -225,7 +234,7 @@ export function PriceChart({
     [trades, timeframe, metricMode, activeVal],
   );
 
-  // ATH (All-Time High) calculation
+  // ATH calculation
   const athValue = useMemo(() => {
     if (trades.length === 0) return activeVal;
     const maxTrade = Math.max(
@@ -253,20 +262,17 @@ export function PriceChart({
     (val: number) => {
       if (val === undefined || val === null || isNaN(val)) return '$0.00';
       if (metricMode === 'price') {
-        if (val < 0.0001) return `$${val.toFixed(8)}`;
-        if (val < 0.01) return `$${val.toFixed(6)}`;
-        return `$${val.toFixed(4)}`;
+        return formatPrice(val);
       }
       return formatMarketCap(val);
     },
     [metricMode],
   );
 
-  // Create / Render Lightweight Chart with Steep Editorial Theme
+  // Render Lightweight Chart
   useEffect(() => {
     if (!ready || !chartContainerRef.current || candles.length === 0) return;
 
-    // Dispose previous instance cleanly
     if (chartRef.current) {
       try { chartRef.current.remove(); } catch { /* ignore */ }
       chartRef.current = null;
@@ -276,7 +282,7 @@ export function PriceChart({
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#f2f2f3' },
+        background: { type: ColorType.Solid, color: '#ffffff' },
         textColor: '#17191c',
         fontFamily: "'Source Serif 4', 'Inter', system-ui, sans-serif",
         fontSize: 11,
@@ -305,7 +311,7 @@ export function PriceChart({
       handleScale: { axisPressedMouseMove: true },
     });
 
-    // Add Volume Histogram Series on separate overlay scale
+    // Volume Series
     const volumeSeries = chart.addSeries(HistogramSeries, {
       priceScaleId: 'volume_overlay',
       priceFormat: { type: 'volume' },
@@ -316,7 +322,7 @@ export function PriceChart({
     volumeSeries.setData(volume);
     volumeSeriesRef.current = volumeSeries;
 
-    // Add Main Series (Candlestick or Area)
+    // Main Series
     let mainSeries: any;
     if (chartType === 'candlestick') {
       mainSeries = chart.addSeries(CandlestickSeries, {
@@ -345,7 +351,6 @@ export function PriceChart({
       });
       mainSeries.setData(candles);
 
-      // Add Buy / Sell markers to candles
       if (markers.length > 0 && createSeriesMarkers) {
         try {
           createSeriesMarkers(mainSeries, markers);
@@ -387,7 +392,6 @@ export function PriceChart({
     chart.timeScale().fitContent();
     chartRef.current = chart;
 
-    // Auto-resize
     const ro = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
@@ -406,7 +410,11 @@ export function PriceChart({
   }, [ready, candles, volume, area, markers, chartType, scaleMode, metricMode, formatValue, change24h.isPositive]);
 
   return (
-    <div className="card space-y-3 bg-bg-card border-bg-border text-text-primary rounded-2xl shadow-subtle p-5">
+    <div
+      className={`card space-y-3 bg-bg-card border-bg-border text-text-primary rounded-2xl shadow-subtle p-5 transition-all ${
+        isFullscreen ? 'fixed inset-0 z-50 rounded-none h-screen w-screen p-6 flex flex-col justify-between overflow-hidden' : ''
+      }`}
+    >
       {/* Header Row: Metric Switcher + Big Price/MCap + 24h Change + ATH Progress Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-bg-border/60 pb-3">
         <div>
@@ -414,8 +422,8 @@ export function PriceChart({
             onClick={() => setMetricMode(metricMode === 'mcap' ? 'price' : 'mcap')}
             className="flex items-center gap-1.5 text-xs text-text-muted hover:text-text-primary transition-colors"
           >
-            <span>{metricMode === 'mcap' ? 'Market cap' : 'Price'}</span>
-            <span className="text-[10px] bg-bg-border px-1.5 py-0.5 rounded font-mono">⇄</span>
+            <span>{metricMode === 'mcap' ? 'Market Cap' : 'Price'}</span>
+            <span className="text-[10px] bg-bg-border px-1.5 py-0.5 rounded font-mono">⇄ Switch</span>
           </button>
 
           <div className="flex items-baseline gap-3 mt-1">
@@ -430,22 +438,33 @@ export function PriceChart({
           </div>
         </div>
 
-        <div className="min-w-[160px] text-right space-y-1">
-          <div className="text-xs text-text-muted font-medium">
-            ATH <span className="text-text-primary font-semibold">{formatValue(athValue)}</span>
+        <div className="flex items-center gap-4">
+          <div className="min-w-[140px] text-right space-y-1">
+            <div className="text-xs text-text-muted font-medium">
+              ATH <span className="text-text-primary font-semibold">{formatValue(athValue)}</span>
+            </div>
+            <div className="w-36 h-2 bg-bg-border rounded-full overflow-hidden ml-auto">
+              <div
+                className="h-full bg-gradient-to-r from-accent-peach to-accent-sienna transition-all duration-300 rounded-full"
+                style={{ width: `${athProgressPercent}%` }}
+              />
+            </div>
           </div>
-          <div className="w-40 h-2 bg-bg-border rounded-full overflow-hidden ml-auto">
-            <div
-              className="h-full bg-gradient-to-r from-accent-peach to-accent-sienna transition-all duration-300 rounded-full"
-              style={{ width: `${athProgressPercent}%` }}
-            />
-          </div>
+
+          {/* Fullscreen toggle button */}
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="p-2 rounded-lg bg-bg-base hover:bg-bg-border border border-bg-border text-xs text-text-primary transition-colors"
+            title={isFullscreen ? 'Exit Fullscreen' : 'Full TradingView Chart'}
+          >
+            {isFullscreen ? '✕ Exit' : '⛶ Full Chart'}
+          </button>
         </div>
       </div>
 
-      {/* Subheader Toolbar: Timeframe pills + Chart Type + Mode Switcher */}
+      {/* Subheader Toolbar: Full TradingView Tabs */}
       <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
-        <div className="flex items-center gap-1 bg-bg-base p-1 rounded-full border border-bg-border">
+        <div className="flex items-center gap-1 bg-bg-base p-1 rounded-full border border-bg-border overflow-x-auto">
           {TIMEFRAMES.map((tf) => (
             <button
               key={tf.key}
@@ -472,7 +491,7 @@ export function PriceChart({
             </button>
             <button
               onClick={() => setChartType('area')}
-              title="Line Chart"
+              title="Line Area Chart"
               className={`px-2.5 py-1 rounded-full text-xs transition-colors ${chartType === 'area' ? 'bg-text-primary text-bg-base font-semibold' : 'text-text-muted hover:text-text-primary'}`}
             >
               📈 Line
@@ -483,14 +502,14 @@ export function PriceChart({
             onClick={() => setMetricMode(metricMode === 'mcap' ? 'price' : 'mcap')}
             className="px-3 py-1 bg-bg-base hover:bg-bg-border border border-bg-border text-xs font-medium rounded-full text-text-primary transition-colors"
           >
-            {metricMode === 'mcap' ? 'Price / MCap' : 'MCap / Price'}
+            {metricMode === 'mcap' ? 'Price' : 'Market Cap'}
           </button>
         </div>
       </div>
 
       {/* Chart Canvas Area */}
-      <div className="relative bg-bg-card rounded-xl overflow-hidden border border-bg-border/60">
-        <div ref={chartContainerRef} className="w-full h-[350px]" />
+      <div className={`relative bg-bg-card rounded-xl overflow-hidden border border-bg-border/60 ${isFullscreen ? 'flex-1 min-h-[500px]' : ''}`}>
+        <div ref={chartContainerRef} className={`w-full ${isFullscreen ? 'h-full min-h-[500px]' : 'h-[360px]'}`} />
 
         {/* TradingView Watermark badge */}
         <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-bg-base/80 backdrop-blur-md px-2 py-1 rounded text-[10px] text-text-muted border border-bg-border pointer-events-none z-10">

@@ -106,9 +106,9 @@ export function SearchBar({ compact = false }: { compact?: boolean }) {
           }}
           onFocus={() => query && setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="Search tokens…"
+          placeholder="Search by name, symbol, or CA (0x…)"
           className={`input-field ${compact ? 'h-9 text-sm' : ''}`}
-          aria-label="Search tokens"
+          aria-label="Search tokens by name, symbol, or contract address"
         />
         {loading && (
           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted text-xs">
