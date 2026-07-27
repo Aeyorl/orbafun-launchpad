@@ -2,9 +2,10 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { api, UserHolding } from '@/lib/api';
+import toast from 'react-hot-toast';
+import { api, UserHolding, Token } from '@/lib/api';
 import { TokenCard } from '@/components/TokenCard';
 import { ReferralPanel } from '@/components/ReferralPanel';
 import {
@@ -12,405 +13,695 @@ import {
   shortenAddress,
   formatTokens,
   formatMarketCap,
+  formatPrice,
   bondingCurveProgress,
   ipfsToGateway,
   tokenEmoji,
 } from '@/lib/utils';
 
+type ProfileTab = 'overview' | 'created' | 'holdings' | 'activity';
 type PnlPeriod = '7d' | '30d' | 'all';
 
 export default function ProfilePage() {
   const params = useParams();
-  const wallet = params.wallet as string;
+  const wallet = (params.wallet as string)?.toLowerCase();
+  const [activeTab, setActiveTab] = useState<ProfileTab>('overview');
   const [pnlPeriod, setPnlPeriod] = useState<PnlPeriod>('all');
+  const [copiedAddress, setCopiedAddress] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
 
-  const { data: profile, isLoading } = useQuery({
+  // Profile data
+  const { data: profile, isLoading: isProfileLoading } = useQuery({
     queryKey: ['user', wallet],
     queryFn: () => api.getUserProfile(wallet),
     enabled: !!wallet,
   });
 
-  const { data: pnlData, isLoading: pnlLoading } = useQuery({
+  // PnL data
+  const { data: pnlData, isLoading: isPnlLoading } = useQuery({
     queryKey: ['user-pnl', wallet, pnlPeriod],
     queryFn: () => api.getUserPnl(wallet, pnlPeriod),
     enabled: !!wallet,
     staleTime: 30_000,
   });
 
-  const { data: holdingsData, isLoading: holdingsLoading } = useQuery({
+  // Holdings data
+  const { data: holdingsData, isLoading: isHoldingsLoading } = useQuery({
     queryKey: ['user-holdings', wallet],
     queryFn: () => api.getUserHoldings(wallet),
     enabled: !!wallet,
     staleTime: 15_000,
   });
 
-  if (isLoading) {
-    return (
-      <div className="max-w-4xl mx-auto space-y-4">
-        <div className="card animate-pulse h-32" />
-        <div className="card animate-pulse h-64" />
-      </div>
-    );
+  const copyWalletAddress = async () => {
+    if (!wallet) return;
+    try {
+      await navigator.clipboard.writeText(wallet);
+      setCopiedAddress(true);
+      toast.success('Wallet address copied!');
+      setTimeout(() => setCopiedAddress(false), 2000);
+    } catch {
+      toast.error('Failed to copy address');
+    }
+  };
+
+  const handleShare = async () => {
+    const url = typeof window !== 'undefined' ? window.location.href : '';
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `Profile ${shortenAddress(wallet)} — Orba`,
+          text: `Check out ${shortenAddress(wallet)}'s creator & trader profile on Orba!`,
+          url,
+        });
+      } catch {
+        // User cancelled
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success('Profile link copied to clipboard!');
+      } catch {
+        toast.error('Failed to copy link');
+      }
+    }
+  };
+
+  const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
+  const tweetText = `Check out ${shortenAddress(wallet)}'s profile on Orba launchpad — ${shareUrl}`;
+  const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
+
+  // Construct Activity timeline items from user profile, launched tokens, and PnL trades
+  const activityItems = useMemo(() => {
+    if (!profile) return [];
+
+    const items: Array<{
+      id: string;
+      type: 'CREATE' | 'BUY' | 'SELL' | 'GRADUATED';
+      tokenName: string;
+      tokenSymbol: string;
+      tokenAddress: string;
+      usdcAmount?: string;
+      timestamp: string;
+      txHash?: string;
+    }> = [];
+
+    // Launched tokens
+    if (profile.launched_tokens?.tokens) {
+      profile.launched_tokens.tokens.forEach((t) => {
+        items.push({
+          id: `create-${t.contract_address}`,
+          type: 'CREATE',
+          tokenName: t.name,
+          tokenSymbol: t.symbol,
+          tokenAddress: t.contract_address,
+          timestamp: t.created_at,
+          txHash: t.created_tx_hash,
+        });
+
+        if (t.status === 'graduated' && t.graduated_at) {
+          items.push({
+            id: `grad-${t.contract_address}`,
+            type: 'GRADUATED',
+            tokenName: t.name,
+            tokenSymbol: t.symbol,
+            tokenAddress: t.contract_address,
+            timestamp: t.graduated_at,
+          });
+        }
+      });
+    }
+
+    // Sort newest first
+    return items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }, [profile]);
+
+  if (isProfileLoading) {
+    return <ProfileSkeleton />;
   }
 
   if (!profile) {
     return (
-      <div className="text-center py-12">
-        <h1 className="text-2xl font-bold mb-2">User not found</h1>
-        <p className="text-text-secondary mb-4">
-          This wallet hasn&apos;t launched any tokens or made any trades.
-        </p>
-        <Link href="/explore" className="btn-secondary">
-          ← Back to Explore
+      <div className="card text-center py-16 max-w-md mx-auto my-12 space-y-4">
+        <div className="text-4xl">👤</div>
+        <div>
+          <h1 className="text-2xl font-serif mb-1">User not found</h1>
+          <p className="text-sm text-text-muted">
+            This wallet address hasn&apos;t launched any tokens or traded on Orba yet.
+          </p>
+        </div>
+        <Link href="/explore" className="btn-primary inline-block text-xs px-5 py-2.5 rounded-full font-bold">
+          Explore Active Tokens →
         </Link>
       </div>
     );
   }
 
-  // Parse PnL values (stored as micro-USDC strings)
   const pnlValue = pnlData ? Number(pnlData.realized_pnl) : 0;
   const isPositivePnl = pnlValue >= 0;
   const totalBought = pnlData ? Number(pnlData.total_bought) : 0;
   const totalSold = pnlData ? Number(pnlData.total_sold) : 0;
+  const holdingsList = holdingsData?.holdings || [];
+  const totalPortfolioValue = holdingsData?.total_value_usdc || '0';
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Profile header */}
-      <div className="card">
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-accent-green to-accent-blue flex items-center justify-center text-2xl font-bold">
-            {shortenAddress(profile.wallet).slice(0, 2)}
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">{shortenAddress(profile.wallet)}</h1>
-            <p className="text-sm text-text-muted">
-              Joined {new Date(profile.created_at).toLocaleDateString()}
-            </p>
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
-          <Stat label="Tokens launched" value={String(profile.tokens_launched)} />
-          <Stat label="Total trades" value={String(profile.trade_stats.total_trades)} />
-          <Stat
-            label="Buys"
-            value={String(profile.trade_stats.total_buys)}
-            color="green"
-          />
-          <Stat
-            label="Sells"
-            value={String(profile.trade_stats.total_sells)}
-            color="red"
-          />
-        </div>
-        <div className="mt-2">
-          <Stat
-            label="Total volume"
-            value={formatUsdc(profile.total_volume_usdc)}
-            full
-          />
-        </div>
-      </div>
-
-      {/* PnL Card */}
-      <div className="card">
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <h2 className="text-base font-bold">Profit & Loss</h2>
-          <div className="flex items-center gap-1" role="tablist" aria-label="PnL period">
-            {(['7d', '30d', 'all'] as PnlPeriod[]).map((p) => (
-              <button
-                key={p}
-                role="tab"
-                aria-selected={pnlPeriod === p}
-                onClick={() => setPnlPeriod(p)}
-                className={`px-2.5 py-0.5 text-xs font-medium rounded-full transition-colors ${
-                  pnlPeriod === p
-                    ? 'bg-accent-blue text-white'
-                    : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
-                }`}
-              >
-                {p === 'all' ? 'All Time' : p.toUpperCase()}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {pnlLoading ? (
-          <div className="h-24 animate-pulse bg-bg-input rounded-lg" />
-        ) : (
-          <div className="space-y-3">
-            {/* Realized PnL summary header */}
-            <div className="flex items-baseline justify-between pt-1">
-              <span className="text-xs text-text-muted font-medium">
-                Realized PnL ({pnlPeriod === 'all' ? 'All Time' : pnlPeriod.toUpperCase()})
-              </span>
-              <span
-                className={`text-2xl font-bold tabular-nums tracking-tight ${
-                  pnlValue === 0
-                    ? 'text-text-primary'
-                    : isPositivePnl
-                    ? 'text-accent-green'
-                    : 'text-accent-red'
-                }`}
-              >
-                {isPositivePnl && pnlValue > 0 ? '+' : ''}
-                {formatUsdc(pnlValue)}
-              </span>
+    <div className="max-w-5xl mx-auto space-y-5 pb-16">
+      {/* 1. CREATOR & TRADER PROFILE HEADER */}
+      <div className="card !p-5 space-y-5 bg-bg-card border border-bg-border shadow-subtle-1 relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+          {/* Identity & Avatar */}
+          <div className="flex items-center gap-4">
+            {/* Auto-generated Identicon Avatar */}
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent-blue via-accent-peach to-accent-sienna/40 border border-bg-border flex items-center justify-center text-2xl font-bold font-mono text-white shadow-sm flex-shrink-0">
+              {profile.avatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={ipfsToGateway(profile.avatar)} alt={wallet} className="w-full h-full rounded-2xl object-cover" />
+              ) : (
+                shortenAddress(wallet).slice(2, 4).toUpperCase()
+              )}
             </div>
 
-            {/* Unified Compact Trading Flow Component (Buy / Sell summary) */}
-            <div className="grid grid-cols-2 rounded-lg border border-bg-border bg-bg-base overflow-hidden relative">
-              {/* BUY Side */}
-              <div className="p-3 bg-red-500/[0.03] dark:bg-red-500/[0.04] space-y-1">
-                <div className="flex items-center justify-between flex-wrap gap-1">
-                  <span className="text-[11px] font-semibold tracking-wider text-red-600 dark:text-red-400 flex items-center gap-1 uppercase">
-                    Buy
-                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-red-500">
-                      <line x1="12" y1="5" x2="12" y2="19" />
-                      <polyline points="19 12 12 19 5 12" />
-                    </svg>
-                  </span>
-                  <span className="text-[11px] text-text-muted tabular-nums">
-                    {pnlData?.buy_count ?? 0} {pnlData?.buy_count === 1 ? 'trade' : 'trades'}
-                  </span>
-                </div>
-                <div className="text-lg font-bold tabular-nums text-text-primary">
-                  {formatUsdc(totalBought)}
-                </div>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                {profile.username ? (
+                  <div>
+                    <h1 className="text-xl font-bold text-text-primary leading-tight">
+                      {profile.username}
+                    </h1>
+                    <span className="text-xs text-text-muted font-medium">@{profile.username}</span>
+                  </div>
+                ) : (
+                  <h1 className="text-xl font-bold font-mono text-text-primary tracking-tight">
+                    {shortenAddress(wallet)}
+                  </h1>
+                )}
+
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium border bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  Active · Arc
+                </span>
               </div>
 
-              {/* Subtle Vertical Divider */}
-              <div className="absolute left-1/2 top-2 bottom-2 w-px bg-bg-border -translate-x-1/2 pointer-events-none" />
-
-              {/* SELL Side */}
-              <div className="p-3 bg-green-500/[0.03] dark:bg-green-500/[0.04] space-y-1">
-                <div className="flex items-center justify-between flex-wrap gap-1">
-                  <span className="text-[11px] font-semibold tracking-wider text-green-600 dark:text-green-400 flex items-center gap-1 uppercase">
-                    Sell
-                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-green-500">
-                      <line x1="12" y1="19" x2="12" y2="5" />
-                      <polyline points="5 12 12 5 19 12" />
-                    </svg>
-                  </span>
-                  <span className="text-[11px] text-text-muted tabular-nums">
-                    {pnlData?.sell_count ?? 0} {pnlData?.sell_count === 1 ? 'trade' : 'trades'}
-                  </span>
-                </div>
-                <div className="text-lg font-bold tabular-nums text-text-primary">
-                  {formatUsdc(totalSold)}
-                </div>
+              <div className="flex items-center gap-3 text-xs text-text-muted pt-0.5">
+                <span className="font-mono">{shortenAddress(wallet)}</span>
+                <span>·</span>
+                <span>Joined {new Date(profile.created_at).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}</span>
               </div>
             </div>
           </div>
-        )}
-      </div>
 
-      {/* Portfolio / Coins Holding section */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
+          {/* Action Buttons */}
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold">Coins Holding</h2>
-            {holdingsData && holdingsData.holdings.length > 0 && (
-              <span className="bg-text-primary/10 text-text-primary text-xs font-semibold px-2.5 py-0.5 rounded-full">
-                {holdingsData.holdings.length}
-              </span>
+            <button
+              onClick={copyWalletAddress}
+              className="btn-secondary text-xs px-3.5 py-2 flex items-center gap-1.5 font-medium rounded-full"
+              title="Copy wallet address"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+              <span>{copiedAddress ? 'Copied!' : 'Copy Address'}</span>
+            </button>
+
+            {/* Share */}
+            <div className="relative">
+              <button
+                onClick={() => setShareOpen((v) => !v)}
+                className="btn-secondary text-xs px-3.5 py-2 flex items-center gap-1.5 font-medium rounded-full"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="18" cy="5" r="3" />
+                  <circle cx="6" cy="12" r="3" />
+                  <circle cx="18" cy="19" r="3" />
+                  <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+                  <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+                </svg>
+                <span>Share</span>
+              </button>
+
+              {shareOpen && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setShareOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1.5 z-30 card p-1.5 min-w-[170px] space-y-1 shadow-subtle-2">
+                    <button
+                      onClick={() => {
+                        handleShare();
+                        setShareOpen(false);
+                      }}
+                      className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2"
+                    >
+                      🔗 Copy link / Share
+                    </button>
+                    <a
+                      href={tweetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setShareOpen(false)}
+                      className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2 block"
+                    >
+                      𝕏 Post on X
+                    </a>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* More Menu (⋮) */}
+            <div className="relative">
+              <button
+                onClick={() => setMoreOpen((v) => !v)}
+                className="btn-secondary text-xs px-3 py-2 font-bold rounded-full"
+                title="More options"
+              >
+                ⋮
+              </button>
+
+              {moreOpen && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setMoreOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1.5 z-30 card p-1.5 min-w-[180px] space-y-1 shadow-subtle-2">
+                    <button
+                      onClick={() => {
+                        copyWalletAddress();
+                        setMoreOpen(false);
+                      }}
+                      className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2"
+                    >
+                      📋 Copy wallet address
+                    </button>
+                    <a
+                      href={`https://testnet.arcscan.app/address/${wallet}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => setMoreOpen(false)}
+                      className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2 block"
+                    >
+                      ↗ View on ArcScan
+                    </a>
+                    <button
+                      onClick={() => {
+                        toast.success('Profile report submitted');
+                        setMoreOpen(false);
+                      }}
+                      className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium text-rose-500 flex items-center gap-2"
+                    >
+                      🚩 Report profile
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* 2. COMPACT CREATOR + TRADER STATS ROW */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-bg-border/60">
+          <StatCard label="Tokens Created" value={String(profile.tokens_launched)} />
+          <StatCard label="Trading Volume" value={formatUsdc(profile.total_volume_usdc)} />
+          <StatCard label="Total Trades" value={String(profile.trade_stats.total_trades)} detail={`${profile.trade_stats.total_buys} buys · ${profile.trade_stats.total_sells} sells`} />
+          <StatCard label="Portfolio Value" value={formatUsdc(totalPortfolioValue)} />
+        </div>
+      </div>
+
+      {/* 3. PRIMARY NAVIGATION TABS */}
+      <div className="border-b border-bg-border flex items-center gap-1 overflow-x-auto text-sm">
+        <button
+          onClick={() => setActiveTab('overview')}
+          className={`tab ${activeTab === 'overview' ? 'tab-active' : ''}`}
+        >
+          Overview
+        </button>
+        <button
+          onClick={() => setActiveTab('created')}
+          className={`tab ${activeTab === 'created' ? 'tab-active' : ''}`}
+        >
+          Created ({profile.tokens_launched})
+        </button>
+        <button
+          onClick={() => setActiveTab('holdings')}
+          className={`tab ${activeTab === 'holdings' ? 'tab-active' : ''}`}
+        >
+          Holdings ({holdingsList.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('activity')}
+          className={`tab ${activeTab === 'activity' ? 'tab-active' : ''}`}
+        >
+          Activity
+        </button>
+      </div>
+
+      {/* TAB 1: OVERVIEW */}
+      {activeTab === 'overview' && (
+        <div className="space-y-5 animate-fade-in">
+          {/* PnL & Portfolio Summary Card */}
+          <div className="card space-y-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h2 className="text-base font-bold text-text-primary">Performance & Realized PnL</h2>
+                <p className="text-xs text-text-muted">Objective trading gains and buy vs sell summary</p>
+              </div>
+
+              {/* Period selector */}
+              <div className="flex items-center gap-1 bg-bg-input p-1 rounded-lg border border-bg-border/60">
+                {(['7d', '30d', 'all'] as PnlPeriod[]).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPnlPeriod(p)}
+                    className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
+                      pnlPeriod === p
+                        ? 'bg-accent-blue text-white shadow-xs'
+                        : 'text-text-muted hover:text-text-primary'
+                    }`}
+                  >
+                    {p === 'all' ? 'All Time' : p.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {isPnlLoading ? (
+              <div className="h-20 bg-bg-input rounded-xl animate-pulse" />
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-bg-input p-3.5 rounded-xl border border-bg-border/60 space-y-1">
+                  <div className="text-[11px] font-semibold text-text-muted uppercase">Realized PnL ({pnlPeriod.toUpperCase()})</div>
+                  <div
+                    className={`text-2xl font-bold font-mono tabular-nums ${
+                      pnlValue === 0
+                        ? 'text-text-primary'
+                        : isPositivePnl
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-rose-600 dark:text-rose-400'
+                    }`}
+                  >
+                    {isPositivePnl && pnlValue > 0 ? '+' : ''}
+                    {formatUsdc(pnlValue)}
+                  </div>
+                </div>
+
+                <div className="bg-bg-input p-3.5 rounded-xl border border-bg-border/60 space-y-1">
+                  <div className="text-[11px] font-semibold text-text-muted uppercase">Total Bought ({pnlData?.buy_count ?? 0} trades)</div>
+                  <div className="text-xl font-bold font-mono tabular-nums text-text-primary">
+                    {formatUsdc(totalBought)}
+                  </div>
+                </div>
+
+                <div className="bg-bg-input p-3.5 rounded-xl border border-bg-border/60 space-y-1">
+                  <div className="text-[11px] font-semibold text-text-muted uppercase">Total Sold ({pnlData?.sell_count ?? 0} trades)</div>
+                  <div className="text-xl font-bold font-mono tabular-nums text-text-primary">
+                    {formatUsdc(totalSold)}
+                  </div>
+                </div>
+              </div>
             )}
           </div>
-          {holdingsData && Number(holdingsData.total_value_usdc) > 0 && (
-            <div className="text-right">
-              <span className="text-xs text-text-muted">Total Value: </span>
-              <span className="font-bold text-base text-accent-green tabular-nums">
-                {formatUsdc(holdingsData.total_value_usdc)}
-              </span>
+
+          {/* Quick Created Tokens Preview */}
+          <div className="space-y-3">
+            <div className="flex justify-between items-center">
+              <h2 className="text-base font-bold text-text-primary">Created Tokens ({profile.tokens_launched})</h2>
+              {profile.tokens_launched > 0 && (
+                <button
+                  onClick={() => setActiveTab('created')}
+                  className="text-xs font-bold text-accent-blue hover:underline"
+                >
+                  View all →
+                </button>
+              )}
+            </div>
+
+            {profile.launched_tokens.tokens.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {profile.launched_tokens.tokens.slice(0, 3).map((token) => (
+                  <TokenCard key={token.contract_address} token={token} />
+                ))}
+              </div>
+            ) : (
+              <div className="card text-center py-8 text-text-muted space-y-2">
+                <p className="text-xs">No tokens launched yet by this wallet.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Referral Program Panel */}
+          <ReferralPanel wallet={wallet} />
+        </div>
+      )}
+
+      {/* TAB 2: CREATED TOKENS */}
+      {activeTab === 'created' && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="flex justify-between items-center">
+            <h2 className="text-base font-bold text-text-primary">Tokens Launched by {shortenAddress(wallet)}</h2>
+            <span className="text-xs text-text-muted">{profile.tokens_launched} launched</span>
+          </div>
+
+          {profile.launched_tokens.tokens.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {profile.launched_tokens.tokens.map((token) => (
+                <TokenCard key={token.contract_address} token={token} />
+              ))}
+            </div>
+          ) : (
+            <div className="card text-center py-12 text-text-muted space-y-3">
+              <div className="text-3xl">🚀</div>
+              <p className="text-sm">No tokens launched yet.</p>
+              <Link href="/launch" className="btn-primary inline-block text-xs px-4 py-2 rounded-full font-bold">
+                Launch your token →
+              </Link>
             </div>
           )}
         </div>
+      )}
 
-        {holdingsLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {[1, 2].map((i) => (
-              <div key={i} className="card animate-pulse h-36" />
-            ))}
+      {/* TAB 3: HOLDINGS */}
+      {activeTab === 'holdings' && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-base font-bold text-text-primary">Current Token Positions</h2>
+              <p className="text-xs text-text-muted">Total value: {formatUsdc(totalPortfolioValue)}</p>
+            </div>
           </div>
-        ) : holdingsData && holdingsData.holdings.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {holdingsData.holdings.map((holding) => (
-              <HoldingCard key={holding.token.contract_address} holding={holding} />
-            ))}
-          </div>
-        ) : (
-          <div className="card text-center py-8 text-text-muted">
-            <p>No coins held in portfolio currently.</p>
-            <Link href="/explore" className="btn-secondary mt-3 inline-block">
-              Explore Tokens →
-            </Link>
-          </div>
-        )}
-      </div>
 
-      {/* Launched tokens */}
-      <div>
-        <h2 className="text-xl font-bold mb-4">Launched Tokens</h2>
-        {profile.launched_tokens.tokens.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {profile.launched_tokens.tokens.map((token) => (
-              <TokenCard key={token.contract_address} token={token} />
-            ))}
-          </div>
-        ) : (
-          <div className="card text-center py-8 text-text-muted">
-            <p>No tokens launched yet.</p>
-            <Link href="/launch" className="btn-primary mt-3 inline-block">
-              Launch your first token →
-            </Link>
-          </div>
-        )}
-      </div>
+          {isHoldingsLoading ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="card h-16 animate-pulse" />
+              ))}
+            </div>
+          ) : holdingsList.length > 0 ? (
+            <div className="card !p-0 overflow-hidden border border-bg-border">
+              {/* DESKTOP TABLE */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-bg-input border-b border-bg-border text-text-muted font-semibold">
+                    <tr>
+                      <th className="py-3 px-4">Token</th>
+                      <th className="py-3 px-4 text-right">Balance</th>
+                      <th className="py-3 px-4 text-right">Est. Value</th>
+                      <th className="py-3 px-4 text-right">Position PnL</th>
+                      <th className="py-3 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-bg-border/60">
+                    {holdingsList.map((holding) => {
+                      const { token, balance, value_usdc, total_bought_usdc, total_sold_usdc } = holding;
+                      const bought = Number(total_bought_usdc);
+                      const sold = Number(total_sold_usdc);
+                      const val = Number(value_usdc);
+                      const netPnl = val + sold - bought;
 
-      {/* Referral panel */}
-      <ReferralPanel wallet={wallet} />
+                      return (
+                        <tr key={token.contract_address} className="hover:bg-bg-hover/50 transition-colors">
+                          <td className="py-3 px-4">
+                            <Link href={`/trade/${token.contract_address}`} className="flex items-center gap-2.5 hover:underline">
+                              <div className="w-7 h-7 rounded-lg bg-bg-base border border-bg-border flex items-center justify-center overflow-hidden flex-shrink-0 text-sm">
+                                {token.image ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={ipfsToGateway(token.image)} alt={token.name} className="w-full h-full object-cover" />
+                                ) : (
+                                  tokenEmoji(token.symbol)
+                                )}
+                              </div>
+                              <div>
+                                <div className="font-bold text-text-primary">{token.name}</div>
+                                <div className="text-[11px] text-text-muted font-mono">${token.symbol}</div>
+                              </div>
+                            </Link>
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono font-bold text-text-primary tabular-nums">
+                            {formatTokens(balance)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono font-bold text-text-primary tabular-nums">
+                            {formatUsdc(value_usdc)}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono font-bold tabular-nums">
+                            <span className={netPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                              {netPnl >= 0 ? '+' : ''}{formatUsdc(netPnl)}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <Link
+                              href={`/trade/${token.contract_address}`}
+                              className="btn-secondary text-[11px] px-3 py-1 rounded-full font-bold inline-block"
+                            >
+                              Trade →
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* MOBILE STACKED CARDS */}
+              <div className="md:hidden divide-y divide-bg-border/60">
+                {holdingsList.map((holding) => {
+                  const { token, balance, value_usdc, total_bought_usdc, total_sold_usdc } = holding;
+                  const bought = Number(total_bought_usdc);
+                  const sold = Number(total_sold_usdc);
+                  const val = Number(value_usdc);
+                  const netPnl = val + sold - bought;
+
+                  return (
+                    <div key={token.contract_address} className="p-3.5 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <Link href={`/trade/${token.contract_address}`} className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-lg bg-bg-base border border-bg-border flex items-center justify-center overflow-hidden flex-shrink-0">
+                            {token.image ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={ipfsToGateway(token.image)} alt={token.name} className="w-full h-full object-cover" />
+                            ) : (
+                              tokenEmoji(token.symbol)
+                            )}
+                          </div>
+                          <div>
+                            <div className="font-bold text-sm text-text-primary">{token.name}</div>
+                            <div className="text-xs text-text-muted">${token.symbol}</div>
+                          </div>
+                        </Link>
+                        <Link
+                          href={`/trade/${token.contract_address}`}
+                          className="btn-secondary text-xs px-3 py-1 rounded-full font-bold"
+                        >
+                          Trade
+                        </Link>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 bg-bg-input p-2 rounded-lg text-xs font-mono">
+                        <div>
+                          <div className="text-[10px] text-text-muted">Balance</div>
+                          <div className="font-bold text-text-primary">{formatTokens(balance)}</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-[10px] text-text-muted">Est. Value</div>
+                          <div className="font-bold text-text-primary">{formatUsdc(value_usdc)}</div>
+                        </div>
+                        <div className="text-right">
+                          <div className="text-[10px] text-text-muted">PnL</div>
+                          <div className={`font-bold ${netPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {netPnl >= 0 ? '+' : ''}{formatUsdc(netPnl)}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div className="card text-center py-12 text-text-muted space-y-3">
+              <div className="text-3xl">💼</div>
+              <p className="text-sm">No token positions held in wallet.</p>
+              <Link href="/explore" className="btn-secondary text-xs px-4 py-2 rounded-full font-bold inline-block">
+                Explore Tokens →
+              </Link>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 4: ACTIVITY TIMELINE */}
+      {activeTab === 'activity' && (
+        <div className="space-y-4 animate-fade-in">
+          <div className="flex justify-between items-center">
+            <h2 className="text-base font-bold text-text-primary">On-Chain Activity Timeline</h2>
+            <span className="text-xs text-text-muted">{activityItems.length} events</span>
+          </div>
+
+          {activityItems.length > 0 ? (
+            <div className="card !p-0 overflow-hidden border border-bg-border divide-y divide-bg-border/60">
+              {activityItems.map((item) => (
+                <div key={item.id} className="p-3.5 flex items-center justify-between gap-3 text-xs hover:bg-bg-hover/40 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        item.type === 'CREATE'
+                          ? 'bg-blue-500/10 text-accent-blue border border-blue-500/20'
+                          : item.type === 'GRADUATED'
+                          ? 'bg-purple-500/10 text-purple-500 border border-purple-500/20'
+                          : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
+                      }`}
+                    >
+                      {item.type}
+                    </span>
+
+                    <div>
+                      <Link href={`/trade/${item.tokenAddress}`} className="font-bold text-text-primary hover:underline">
+                        {item.tokenName} (${item.tokenSymbol})
+                      </Link>
+                      <div className="text-[11px] text-text-muted">
+                        {new Date(item.timestamp).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {item.txHash && (
+                    <a
+                      href={`https://testnet.arcscan.app/tx/${item.txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-text-muted hover:text-accent-blue font-mono text-[11px]"
+                    >
+                      {shortenAddress(item.txHash)} ↗
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="card text-center py-12 text-text-muted space-y-2">
+              <div className="text-3xl">📜</div>
+              <p className="text-sm">No activity recorded for this wallet yet.</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function HoldingCard({ holding }: { holding: UserHolding }) {
-  const { token, balance, value_usdc, total_bought_usdc, total_sold_usdc } = holding;
-  const progress = bondingCurveProgress(token.market_cap);
-  const isGraduated = token.status === 'graduated';
-
-  // Compute unrealized/position PnL if trades exist
-  const bought = Number(total_bought_usdc);
-  const sold = Number(total_sold_usdc);
-  const currentValue = Number(value_usdc);
-  const netPnlUsdc = currentValue + sold - bought;
-  const hasTraded = bought > 0 || sold > 0;
-
+function StatCard({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
-    <div className="card hover:shadow-subtle-2 transition-all flex flex-col justify-between p-4">
-      <div>
-        {/* Token info header */}
-        <div className="flex items-center justify-between mb-3">
-          <Link
-            href={`/trade/${token.contract_address}`}
-            className="flex items-center gap-2.5 min-w-0 hover:opacity-80 transition-opacity"
-          >
-            {token.image ? (
-              <img
-                src={ipfsToGateway(token.image)}
-                alt={token.name}
-                className="w-10 h-10 rounded-full object-cover flex-shrink-0 bg-bg-input"
-                onError={(e) => {
-                  (e.target as HTMLElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-accent-peach to-accent-sienna/20 flex items-center justify-center font-bold text-base flex-shrink-0">
-                {tokenEmoji(token.symbol)}
-              </div>
-            )}
-            <div className="min-w-0">
-              <div className="font-bold text-sm truncate flex items-center gap-1.5">
-                <span>{token.name}</span>
-                <span className="text-xs text-text-muted font-normal">${token.symbol}</span>
-              </div>
-              <div className="text-xs text-text-muted">
-                MCap {formatMarketCap(token.market_cap)}
-              </div>
-            </div>
-          </Link>
-
-          <span
-            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
-              isGraduated
-                ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'
-                : 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-            }`}
-          >
-            {isGraduated ? 'Graduated' : 'Active'}
-          </span>
-        </div>
-
-        {/* Balance & Value Stats */}
-        <div className="grid grid-cols-2 gap-2 bg-bg-input rounded-xl p-2.5 mb-3">
-          <div>
-            <div className="text-[11px] text-text-muted">Tokens Held</div>
-            <div className="font-bold text-sm tabular-nums text-text-primary">
-              {formatTokens(balance)}
-            </div>
-          </div>
-          <div className="text-right">
-            <div className="text-[11px] text-text-muted">Est. Value</div>
-            <div className="font-bold text-sm tabular-nums text-text-primary">
-              {formatUsdc(value_usdc)}
-            </div>
-          </div>
-        </div>
-
-        {/* PnL indicator */}
-        {hasTraded && (
-          <div className="flex items-center justify-between text-xs mb-3 px-1">
-            <span className="text-text-muted">Position PnL:</span>
-            <span
-              className={`font-semibold tabular-nums ${
-                netPnlUsdc >= 0 ? 'text-green-600' : 'text-red-600'
-              }`}
-            >
-              {netPnlUsdc >= 0 ? '+' : ''}
-              {formatUsdc(netPnlUsdc)}
-            </span>
-          </div>
-        )}
-
-        {/* Bonding curve progress bar (if active) */}
-        {!isGraduated && (
-          <div className="space-y-1 mb-3">
-            <div className="flex justify-between text-[11px] text-text-muted">
-              <span>Bonding Curve</span>
-              <span className="tabular-nums font-medium">{progress.toFixed(0)}%</span>
-            </div>
-            <div className="w-full h-1.5 bg-bg-input rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-accent-peach to-accent-sienna transition-all duration-300"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Action button */}
-      <Link
-        href={`/trade/${token.contract_address}`}
-        className="btn-secondary text-xs py-1.5 w-full text-center block mt-2"
-      >
-        Trade {token.symbol} →
-      </Link>
+    <div className="bg-bg-input p-3 rounded-xl border border-bg-border/60 space-y-0.5">
+      <div className="text-[11px] font-semibold text-text-muted">{label}</div>
+      <div className="text-base font-bold font-mono text-text-primary tabular-nums">{value}</div>
+      {detail && <div className="text-[10px] text-text-muted font-mono">{detail}</div>}
     </div>
   );
 }
 
-function Stat({
-  label,
-  value,
-  full,
-  color,
-}: {
-  label: string;
-  value: string;
-  full?: boolean;
-  color?: 'green' | 'red';
-}) {
-  const textColor = color === 'green'
-    ? 'text-green-600'
-    : color === 'red'
-    ? 'text-red-600'
-    : '';
-
+function ProfileSkeleton() {
   return (
-    <div className={`bg-bg-input rounded-lg p-3 ${full ? '' : ''}`}>
-      <div className="text-xs text-text-muted">{label}</div>
-      <div className={`font-bold text-lg tabular-nums ${textColor}`}>{value}</div>
+    <div className="max-w-5xl mx-auto space-y-4 animate-pulse">
+      <div className="card h-40 bg-bg-card" />
+      <div className="h-10 bg-bg-card rounded-lg" />
+      <div className="card h-64 bg-bg-card" />
     </div>
   );
 }
