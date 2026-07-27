@@ -49,7 +49,7 @@ export default function TradePage() {
   } = useTokenStats(address);
 
   // Load OHLCV candles with live websocket updates
-  const { candles, isLoading: isCandlesLoading } = useCandles(
+  const { candles, isConnected, isLoading: isCandlesLoading } = useCandles(
     address,
     timeframe,
     metricMode
@@ -171,6 +171,7 @@ export default function TradePage() {
             candles={candles}
             tokenSymbol={token.symbol}
             timeframe={timeframe}
+            isConnected={isConnected}
             onTimeframeChange={setTimeframe}
             metricMode={metricMode}
             onMetricModeChange={setMetricMode}

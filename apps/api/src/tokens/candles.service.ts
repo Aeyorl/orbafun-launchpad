@@ -67,7 +67,7 @@ export class CandlesService {
     const normalized = tokenAddress.toLowerCase();
     const cacheKey = `candles:${normalized}:${timeframe}:${mode}:${limit}`;
 
-    // Check cache (10s TTL — fast enough for live trading)
+    // Check cache (5s TTL — fast for live trading)
     const cached = await this.redis.getJson<OhlcvCandle[]>(cacheKey);
     if (cached) return cached;
 
@@ -75,31 +75,52 @@ export class CandlesService {
     const windowSeconds = TIMEFRAME_WINDOW[timeframe];
     const valueColumn = mode === 'price' ? 'tr.price' : 'tr.market_cap_after';
 
-    // Query: aggregate trades into OHLCV buckets
-    // Uses generate_series to fill gaps, with carry-forward close price via
-    // window functions (LAG with IGNORE NULLS emulation).
+    // 1. Check if token has any executed trades in the database
+    const countRes = await this.db.query(
+      `SELECT
+         COUNT(*)::text AS count,
+         MIN(tr.timestamp)::text AS min_ts,
+         (array_agg(${valueColumn}::numeric ORDER BY tr.timestamp ASC, tr.log_index ASC))[1]::text AS first_val
+       FROM trades tr
+       JOIN tokens t ON tr.token_id = t.id
+       WHERE t.contract_address = $1`,
+      [normalized],
+    );
+
+    const tradeCount = parseInt(countRes.rows[0]?.count || '0', 10);
+
+    // If token has zero trades, return empty array — do NOT manufacture fake candles
+    if (tradeCount === 0 || !countRes.rows[0]?.min_ts) {
+      await this.redis.setJson(cacheKey, [], 5);
+      return [];
+    }
+
+    const firstTradeTs = Math.floor(new Date(countRes.rows[0].min_ts).getTime() / 1000);
+    const initialVal = Number(countRes.rows[0].first_val || '0');
+
+    // 2. Query: aggregate trades into OHLCV time buckets starting from earliest trade
     const query = `
-      WITH token_id AS (
-        SELECT id, created_at FROM tokens WHERE contract_address = $1 LIMIT 1
+      WITH token_info AS (
+        SELECT id FROM tokens WHERE contract_address = $1 LIMIT 1
       ),
       trade_buckets AS (
         SELECT
           (EXTRACT(EPOCH FROM tr.timestamp)::bigint / $2) * $2 AS bucket,
-          (array_agg(${valueColumn}::numeric ORDER BY tr.timestamp ASC))[1] AS open_val,
+          (array_agg(${valueColumn}::numeric ORDER BY tr.timestamp ASC, tr.log_index ASC))[1] AS open_val,
           MAX(${valueColumn}::numeric) AS high_val,
           MIN(${valueColumn}::numeric) AS low_val,
-          (array_agg(${valueColumn}::numeric ORDER BY tr.timestamp DESC))[1] AS close_val,
+          (array_agg(${valueColumn}::numeric ORDER BY tr.timestamp DESC, tr.log_index DESC))[1] AS close_val,
           SUM(tr.usdc_amount::numeric) AS volume_raw
         FROM trades tr
-        JOIN token_id ti ON tr.token_id = ti.id
+        JOIN token_info ti ON tr.token_id = ti.id
         WHERE tr.timestamp >= NOW() - INTERVAL '${windowSeconds} seconds'
         GROUP BY bucket
       ),
       time_range AS (
         SELECT
           GREATEST(
-            (EXTRACT(EPOCH FROM (SELECT created_at FROM token_id))::bigint / $2) * $2,
-            (EXTRACT(EPOCH FROM NOW())::bigint - $3) / $2 * $2
+            ($3::bigint / $2) * $2,
+            (EXTRACT(EPOCH FROM NOW())::bigint - $4) / $2 * $2
           ) AS start_bucket,
           (EXTRACT(EPOCH FROM NOW())::bigint / $2) * $2 AS end_bucket
       ),
@@ -130,22 +151,20 @@ export class CandlesService {
         volume_raw
       FROM filled
       ORDER BY bucket ASC
-      LIMIT $4
+      LIMIT $5
     `;
 
     try {
       const result = await this.db.query(query, [
         normalized,
         bucketSeconds,
+        firstTradeTs,
         windowSeconds,
         limit,
       ]);
 
-      // Post-process: fill gaps with carry-forward close price
       const candles: OhlcvCandle[] = [];
-      // Default initial price for tokens with no trades: $0.000004 (launch price)
-      // Default initial mcap: $4,000 (launch market cap)
-      let lastClose = mode === 'price' ? 0.000004 : 4000;
+      let lastClose = initialVal;
 
       for (const row of result.rows) {
         const hasData = row.open_val !== null;
@@ -167,8 +186,8 @@ export class CandlesService {
         lastClose = close;
       }
 
-      // Cache for 10 seconds
-      await this.redis.setJson(cacheKey, candles, 10);
+      // Cache for 5 seconds
+      await this.redis.setJson(cacheKey, candles, 5);
       return candles;
     } catch (err) {
       this.logger.error(`Failed to get candles for ${normalized}: ${err.message}`);

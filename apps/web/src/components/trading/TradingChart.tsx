@@ -30,6 +30,7 @@ export const TradingChart = memo(function TradingChart({
   candles,
   tokenSymbol,
   timeframe,
+  isConnected,
   onTimeframeChange,
   metricMode: externalMode,
   onMetricModeChange: externalModeChange,
@@ -37,6 +38,7 @@ export const TradingChart = memo(function TradingChart({
   candles: OhlcvCandle[];
   tokenSymbol?: string;
   timeframe: CandleTimeframe;
+  isConnected?: boolean;
   onTimeframeChange: (tf: CandleTimeframe) => void;
   metricMode?: MetricMode;
   onMetricModeChange?: (mode: MetricMode) => void;
@@ -263,6 +265,7 @@ export const TradingChart = memo(function TradingChart({
     >
       {/* Toolbar */}
       <ChartToolbar
+        isConnected={isConnected}
         timeframe={timeframe}
         chartType={chartType}
         metricMode={metricMode}
@@ -284,13 +287,15 @@ export const TradingChart = memo(function TradingChart({
           className={`w-full ${isFullscreen ? 'h-full' : 'h-[420px] lg:h-[520px]'}`}
         />
 
-        {/* Empty state */}
+        {/* Empty state — no fake candles manufactured */}
         {candles.length === 0 && ready && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center text-text-muted text-sm">
-              <div className="text-2xl mb-2">📊</div>
-              <div>No trades yet</div>
-              <div className="text-xs mt-1">Be the first to trade {tokenSymbol ? `$${tokenSymbol}` : 'this token'}</div>
+          <div className="absolute inset-0 flex items-center justify-center bg-[#0a0e1a]">
+            <div className="text-center text-text-muted text-sm space-y-1">
+              <div className="text-2xl mb-1">📊</div>
+              <div className="font-semibold text-text-primary">No trades yet</div>
+              <div className="text-xs text-text-muted">
+                Once the first trade occurs, price history will appear here.
+              </div>
             </div>
           </div>
         )}

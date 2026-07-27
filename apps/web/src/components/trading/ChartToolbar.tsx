@@ -22,6 +22,7 @@ const TIMEFRAMES: { key: CandleTimeframe; label: string }[] = [
  * Timeframes, chart type, price/mcap toggle, scale, fullscreen.
  */
 export const ChartToolbar = memo(function ChartToolbar({
+  isConnected,
   timeframe,
   chartType,
   metricMode,
@@ -35,6 +36,7 @@ export const ChartToolbar = memo(function ChartToolbar({
   onFullscreen,
   onResetChart,
 }: {
+  isConnected?: boolean;
   timeframe: CandleTimeframe;
   chartType: ChartType;
   metricMode: MetricMode;
@@ -50,21 +52,29 @@ export const ChartToolbar = memo(function ChartToolbar({
 }) {
   return (
     <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-[rgb(var(--color-bg-card))] border-b border-bg-border text-[11px] flex-wrap">
-      {/* Timeframes */}
-      <div className="flex items-center gap-0.5">
-        {TIMEFRAMES.map((tf) => (
-          <button
-            key={tf.key}
-            onClick={() => onTimeframeChange(tf.key)}
-            className={`px-2 py-1 font-medium transition-colors ${
-              timeframe === tf.key
-                ? 'bg-accent-blue text-white'
-                : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
-            }`}
-          >
-            {tf.label}
-          </button>
-        ))}
+      {/* Timeframes + Connection Status */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-0.5">
+          {TIMEFRAMES.map((tf) => (
+            <button
+              key={tf.key}
+              onClick={() => onTimeframeChange(tf.key)}
+              className={`px-2 py-1 font-medium transition-colors ${
+                timeframe === tf.key
+                  ? 'bg-accent-blue text-white'
+                  : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'
+              }`}
+            >
+              {tf.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Live / Reconnecting badge */}
+        <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border border-bg-border bg-bg-card">
+          <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
+          <span className="text-text-secondary">{isConnected ? 'Live' : 'Reconnecting'}</span>
+        </div>
       </div>
 
       {/* Chart type + controls */}

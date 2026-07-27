@@ -107,11 +107,12 @@ export function useCandles(
     [mode, timeframe, tokenAddress, queryClient],
   );
 
-  useTokenEvents(tokenAddress, handleEvent);
+  const { isConnected } = useTokenEvents(tokenAddress, handleEvent);
 
   return {
     candles: liveCandles,
     isLoading,
+    isConnected,
     error,
   };
 }
