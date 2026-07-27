@@ -101,12 +101,12 @@ export const TradingChart = memo(function TradingChart({
       volumeSeriesRef.current = null;
     }
 
-    const isDark = true; // Terminal always dark
+    const isDark = typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : true;
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: isDark ? '#0a0e1a' : '#ffffff' },
-        textColor: isDark ? '#8b95a8' : '#17191c',
+        textColor: isDark ? '#8b95a8' : '#101828',
         fontFamily: "'Inter', 'JetBrains Mono', system-ui, monospace",
         fontSize: 11,
       },
@@ -301,10 +301,10 @@ export const TradingChart = memo(function TradingChart({
 
   return (
     <div
-      className={`flex flex-col bg-[#0a0e1a] ${
+      className={`flex flex-col bg-bg-card ${
         isFullscreen
-          ? 'fixed inset-0 z-50'
-          : 'border border-bg-border'
+          ? 'fixed inset-0 z-50 bg-bg-base'
+          : 'card !p-0 border border-bg-border'
       }`}
     >
       {/* Toolbar */}
