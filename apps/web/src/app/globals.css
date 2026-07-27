@@ -86,7 +86,8 @@
   }
 
   body {
-    @apply bg-bg-base text-text-primary font-sans antialiased;
+    @apply font-sans antialiased;
+    color: rgb(var(--color-text-primary));
     background-color: rgb(var(--color-bg-base));
     background-image:
       radial-gradient(ellipse 65% 42% at 40% 6%, var(--glow-primary), transparent 62%),
@@ -112,13 +113,26 @@
 
   /* Visible focus ring for keyboard users only */
   :focus-visible {
-    @apply outline-none ring-2 ring-accent-blue ring-offset-2 ring-offset-bg-base;
+    outline: 2px solid rgb(var(--color-accent-primary));
+    outline-offset: 2px;
   }
 
   /* Skip-to-content link for screen readers / keyboard users */
   .skip-link {
-    @apply absolute left-2 top-2 z-[100] bg-accent-blue text-white px-3 py-1.5 text-sm font-semibold
-           -translate-y-20 transition-transform focus:translate-y-0;
+    position: absolute;
+    left: 0.5rem;
+    top: 0.5rem;
+    z-index: 100;
+    background-color: rgb(var(--color-accent-primary));
+    color: #ffffff;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transform: translateY(-5rem);
+    transition: transform 0.2s ease;
+  }
+  .skip-link:focus {
+    transform: translateY(0);
   }
 
   /* Scrollbar styling */
@@ -170,16 +184,34 @@
     @apply px-5 py-2 font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed;
   }
   .btn-primary {
-    @apply btn bg-accent-blue text-white hover:bg-accent-blueDim;
+    @apply btn text-white;
+    background-color: rgb(var(--color-accent-primary));
+  }
+  .btn-primary:hover {
+    background-color: rgb(var(--color-accent-primary-dim));
   }
   .btn-secondary {
-    @apply btn bg-transparent text-accent-blue border border-accent-blue hover:bg-accent-blue hover:text-white;
+    @apply btn bg-transparent;
+    color: rgb(var(--color-accent-primary));
+    border: 1px solid rgb(var(--color-accent-primary));
+  }
+  .btn-secondary:hover {
+    background-color: rgb(var(--color-accent-primary));
+    color: #ffffff;
   }
   .btn-buy {
-    @apply btn bg-accent-blue text-white hover:bg-accent-blueDim;
+    @apply btn text-white;
+    background-color: rgb(var(--color-accent-primary));
+  }
+  .btn-buy:hover {
+    background-color: rgb(var(--color-accent-primary-dim));
   }
   .btn-sell {
-    @apply btn bg-accent-red text-white hover:opacity-90;
+    @apply btn text-white;
+    background-color: rgb(var(--color-accent-red));
+  }
+  .btn-sell:hover {
+    opacity: 0.9;
   }
 
   /* Input fields — surface fill, hairline border, sharp corners */
@@ -199,7 +231,8 @@
     @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium;
   }
   .badge-green {
-    @apply badge text-accent-blue;
+    @apply badge;
+    color: rgb(var(--color-accent-primary));
     background-color: rgb(var(--color-accent-primary) / 0.1);
   }
   .badge-blue {
@@ -207,15 +240,18 @@
     background-color: rgb(var(--color-accent-surface));
   }
   .badge-purple {
-    @apply badge text-accent-purple;
+    @apply badge;
+    color: rgb(var(--color-accent-grad));
     background-color: rgb(var(--color-accent-grad) / 0.15);
   }
   .badge-red {
-    @apply badge text-accent-red;
+    @apply badge;
+    color: rgb(var(--color-accent-red));
     background-color: rgb(var(--color-accent-red) / 0.1);
   }
   .badge-orange {
-    @apply badge text-accent-orange;
+    @apply badge;
+    color: rgb(var(--color-accent-orange));
     background-color: rgb(var(--color-accent-orange) / 0.1);
   }
   .badge-muted {
@@ -227,7 +263,8 @@
     @apply w-full h-2 bg-bg-card overflow-hidden;
   }
   .progress-fill {
-    @apply h-full bg-accent-blue transition-all duration-500;
+    @apply h-full transition-all duration-500;
+    background-color: rgb(var(--color-accent-primary));
   }
 
   /* Tab navigation — whisper-quiet */
@@ -236,7 +273,8 @@
            hover:text-text-primary hover:bg-bg-card transition-colors cursor-pointer;
   }
   .tab-active {
-    @apply bg-bg-card text-accent-blue;
+    @apply bg-bg-card;
+    color: rgb(var(--color-accent-primary));
   }
 
   /* Trading terminal panel */
