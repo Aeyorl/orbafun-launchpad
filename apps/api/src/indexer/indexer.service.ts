@@ -250,6 +250,9 @@ export class IndexerService {
         ],
       );
 
+      // Record price snapshot for leaderboard gain calculation.
+      await this.recordPriceSnapshot(tokenId, price, marketCap);
+
       // Update indexer state
       await client.query(
         `UPDATE indexer_state
@@ -398,6 +401,9 @@ export class IndexerService {
         ],
       );
 
+      // Record price snapshot for leaderboard gain calculation.
+      await this.recordPriceSnapshot(tokenId, price, marketCap);
+
       await client.query(
         `UPDATE indexer_state
          SET last_block = GREATEST(last_block, $1),
@@ -522,11 +528,198 @@ export class IndexerService {
   }
 
   // ─── AMM Swap ────────────────────────────────────────────────────────────
+  /**
+   * Handle an AMM Swap event from a graduated token's pair.
+   *
+   * Determines swap direction (buy = USDC→token, sell = token→USDC) by
+   * comparing the token contract address against the known USDC address.
+   * In Uniswap V2-style pairs, token0 is the lower-address token, token1
+   * is the higher-address token. We compare addresses to determine which
+   * is which, then decode the Swap log amounts accordingly.
+   */
   private async handleAmmSwap(event: SwapEvent): Promise<void> {
-    // TODO: Implement AMM swap indexing (post-graduation trading)
-    // This requires knowing which token is token0 vs token1 in the pair.
-    // For now, we just log it.
-    this.logger.log(`AMM Swap on pair ${event.ammPairAddress} (not yet indexed)`);
+    const client = await this.db.connect();
+    let tokenId: number | null = null;
+    let isBuy = false;
+    try {
+      await client.query('BEGIN');
+
+      // Find the graduation record by AMM pair address to get the token_id.
+      const gradResult2 = await client.query(
+        `SELECT token_id FROM graduations WHERE amm_pair_address = $1 LIMIT 1`,
+        [event.ammPairAddress.toLowerCase()],
+      );
+      if (gradResult2.rows.length === 0) {
+        this.logger.warn(
+          `AMM Swap: no graduation found for pair ${event.ammPairAddress}`,
+        );
+        await client.query('ROLLBACK');
+        return;
+      }
+      tokenId = gradResult2.rows[0].token_id;
+
+      // Get the token's contract address.
+      const tokenResult2 = await client.query(
+        `SELECT contract_address FROM tokens WHERE id = $1`,
+        [tokenId],
+      );
+      if (tokenResult2.rows.length === 0) {
+        this.logger.warn(`AMM Swap: token not found for id ${tokenId}`);
+        await client.query('ROLLBACK');
+        return;
+      }
+      const tokenAddress = tokenResult2.rows[0].contract_address.toLowerCase();
+
+      // In Uniswap V2, token0 is the lower-address token.
+      // USDC on Arc testnet: 0x3600000000000000000000000000000000000000
+      const usdcAddress = (
+        process.env.ARC_USDC_ADDRESS ||
+        '0x3600000000000000000000000000000000000000'
+      ).toLowerCase();
+
+      const usdcIsToken0 = usdcAddress < tokenAddress;
+
+      // Parse amounts from hex strings.
+      const amount0In = BigInt(event.amount0In);
+      const amount1In = BigInt(event.amount1In);
+      const amount0Out = BigInt(event.amount0Out);
+      const amount1Out = BigInt(event.amount1Out);
+
+      // Determine direction and extract USDC/token amounts.
+      let usdcIn = 0n;
+      let usdcOut = 0n;
+      let tokenIn = 0n;
+      let tokenOut = 0n;
+
+      if (usdcIsToken0) {
+        // token0 = USDC, token1 = meme token
+        isBuy = amount0In > 0n; // USDC comes in → buy
+        if (isBuy) {
+          usdcIn = amount0In;
+          tokenOut = amount1Out;
+        } else {
+          tokenIn = amount1In;
+          usdcOut = amount0Out;
+        }
+      } else {
+        // token0 = meme token, token1 = USDC
+        isBuy = amount1In > 0n; // USDC comes in (as token1) → buy
+        if (isBuy) {
+          usdcIn = amount1In;
+          tokenOut = amount0Out;
+        } else {
+          tokenIn = amount0In;
+          usdcOut = amount1Out;
+        }
+      }
+
+      // Compute price after swap (USDC per token, 6-dec).
+      // Uses the same computePrice method as bonding curve trades.
+      const price = this.computePrice(
+        isBuy ? usdcIn : usdcOut,   // usdc amount (6-dec raw)
+        isBuy ? tokenOut : tokenIn,  // token amount (18-dec raw)
+      );
+
+      // 1. Insert swap record (idempotent via ON CONFLICT).
+      await client.query(
+        `INSERT INTO amm_swaps (
+           token_id, amm_pair_address, sender, to_address,
+           is_buy, usdc_in, usdc_out, token_in, token_out,
+           price_after,
+           tx_hash, block_number, log_index, timestamp
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+         ON CONFLICT (tx_hash, log_index) DO NOTHING`,
+        [
+          tokenId,
+          event.ammPairAddress.toLowerCase(),
+          event.sender.toLowerCase(),
+          event.to.toLowerCase(),
+          isBuy,
+          usdcIn.toString(),
+          usdcOut.toString(),
+          tokenIn.toString(),
+          tokenOut.toString(),
+          price,
+          event.txHash,
+          event.blockNumber.toString(),
+          event.logIndex,
+        ],
+      );
+
+      // 2. Update token price and market cap (for AMM, use swap output as price).
+      // Only update if price is non-zero.
+      if (parseFloat(price) > 0) {
+        const marketCap = (parseFloat(price) * 1e9).toFixed(6);
+        await client.query(
+          `UPDATE tokens SET
+             price = $2,
+             market_cap = $3
+           WHERE id = $1`,
+          [tokenId, price, marketCap],
+        );
+      }
+
+      // 3. Record a price snapshot for gain calculation.
+      await client.query(
+        `INSERT INTO price_snapshots (token_id, price, market_cap, snapshot_at)
+         VALUES ($1, $2, $3, NOW())`,
+        [tokenId, price, (parseFloat(price) * 1e9).toFixed(6)],
+      );
+
+      // 4. Update indexer state.
+      await client.query(
+        `UPDATE indexer_state
+         SET last_block = GREATEST(last_block, $1),
+             last_event_timestamp = NOW(),
+             events_indexed = events_indexed + 1,
+             updated_at = NOW()
+         WHERE id = 1`,
+        [event.blockNumber.toString()],
+      );
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      this.logger.error(`handleAmmSwap failed: ${err.message}`);
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    // Publish WebSocket event (look up token contract address again).
+    const tokenAddr2 = await this.db.queryOne<{ contract_address: string }>(
+      `SELECT contract_address FROM tokens WHERE id = (
+         SELECT token_id FROM graduations WHERE amm_pair_address = $1
+       )`,
+      [event.ammPairAddress.toLowerCase()],
+    );
+    if (tokenAddr2) {
+      await this.redis.publishTokenEvent(
+        tokenAddr2.contract_address.toLowerCase(),
+        isBuy ? 'AMM_BUY' : 'AMM_SELL',
+        { ammPairAddress: event.ammPairAddress.toLowerCase(), sender: event.sender.toLowerCase(), isBuy },
+      );
+      // Invalidate caches
+      await this.redis.del(`token:${tokenAddr2.contract_address.toLowerCase()}`);
+      await this.redis.delPattern('tokens:list:*');
+      await this.redis.delPattern('leaderboard:*');
+    }
+  }
+
+  /**
+   * Record a price snapshot for the given token after a trade.
+   * Called from handleBuy and handleSell.
+   */
+  private async recordPriceSnapshot(tokenId: number, price: string, marketCap: string): Promise<void> {
+    try {
+      await this.db.query(
+        `INSERT INTO price_snapshots (token_id, price, market_cap, snapshot_at)
+         VALUES ($1, $2, $3, NOW())`,
+        [tokenId, price, marketCap],
+      );
+    } catch (err) {
+      this.logger.warn(`Failed to record price snapshot: ${err.message}`);
+    }
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────

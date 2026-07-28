@@ -211,6 +211,25 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- ─── Price Snapshots (for leaderboard gain calculations) ──────────────────
+-- Records token price/market_cap at each trade. The leaderboard uses this
+-- to compute real percentage gains (24h or all-time) instead of sorting by
+-- market cap as a proxy.
+-- Inserted by the indexer on each Buy/Sell/Swap event.
+CREATE TABLE IF NOT EXISTS price_snapshots (
+    id              BIGSERIAL PRIMARY KEY,
+    token_id        BIGINT NOT NULL REFERENCES tokens(id) ON DELETE CASCADE,
+    price           NUMERIC(20, 6) NOT NULL,    -- USDC per token (6-dec)
+    market_cap      NUMERIC(20, 6) NOT NULL,    -- 6-dec USDC
+    snapshot_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_price_snapshots_token_time
+    ON price_snapshots(token_id, snapshot_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_price_snapshots_token_time_asc
+    ON price_snapshots(token_id, snapshot_at ASC);
+
 -- ─── Token Holders ─────────────────────────────────────────────────────────
 -- Holder balances are computed on-the-fly by the API from the trades + amm_swaps
 -- tables (sum of buys minus sells per wallet). No materialized view is needed

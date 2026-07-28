@@ -45,23 +45,45 @@ export class LeaderboardService {
         [limit],
       );
     } else if (type === 'top_gainers') {
-      // Top gainers: tokens with the highest market cap (proxy for gain,
-      // since we don't track historical price snapshots yet).
-      // TODO: Add a price_snapshots table for real gain calculations.
+      // Top gainers: tokens with the highest percentage gain in the last 24h.
+      // Uses the price_snapshots table (recorded on every trade). Compares the
+      // latest price snapshot against the snapshot closest to 24h ago (or the
+      // earliest snapshot if the token is less than 24h old).
       result = await this.db.queryRows(
         `SELECT
-           contract_address,
-           name,
-           symbol,
-           image,
-           market_cap,
-           price,
-           volume_24h,
-           status,
-           created_at
-         FROM tokens
-         WHERE status = 'active'
-         ORDER BY market_cap DESC
+           t.contract_address,
+           t.name,
+           t.symbol,
+           t.image,
+           t.market_cap,
+           t.price,
+           t.volume_24h,
+           t.status,
+           t.created_at,
+           COALESCE(
+             ROUND(
+               ((latest.price - earliest.price) / NULLIF(earliest.price, 0)) * 100,
+               2
+             ),
+             0
+           )::text AS gain_pct
+         FROM tokens t
+         LEFT JOIN LATERAL (
+           SELECT price FROM price_snapshots
+           WHERE token_id = t.id
+           ORDER BY ABS(EXTRACT(EPOCH FROM (snapshot_at - (NOW() - INTERVAL '24 hours'))))
+           LIMIT 1
+         ) earliest ON true
+         LEFT JOIN LATERAL (
+           SELECT price FROM price_snapshots
+           WHERE token_id = t.id
+           ORDER BY snapshot_at DESC
+           LIMIT 1
+         ) latest ON true
+         WHERE t.status = 'active'
+           AND latest.price IS NOT NULL
+           AND earliest.price IS NOT NULL
+         ORDER BY gain_pct DESC
          LIMIT $1`,
         [limit],
       );

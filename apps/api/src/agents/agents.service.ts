@@ -67,11 +67,7 @@ export class AgentsService {
 
   /**
    * Register a new AI agent and issue an API key.
-   * This is an admin-only operation (called by the platform operator).
-   *
-   * TODO: Add admin authentication (separate from agent auth).
-   * For now, this is protected by the global rate limiter and should be
-   * called from a trusted admin tool, not exposed publicly.
+   * Admin-only — protected by AdminGuard at the controller level.
    */
   async registerAgent(input: {
     name: string;
