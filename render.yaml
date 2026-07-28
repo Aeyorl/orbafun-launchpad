@@ -27,7 +27,7 @@ databases:
     databaseName: orbafun
     user: orbafun
     region: oregon
-    plan: starter  # $7/month — 1GB RAM, 1 vCPU, includes daily backups
+    plan: basic-256mb  # $7/month — 256MB RAM, 1 vCPU, 1GB storage included
 
 services:
   # Render Key Value (Valkey/Redis-compatible) — used for cache + pub/sub
