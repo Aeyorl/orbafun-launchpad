@@ -186,7 +186,7 @@ export class DeployerService {
 
     this.account = privateKeyToAccount(privateKey);
     this.tokenFactoryAddress = (
-      process.env.ARC_TOKEN_FACTORY_ADDRESS || '0x26Ab49011AAf73c373e462CbD5445588Ff69b7A6'
+      process.env.ARC_TOKEN_FACTORY_ADDRESS || '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b'
     ).toLowerCase();
 
     const transport = fallback(RPC_URLS.map((url: string) => http(url)));
