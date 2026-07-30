@@ -26,6 +26,10 @@ export interface Token {
   created_block: string;
   created_tx_hash: string;
   created_at: string;
+  // Agent-launched token attributes
+  is_agent: string;       // 'true' or 'false' — whether this token was launched by an AI agent
+  agent_name: string | null;  // The agent's display name, if agent-launched
+  agent_uuid: string | null;  // The agent's public UUID, if agent-launched
 }
 
 export interface Trade {
@@ -123,9 +127,14 @@ export class TokensService {
     const offsetIdx = paramIdx + 1;
 
     const query = `
-      SELECT t.*, u.username as creator_username
+      SELECT t.*, u.username as creator_username,
+        CASE WHEN al.id IS NOT NULL THEN true ELSE false END AS is_agent,
+        a.name AS agent_name,
+        a.agent_id AS agent_uuid
       FROM tokens t
       LEFT JOIN users u ON t.creator_wallet = u.wallet
+      LEFT JOIN agent_launches al ON al.token_address = t.contract_address
+      LEFT JOIN agents a ON a.id = al.agent_id
       WHERE 1=1 ${statusClause} ${searchClause}
       ${orderClause}
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
@@ -164,7 +173,14 @@ export class TokensService {
     if (cached) return cached;
 
     const token = await this.db.queryOne<Token>(
-      `SELECT * FROM tokens WHERE contract_address = $1`,
+      `SELECT t.*,
+        CASE WHEN al.id IS NOT NULL THEN true ELSE false END AS is_agent,
+        a.name AS agent_name,
+        a.agent_id AS agent_uuid
+       FROM tokens t
+       LEFT JOIN agent_launches al ON al.token_address = t.contract_address
+       LEFT JOIN agents a ON a.id = al.agent_id
+       WHERE t.contract_address = $1`,
       [normalized],
     );
 
@@ -223,8 +239,15 @@ export class TokensService {
     const normalized = wallet.toLowerCase();
 
     const tokens = await this.db.queryRows<Token>(
-      `SELECT * FROM tokens WHERE creator_wallet = $1
-       ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+      `SELECT t.*,
+        CASE WHEN al.id IS NOT NULL THEN true ELSE false END AS is_agent,
+        a.name AS agent_name,
+        a.agent_id AS agent_uuid
+       FROM tokens t
+       LEFT JOIN agent_launches al ON al.token_address = t.contract_address
+       LEFT JOIN agents a ON a.id = al.agent_id
+       WHERE t.creator_wallet = $1
+       ORDER BY t.created_at DESC LIMIT $2 OFFSET $3`,
       [normalized, limit, offset],
     );
 

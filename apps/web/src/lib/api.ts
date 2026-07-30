@@ -59,6 +59,10 @@ export interface Token {
   created_block: string;
   created_tx_hash: string;
   created_at: string;
+  // Agent-launched token attributes
+  is_agent: string;       // 'true' or 'false' — whether this token was launched by an AI agent
+  agent_name: string | null;  // The agent's display name, if agent-launched
+  agent_uuid: string | null;  // The agent's public UUID, if agent-launched
 }
 
 export interface Trade {
@@ -655,6 +659,9 @@ async function fetchTokenOnChainFallback(address: string): Promise<Token | null>
       creator_fees_accrued: '0',
       protocol_fees_accrued: '0',
       status: graduated ? 'graduated' : 'active',
+      is_agent: 'false',
+      agent_name: null,
+      agent_uuid: null,
       graduated_at: null,
       lp_burned: null,
       created_block: '0',
