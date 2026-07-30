@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Token } from '@/lib/api';
+import { AgentBadge } from '@/components/AgentBadge';
 import {
   formatUsdc,
   formatMarketCap,
@@ -47,8 +48,11 @@ export function TokenCard({ token }: { token: Token }) {
               )}
             </div>
             <div className="min-w-0">
-              <div className="font-bold text-sm text-text-primary group-hover:text-accent-blue transition-colors truncate">
-                {token.name}
+              <div className="flex items-center gap-1.5">
+                <div className="font-bold text-sm text-text-primary group-hover:text-accent-blue transition-colors truncate">
+                  {token.name}
+                </div>
+                <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} />
               </div>
               <div className="text-xs text-text-muted font-medium">${token.symbol}</div>
             </div>

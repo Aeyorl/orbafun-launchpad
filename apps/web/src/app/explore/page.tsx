@@ -5,6 +5,7 @@ import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { api, SortOption, StatusFilter, Token } from '@/lib/api';
 import { TokenCard } from '@/components/TokenCard';
+import { AgentBadge } from '@/components/AgentBadge';
 import {
   formatMarketCap,
   formatUsdc,
@@ -344,6 +345,7 @@ function TrendingHeroCard({ token }: { token: Token }) {
             {token.name}
           </h3>
           <div className="flex items-center gap-2">
+            <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} />
             <span className="text-xs font-mono text-text-muted">${token.symbol}</span>
             <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-semibold border bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
               <span className="w-1 h-1 rounded-full bg-emerald-500" />

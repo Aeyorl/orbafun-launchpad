@@ -5,6 +5,7 @@ import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { Token } from '@/lib/api';
 import { FavoriteButton } from '@/components/FavoriteButton';
+import { AgentBadge } from '@/components/AgentBadge';
 import {
   formatMarketCap,
   formatPrice,
@@ -150,6 +151,7 @@ export const TokenHeader = memo(function TokenHeader({
                   <h1 className="font-bold text-lg text-text-primary tracking-tight leading-none">
                     {token.name}
                   </h1>
+                  <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} />
                   <span className="text-xs font-semibold text-text-muted">
                     ${token.symbol}
                   </span>
@@ -406,6 +408,7 @@ export const TokenHeader = memo(function TokenHeader({
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 truncate">
                   <span className="font-bold text-base text-text-primary truncate">{token.name}</span>
+                  <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} />
                   <span className="text-xs text-text-muted font-medium flex-shrink-0">${token.symbol}</span>
                 </div>
                 <div className="flex items-center gap-1.5 mt-0.5">
