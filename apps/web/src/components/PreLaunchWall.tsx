@@ -212,9 +212,9 @@ export function PreLaunchWall() {
           <div className="flex justify-center mb-4">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/orba-logo-light.svg"
+              src="/orba-logo-dark.svg"
               alt="Orba"
-              className="h-10 md:h-12 w-auto opacity-90"
+              className="h-10 md:h-12 w-auto"
             />
           </div>
 
