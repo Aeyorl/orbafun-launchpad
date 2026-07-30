@@ -152,8 +152,11 @@ export default function ExplorePage() {
                           )}
                         </div>
                         <div className="min-w-0">
-                          <div className="font-bold text-xs text-text-primary group-hover:text-accent-blue transition-colors truncate">
-                            {token.name}
+                          <div className="flex items-center gap-1">
+                            <span className="font-bold text-xs text-text-primary group-hover:text-accent-blue transition-colors truncate">
+                              {token.name}
+                            </span>
+                            <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} />
                           </div>
                           <div className="text-[10px] text-text-muted font-mono">${token.symbol}</div>
                         </div>
@@ -196,8 +199,11 @@ export default function ExplorePage() {
                         )}
                       </div>
                       <div className="min-w-0">
-                        <div className="font-bold text-xs text-text-primary group-hover:text-accent-blue transition-colors truncate">
-                          {token.name}
+                        <div className="flex items-center gap-1">
+                          <span className="font-bold text-xs text-text-primary group-hover:text-accent-blue transition-colors truncate">
+                            {token.name}
+                          </span>
+                          <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} />
                         </div>
                         <div className="text-[10px] text-text-muted font-mono">${token.symbol}</div>
                       </div>
