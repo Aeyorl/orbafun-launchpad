@@ -1,8 +1,9 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { api, SortOption, StatusFilter, Token } from '@/lib/api';
 import { TokenCard } from '@/components/TokenCard';
 import { AgentBadge } from '@/components/AgentBadge';
@@ -15,11 +16,17 @@ import {
 } from '@/lib/utils';
 
 export default function ExplorePage() {
+  const searchParams = useSearchParams();
   const [sort, setSort] = useState<SortOption>('newest');
   const [status, setStatus] = useState<StatusFilter>('active');
   const [search, setSearch] = useState('');
   const [agentFilter, setAgentFilter] = useState<string>(''); // '' | 'true' | 'false'
   const [offset, setOffset] = useState(0);
+
+  // Auto-activate/deactivate the AI Agent filter based on ?is_agent URL param
+  useEffect(() => {
+    setAgentFilter(searchParams.get('is_agent') === 'true' ? 'true' : '');
+  }, [searchParams]);
   const limit = 24;
 
   const { data, isLoading, isError, refetch } = useQuery({

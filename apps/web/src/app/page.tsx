@@ -161,7 +161,7 @@ export default function LandingPage() {
               <span className="text-xs font-mono text-indigo-500/60 font-semibold tracking-wider">LIVE</span>
             </h2>
             <Link
-              href="/explore"
+              href="/explore?is_agent=true"
               className="text-xs font-medium text-text-muted hover:text-indigo-500 transition-colors"
             >
               View all agent tokens →
