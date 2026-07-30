@@ -71,6 +71,8 @@ export class MessagesService {
     wallet: string,
     content: string,
     txHash?: string,
+    /** Optional agent name — when set, marks this message as posted by an AI agent. */
+    agentName?: string,
   ): Promise<Message> {
     const trimmed = content.trim();
     if (!trimmed) {
@@ -91,18 +93,25 @@ export class MessagesService {
       throw new Error('Failed to insert message');
     }
 
-    // Publish to Redis for WebSocket relay.
+    // Attach agent attribution if this was posted by an AI agent.
+    const message: Message = {
+      ...row,
+      is_agent_message: !!agentName,
+      agent_name: agentName || null,
+    };
+
+    // Publish to Redis for WebSocket relay (includes agent fields for instant badge).
     await this.redis.publish(
       'token:events',
       JSON.stringify({
         type: 'NEW_MESSAGE',
         tokenAddress: await this.getTokenAddress(tokenId),
-        data: row,
+        data: message,
         timestamp: Date.now(),
       }),
     );
 
-    return row;
+    return message;
   }
 
   private async getTokenAddress(tokenId: number): Promise<string> {

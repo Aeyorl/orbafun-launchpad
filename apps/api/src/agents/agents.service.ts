@@ -583,7 +583,7 @@ export class AgentsService {
     }
 
     this.logger.log(`Agent ${agent.agentId} posting message on token ${tokenAddress}`);
-    return this.messagesService.postMessage(tokenId, posterWallet, content);
+    return this.messagesService.postMessage(tokenId, posterWallet, content, undefined, agent.name);
   }
 
   /**
