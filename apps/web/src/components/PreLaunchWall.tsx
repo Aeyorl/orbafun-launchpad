@@ -392,7 +392,8 @@ function useCountdown(target: Date | null) {
     };
   }, [target]);
 
-  const [countdown, setCountdown] = useState(calc);
+  // Start with null to avoid hydration mismatch (server and client may disagree on the exact count)
+  const [countdown, setCountdown] = useState<ReturnType<typeof calc>>(null);
 
   useEffect(() => {
     if (!target) return;
