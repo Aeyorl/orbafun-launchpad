@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
  * ───────────────────────────────────────────────────────────────── */
 
 /** Target launch date for the countdown. Set to null to hide the countdown. */
-const LAUNCH_DATE: Date | null = new Date('2027-01-15T00:00:00Z');
+const LAUNCH_DATE: Date | null = new Date('2026-08-02T00:00:00Z');
 
 /* ─────────────────────────────────────────────────────────────────
  * PreLaunchWall – premium pre-launch gate page
