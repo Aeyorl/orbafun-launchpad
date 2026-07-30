@@ -4,7 +4,6 @@
 .wordmark-d{font-family:Arial,Helvetica,sans-serif;font-weight:600;fill:#f4f7fb;}
 .tagline-d{font-family:Arial,Helvetica,sans-serif;font-weight:400;fill:#9aa7bb;}
 </style>
-<rect x="0" y="0" width="680" height="220" fill="#0B1220"/>
 <ellipse cx="120" cy="110" rx="98" ry="60" fill="none" stroke="#5aa2e8" stroke-width="1.5" stroke-dasharray="4 5" opacity="0.6" transform="rotate(-18 120 110)"/>
 <circle cx="120" cy="110" r="72" fill="#2775CA"/>
 <circle cx="120" cy="110" r="72" fill="none" stroke="#1a4f8c" stroke-width="1"/>
