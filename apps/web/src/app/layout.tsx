@@ -5,6 +5,13 @@ import { Navbar } from '@/components/Navbar';
 import { LiveTicker } from '@/components/LiveTicker';
 import { Footer } from '@/components/Footer';
 import { Toaster } from 'react-hot-toast';
+import { PreLaunchWall } from '@/components/PreLaunchWall';
+
+// ─── Pre-launch / mainnet gate ─────────────────────────────
+// Set NEXT_PUBLIC_MAINNET_LAUNCHED=true to disable the
+// pre-launch wall and show the live application.
+const MAINNET_LAUNCHED =
+  process.env.NEXT_PUBLIC_MAINNET_LAUNCHED === 'true';
 
 // Canonical site URL — used by Next.js to resolve absolute OG/Twitter image
 // URLs and other metadata. In production this is https://orba.fun; in dev it
@@ -16,18 +23,71 @@ const siteUrl =
     ? 'https://orba.fun'
     : 'http://localhost:3000');
 
-export const metadata: Metadata = {
-  metadataBase: new URL(siteUrl),
-  title: 'Orba — Launch memecoins on Arc',
-  description:
-    'Launch and trade memecoins on Arc, the USDC-native blockchain. Fair bonding curves, instant graduation to DEX, sub-second finality.',
-};
+export const metadata: Metadata = MAINNET_LAUNCHED
+  ? {
+      metadataBase: new URL(siteUrl),
+      title: 'Orba — Launch memecoins on Arc',
+      description:
+        'Launch and trade memecoins on Arc, the USDC-native blockchain. Fair bonding curves, instant graduation to DEX, sub-second finality.',
+    }
+  : {
+      metadataBase: new URL(siteUrl),
+      title: 'Orba — The On-Chain Economy Is Coming',
+      description:
+        'Orba is a stablecoin-native launchpad for launching, discovering, trading, and growing tokens on Arc. Mainnet launching soon.',
+      robots: { index: true, follow: true },
+      openGraph: {
+        title: 'Orba — The On-Chain Economy Is Coming',
+        description:
+          'Orba is a stablecoin-native launchpad for launching, discovering, trading, and growing tokens on Arc. Mainnet launching soon.',
+        siteName: 'Orba',
+        type: 'website',
+      },
+      twitter: {
+        card: 'summary_large_image',
+        title: 'Orba — The On-Chain Economy Is Coming',
+        description:
+          'Orba is a stablecoin-native launchpad for launching, discovering, trading, and growing tokens on Arc. Mainnet launching soon.',
+      },
+    };
 
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // ── Pre-launch gate ──────────────────────────────────────
+  // When MAINNET_LAUNCHED is false, render ONLY the
+  // PreLaunchWall — no app shell, no providers, no navbar,
+  // no backend data, no trading UI. The gate is applied at
+  // the layout level before any page content is rendered,
+  // so no route can bypass it.
+  if (!MAINNET_LAUNCHED) {
+    return (
+      <html lang="en" className="dark" suppressHydrationWarning>
+        <head>
+          <link
+            rel="preconnect"
+            href="https://fonts.googleapis.com"
+          />
+          <link
+            rel="preconnect"
+            href="https://fonts.gstatic.com"
+            crossOrigin="anonymous"
+          />
+          <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400&display=swap"
+            rel="stylesheet"
+          />
+        </head>
+        <body className="min-h-screen">
+          <PreLaunchWall />
+        </body>
+      </html>
+    );
+  }
+
+  // ── Live application ─────────────────────────────────────
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <head>
