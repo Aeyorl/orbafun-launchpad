@@ -186,6 +186,7 @@ export const api = {
   listTokens: (params: {
     sort?: SortOption;
     status?: StatusFilter;
+    is_agent?: string;
     limit?: number;
     offset?: number;
     search?: string;
@@ -193,6 +194,7 @@ export const api = {
     const qs = new URLSearchParams();
     if (params.sort) qs.set('sort', params.sort);
     if (params.status) qs.set('status', params.status);
+    if (params.is_agent) qs.set('is_agent', params.is_agent);
     if (params.limit) qs.set('limit', String(params.limit));
     if (params.offset) qs.set('offset', String(params.offset));
     if (params.search) qs.set('search', params.search);

@@ -26,12 +26,14 @@ export class TokensController {
   async listTokens(
     @Query('sort') sort?: string,
     @Query('status') status?: string,
+    @Query('is_agent') is_agent?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
     @Query('search') search?: string,
   ) {
     const validSorts: SortOption[] = ['newest', 'market_cap', 'volume'];
     const validStatuses: StatusFilter[] = ['active', 'graduated', 'all'];
+    const validAgentFilters = ['true', 'false'];
 
     const sortOption = validSorts.includes(sort as SortOption)
       ? (sort as SortOption)
@@ -39,6 +41,9 @@ export class TokensController {
     const statusOption = validStatuses.includes(status as StatusFilter)
       ? (status as StatusFilter)
       : 'active';
+    const agentFilter = validAgentFilters.includes(is_agent as string)
+      ? (is_agent as string)
+      : undefined;
 
     const limitNum = limit ? parseInt(limit, 10) : 20;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
@@ -52,6 +57,7 @@ export class TokensController {
     return this.tokensService.listTokens({
       sort: sortOption,
       status: statusOption,
+      is_agent: agentFilter,
       limit: limitNum,
       offset: offsetNum,
       search: trimmedSearch,

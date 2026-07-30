@@ -78,23 +78,25 @@ export class TokensService {
 
   /**
    * List tokens with sorting and filtering.
-   * GET /tokens?sort=newest|market_cap|volume&status=active|graduated&limit=20&offset=0
+   * GET /tokens?sort=newest|market_cap|volume&status=active|graduated&is_agent=true|false&limit=20&offset=0
    */
   async listTokens(opts: {
     sort?: SortOption;
     status?: StatusFilter;
+    is_agent?: string;  // 'true' | 'false' — filter by AI agent-launched status
     limit?: number;
     offset?: number;
     search?: string;
   }): Promise<{ tokens: Token[]; total: number }> {
     const sort = opts.sort || 'newest';
     const status = opts.status || 'active';
+    const isAgent = opts.is_agent;
     const limit = Math.min(opts.limit || 20, 100);
     const offset = opts.offset || 0;
     const search = opts.search;
 
     // Build cache key
-    const cacheKey = `tokens:list:${sort}:${status}:${limit}:${offset}:${search || ''}`;
+    const cacheKey = `tokens:list:${sort}:${status}:${isAgent || ''}:${limit}:${offset}:${search || ''}`;
     const cached = await this.redis.getJson<{ tokens: Token[]; total: number }>(cacheKey);
     if (cached) return cached;
 
@@ -123,6 +125,13 @@ export class TokensService {
       paramIdx++;
     }
 
+    let agentClause = '';
+    if (isAgent === 'true') {
+      agentClause = 'AND al.id IS NOT NULL';
+    } else if (isAgent === 'false') {
+      agentClause = 'AND al.id IS NULL';
+    }
+
     const limitIdx = paramIdx;
     const offsetIdx = paramIdx + 1;
 
@@ -135,7 +144,7 @@ export class TokensService {
       LEFT JOIN users u ON t.creator_wallet = u.wallet
       LEFT JOIN agent_launches al ON al.token_address = t.contract_address
       LEFT JOIN agents a ON a.id = al.agent_id
-      WHERE 1=1 ${statusClause} ${searchClause}
+      WHERE 1=1 ${statusClause} ${searchClause} ${agentClause}
       ${orderClause}
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
     `;
@@ -143,7 +152,8 @@ export class TokensService {
     const countQuery = `
       SELECT COUNT(*) as total
       FROM tokens t
-      WHERE 1=1 ${statusClause} ${searchClause}
+      LEFT JOIN agent_launches al ON al.token_address = t.contract_address
+      WHERE 1=1 ${statusClause} ${searchClause} ${agentClause}
     `;
 
     const queryParams = [...filterParams, limit, offset];

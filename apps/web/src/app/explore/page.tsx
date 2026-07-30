@@ -18,13 +18,14 @@ export default function ExplorePage() {
   const [sort, setSort] = useState<SortOption>('newest');
   const [status, setStatus] = useState<StatusFilter>('active');
   const [search, setSearch] = useState('');
+  const [agentFilter, setAgentFilter] = useState<string>(''); // '' | 'true' | 'false'
   const [offset, setOffset] = useState(0);
   const limit = 24;
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['explore', sort, status, search, offset],
     queryFn: () =>
-      api.listTokens({ sort, status, limit, offset, search: search || undefined }),
+      api.listTokens({ sort, status, is_agent: agentFilter || undefined, limit, offset, search: search || undefined }),
     refetchInterval: 15_000,
   });
 
@@ -257,6 +258,27 @@ export default function ExplorePage() {
                 </button>
               ))}
             </div>
+
+            <div className="h-4 w-px bg-bg-border" />
+
+            {/* AI Agent filter */}
+            <button
+              onClick={() => {
+                setAgentFilter(agentFilter === 'true' ? '' : 'true');
+                setOffset(0);
+              }}
+              className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                agentFilter === 'true'
+                  ? 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30'
+                  : 'text-text-muted hover:text-text-primary hover:bg-bg-hover border border-transparent'
+              }`}
+            >
+              <span>🤖</span>
+              <span>AI Agents</span>
+              {agentFilter === 'true' && (
+                <span className="ml-0.5 text-[10px]">✕</span>
+              )}
+            </button>
           </div>
         </div>
 
