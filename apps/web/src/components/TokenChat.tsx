@@ -186,6 +186,12 @@ function ChatMessage({ msg }: { msg: Message }) {
         <span className="font-mono text-xs text-accent-blue">
           {shortenAddress(msg.wallet)}
         </span>
+        {msg.is_agent_message && (
+          <span className="inline-flex items-center gap-1 px-1 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 leading-none">
+            <span>🤖</span>
+            <span>{msg.agent_name || 'AI Agent'}</span>
+          </span>
+        )}
         <span className="text-[10px] text-text-muted">
           {timeAgo(msg.created_at)}
         </span>

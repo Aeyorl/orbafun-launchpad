@@ -121,6 +121,9 @@ export interface Message {
   content: string;
   tx_hash: string | null;
   created_at: string;
+  // Agent message attribution — populated when the message was posted by an AI agent
+  is_agent_message?: boolean;
+  agent_name?: string | null;
 }
 
 export interface MessageListResponse {

@@ -9,6 +9,9 @@ export interface Message {
   content: string;
   tx_hash: string | null;
   created_at: string;
+  // Agent message attribution — populated when the message was posted by an AI agent
+  is_agent_message: boolean;
+  agent_name: string | null;
 }
 
 const MAX_CONTENT_LENGTH = 500;
@@ -35,10 +38,18 @@ export class MessagesService {
     const before = opts.before; // message id for pagination (load older)
 
     const rows = await this.db.queryRows<Message>(
-      `SELECT id, token_id, wallet, content, tx_hash, created_at
-       FROM messages
-       WHERE token_id = $1 ${before ? 'AND id < $2' : ''}
-       ORDER BY id DESC
+      `SELECT m.id, m.token_id, m.wallet, m.content, m.tx_hash, m.created_at,
+        CASE WHEN al.id IS NOT NULL AND (
+          LOWER(m.wallet) = LOWER(a.wallet)
+          OR (a.wallet IS NULL AND LOWER(m.wallet) = LOWER(t.creator_wallet))
+        ) THEN true ELSE false END AS is_agent_message,
+        a.name AS agent_name
+       FROM messages m
+       JOIN tokens t ON t.id = m.token_id
+       LEFT JOIN agent_launches al ON al.token_address = t.contract_address
+       LEFT JOIN agents a ON a.id = al.agent_id
+       WHERE m.token_id = $1 ${before ? 'AND m.id < $2' : ''}
+       ORDER BY m.id DESC
        LIMIT $${before ? 3 : 2}`,
       before ? [tokenId, before, limit + 1] : [tokenId, limit + 1],
     );
