@@ -220,14 +220,14 @@ export function PreLaunchWall() {
 
           {/* Headline */}
           <h1
-            className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-serif font-normal leading-tight tracking-tight text-white"
+            className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-serif font-normal leading-tight tracking-tight"
           >
             The On-Chain Economy{' '}
-            <span>Is Coming</span>
+            <span className="text-[#2775CA]">Is Coming</span>
           </h1>
 
           {/* Supporting copy */}
-          <p className="text-sm sm:text-base text-white/80 max-w-md mx-auto leading-relaxed">
+          <p className="text-sm sm:text-base text-[#9aa7bb] max-w-md mx-auto leading-relaxed">
             A stablecoin-native launchpad for launching, discovering, trading,
             and growing tokens on Arc.
           </p>
