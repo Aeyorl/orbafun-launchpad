@@ -228,8 +228,7 @@ export function PreLaunchWall() {
 
           {/* Supporting copy */}
           <p className="text-sm sm:text-base text-[#9aa7bb] max-w-md mx-auto leading-relaxed">
-            A stablecoin-native launchpad for launching, discovering, trading,
-            and growing tokens on Arc.
+            Launch, discover, trade, and grow — no presale, no team allocation.
           </p>
 
           {/* Status badge */}
