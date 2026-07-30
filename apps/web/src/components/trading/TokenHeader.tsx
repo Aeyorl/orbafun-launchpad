@@ -166,12 +166,21 @@ export const TokenHeader = memo(function TokenHeader({
                 <div className="flex items-center gap-2 text-xs text-text-muted pt-0.5">
                   <span>
                     by{' '}
-                    <Link
-                      href={`/profile/${token.creator_wallet}`}
-                      className="font-mono text-accent-sienna hover:underline"
-                    >
-                      {shortenAddress(token.creator_wallet)}
-                    </Link>
+                    {token.is_agent === 'true' && token.agent_uuid ? (
+                      <Link
+                        href={`/agents/${token.agent_uuid}`}
+                        className="font-mono text-indigo-500 hover:text-indigo-400 hover:underline"
+                      >
+                        {token.agent_name || 'AI Agent'}
+                      </Link>
+                    ) : (
+                      <Link
+                        href={`/profile/${token.creator_wallet}`}
+                        className="font-mono text-accent-sienna hover:underline"
+                      >
+                        {shortenAddress(token.creator_wallet)}
+                      </Link>
+                    )}
                   </span>
                   <span>·</span>
                   <span className="font-medium text-text-secondary">Arc · USDC</span>
@@ -417,7 +426,22 @@ export const TokenHeader = memo(function TokenHeader({
                     {statusText}
                   </span>
                   <span className="text-[10px] text-text-muted truncate">
-                    by {shortenAddress(token.creator_wallet)}
+                    by{' '}
+                    {token.is_agent === 'true' && token.agent_uuid ? (
+                      <Link
+                        href={`/agents/${token.agent_uuid}`}
+                        className="text-indigo-500 hover:text-indigo-400 transition-colors"
+                      >
+                        {token.agent_name || 'AI Agent'}
+                      </Link>
+                    ) : (
+                      <Link
+                        href={`/profile/${token.creator_wallet}`}
+                        className="hover:text-text-primary transition-colors"
+                      >
+                        {shortenAddress(token.creator_wallet)}
+                      </Link>
+                    )}
                   </span>
                 </div>
               </div>

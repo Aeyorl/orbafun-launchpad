@@ -131,7 +131,26 @@ export function TokenCard({ token }: { token: Token }) {
 
       {/* Footer info */}
       <div className="pt-2 border-t border-bg-border/60 flex items-center justify-between text-[11px] text-text-muted font-mono">
-        <span>by {shortenAddress(token.creator_wallet)}</span>
+        <span>
+          by{' '}
+          {token.is_agent === 'true' && token.agent_uuid ? (
+            <Link
+              href={`/agents/${token.agent_uuid}`}
+              className="text-indigo-500 hover:text-indigo-400 transition-colors"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {token.agent_name || 'AI Agent'}
+            </Link>
+          ) : (
+            <Link
+              href={`/profile/${token.creator_wallet}`}
+              className="hover:text-text-primary transition-colors"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {shortenAddress(token.creator_wallet)}
+            </Link>
+          )}
+        </span>
         <span>{timeAgo(token.created_at)}</span>
       </div>
     </Link>
