@@ -28,7 +28,10 @@ import { RedisService } from '../redis/redis.service';
  * Connection limiting: each IP is capped at MAX_CONN_PER_IP concurrent
  * connections to prevent resource exhaustion via connection flooding.
  */
-const MAX_CONN_PER_IP = 5;
+// A single Orba page can legitimately open several feature subscriptions
+// (chart, stats, chat, ticker). Leave room for a few tabs behind one NAT while
+// still bounding abusive connection floods.
+const MAX_CONN_PER_IP = 25;
 const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:3000')
   .split(',')
   .map((origin) => origin.trim())
