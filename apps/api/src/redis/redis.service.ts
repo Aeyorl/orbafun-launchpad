@@ -32,7 +32,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     const isTls = url.startsWith('rediss://');
     const opts: any = {
       maxRetriesPerRequest: 1,
-      connectTimeout: 8000,
+      connectTimeout: parseInt(
+        process.env.REDIS_CONNECT_TIMEOUT_MS || '30000',
+        10,
+      ),
       retryStrategy: (times) => (times > 3 ? null : Math.min(times * 200, 1000)),
     };
     if (isTls) {

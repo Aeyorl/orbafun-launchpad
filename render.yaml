@@ -47,6 +47,12 @@ services:
         value: "false"
       - key: REFERRAL_REWARD_PCT_BPS
         value: "10"
+      - key: POSTGRES_POOL_MAX
+        value: "10"
+      - key: POSTGRES_CONNECT_TIMEOUT_MS
+        value: "30000"
+      - key: REDIS_CONNECT_TIMEOUT_MS
+        value: "30000"
       # Existing Supabase connection values — enter these in the Render wizard.
       - key: POSTGRES_HOST
         sync: false

@@ -19,6 +19,11 @@ async function main() {
     database: process.env.POSTGRES_DB || 'orbafun',
     user: process.env.POSTGRES_USER || 'orbafun',
     password: process.env.POSTGRES_PASSWORD || '',
+    connectionTimeoutMillis: parseInt(
+      process.env.POSTGRES_CONNECT_TIMEOUT_MS || '30000',
+      10,
+    ),
+    keepAlive: true,
     ssl: isRemote ? { rejectUnauthorized: false } : false,
   });
 

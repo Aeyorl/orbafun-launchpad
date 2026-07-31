@@ -29,9 +29,13 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       database: process.env.POSTGRES_DB || 'orbafun',
       user: process.env.POSTGRES_USER || 'orbafun',
       password: process.env.POSTGRES_PASSWORD || '',
-      max: 20, // max connections
+      max: parseInt(process.env.POSTGRES_POOL_MAX || '10', 10),
       idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: parseInt(
+        process.env.POSTGRES_CONNECT_TIMEOUT_MS || '30000',
+        10,
+      ),
+      keepAlive: true,
       // Cloud providers (Supabase, etc.) require SSL. We don't verify the cert
       // because Supabase uses their own CA not in Node's trust store.
       ssl: isRemote ? { rejectUnauthorized: false } : false,
