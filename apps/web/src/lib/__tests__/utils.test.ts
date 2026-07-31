@@ -140,6 +140,11 @@ describe('formatTokens', () => {
     expect(formatTokens(1_500_000_000_000_000_000n)).toBe('1.50');
   });
 
+  it('formats 18-decimal strings returned by the API', () => {
+    expect(formatTokens('1000000000000000000')).toBe('1.00');
+    expect(formatTokens('8856148545541526000000000000')).toBe('8.86B');
+  });
+
   it('formats with K suffix for 1K+ tokens', () => {
     // 1000 tokens = 1000 * 10^18 = 10^21
     expect(formatTokens(1_000_000_000_000_000_000_000n)).toBe('1.00K');

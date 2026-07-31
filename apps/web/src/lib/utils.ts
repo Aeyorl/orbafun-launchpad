@@ -56,8 +56,9 @@ export function formatNativeUsdc(amount: bigint): string {
 
 /** Format token amount (18-dec) for display. */
 export function formatTokens(amount: string | number | bigint): string {
-  const num = typeof amount === 'bigint' ? Number(amount) / 1e18 : Number(amount);
-  if (isNaN(num)) return '0';
+  const raw = Number(amount);
+  if (isNaN(raw)) return '0';
+  const num = raw / 1e18;
   if (num >= 1_000_000_000) return `${(num / 1_000_000_000).toFixed(2)}B`;
   if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(2)}M`;
   if (num >= 1_000) return `${(num / 1_000).toFixed(2)}K`;
