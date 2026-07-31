@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useState, useMemo, useEffect } from 'react';
+import { Suspense, useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { api, SortOption, StatusFilter, Token } from '@/lib/api';
@@ -16,6 +16,14 @@ import {
 } from '@/lib/utils';
 
 export default function ExplorePage() {
+  return (
+    <Suspense fallback={<div className="card animate-pulse h-48" aria-label="Loading token explorer" />}>
+      <ExplorePageContent />
+    </Suspense>
+  );
+}
+
+function ExplorePageContent() {
   const searchParams = useSearchParams();
   const [sort, setSort] = useState<SortOption>('newest');
   const [status, setStatus] = useState<StatusFilter>('active');
