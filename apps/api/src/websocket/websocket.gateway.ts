@@ -26,10 +26,14 @@ import { RedisService } from '../redis/redis.service';
  * connections to prevent resource exhaustion via connection flooding.
  */
 const MAX_CONN_PER_IP = 5;
+const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:3000')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 @WebSocketGateway({
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+    origin: CORS_ORIGINS,
     credentials: true,
   },
   namespace: '/',

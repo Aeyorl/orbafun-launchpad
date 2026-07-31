@@ -54,7 +54,9 @@ async function bootstrap() {
   // Global exception filter — ensures clean JSON errors without stack traces.
   app.useGlobalFilters(new AllExceptionsFilter());
 
-  const port = parseInt(process.env.API_PORT || '4000', 10);
+  // Render injects PORT for native web services. API_PORT remains supported
+  // for local development and container deployments.
+  const port = parseInt(process.env.PORT || process.env.API_PORT || '4000', 10);
   await app.listen(port);
   Logger.log(`Orba API running on port ${port}`, 'Bootstrap');
 

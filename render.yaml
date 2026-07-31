@@ -1,64 +1,30 @@
-# Render Blueprint — Orba backend (API + Postgres + Key Value/Redis)
+# Render Blueprint — Orba API only
 # See: https://render.com/docs/blueprint-spec
 #
-# This blueprint provisions the full backend stack in one click:
-#   1. Postgres database (orbafun-db)
-#   2. Key Value / Redis instance (orbafun-redis)
-#   3. API web service (orbafun-api) — NestJS + indexer + WebSocket
-#
-# The API runs persistently (indexer poller + WebSocket server cannot be
-# serverless). Render keeps it running 24/7 (no spin-down on paid plans).
-#
-# Deploy: Push this repo to GitHub, then go to
-#   https://dashboard.render.com/blueprints → New Blueprint → select the repo
-# Render will read this file and create all three services automatically.
-# Connection env vars (POSTGRES_*, REDIS_URL) are wired via fromDatabase /
-# fromService so you don't have to paste them manually.
-#
-# Secrets (set in Render dashboard → Environment tab after creation):
-#   AUTH_SECRET
-#   DEPLOYER_PRIVATE_KEY
-#   ADMIN_WALLETS
-#   PINATA_JWT (optional)
-#   CORS_ORIGIN (set to https://orba.fun after the frontend is live)
-
-databases:
-  - name: orbafun-db
-    databaseName: orbafun
-    user: orbafun
-    region: oregon
-    plan: basic-256mb  # $7/month — 256MB RAM, 1 vCPU, 1GB storage included
+# Supabase provides the existing PostgreSQL database and Upstash provides
+# Redis. Render runs only the persistent NestJS API, Arc event poller, cron
+# jobs, and WebSocket server. No local Docker or Render-managed data services
+# are required.
 
 services:
-  # Render Key Value (Valkey/Redis-compatible) — used for cache + pub/sub
-  # by the WebSocket gateway and rate limiter.
-  - type: keyvalue
-    name: orbafun-redis
-    region: oregon
-    plan: free  # 25MB — enough for testnet; upgrade to starter for mainnet
-    ipAllowList:
-      - source: 0.0.0.0/0
-        description: everywhere
-    maxmemoryPolicy: noeviction  # never evict — pub/sub + rate-limit keys are critical
-
-  # Orba API — NestJS web service.
   - type: web
     name: orbafun-api
-    runtime: docker
-    # Build from the monorepo root (so workspace deps resolve), but use the
-    # API's Dockerfile.
+    runtime: node
     rootDir: .
-    dockerfilePath: ./apps/api/Dockerfile
-    region: oregon  # US West — closest to Arc RPC endpoints
-    plan: starter   # $7/month — 512MB RAM, no spin-down, always on
+    region: oregon
+    plan: starter
+    buildCommand: npm ci --workspace=apps/api --workspace=packages/shared --include-workspace-root --include=dev && npm run build --workspace=packages/shared && npm run build --workspace=apps/api
+    preDeployCommand: node apps/api/dist/db/migrate.js
+    startCommand: node apps/api/dist/main.js
     healthCheckPath: /tokens?limit=1
-    autoDeploy: true
+    autoDeployTrigger: commit
     envVars:
-      # Non-secret config (set directly in the blueprint)
-      - key: API_PORT
-        value: "4000"
+      - key: NODE_VERSION
+        value: "24.12.0"
       - key: NODE_ENV
         value: production
+      - key: CORS_ORIGIN
+        value: https://orba.fun,https://www.orba.fun,http://localhost:3000
       - key: ARC_RPC_URLS
         value: https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io
       - key: ARC_CHAIN_ID
@@ -76,39 +42,26 @@ services:
       - key: ARC_POLLER_ENABLED
         value: "true"
       - key: AUTH_ALLOW_INSECURE
-        value: "true"
-      # Postgres connection — auto-wired from the orbafun-db database above.
-      # The migrate script (runs on boot) + the API both read these.
+        value: "false"
+      - key: AGENT_EXECUTOR_ENABLED
+        value: "false"
+      - key: REFERRAL_REWARD_PCT_BPS
+        value: "10"
+      # Existing Supabase connection values — enter these in the Render wizard.
       - key: POSTGRES_HOST
-        fromDatabase:
-          name: orbafun-db
-          property: host
+        sync: false
       - key: POSTGRES_PORT
-        fromDatabase:
-          name: orbafun-db
-          property: port
+        sync: false
       - key: POSTGRES_DB
-        fromDatabase:
-          name: orbafun-db
-          property: database
+        sync: false
       - key: POSTGRES_USER
-        fromDatabase:
-          name: orbafun-db
-          property: user
+        sync: false
       - key: POSTGRES_PASSWORD
-        fromDatabase:
-          name: orbafun-db
-          property: password
-      # Redis connection — auto-wired from the orbafun-redis Key Value instance.
-      # connectionString gives redis://red-xxx:6379, exactly what ioredis expects.
+        sync: false
+      # Existing Upstash Redis connection string.
       - key: REDIS_URL
-        fromService:
-          type: keyvalue
-          name: orbafun-redis
-          property: connectionString
-      - key: CORS_ORIGIN
-        sync: false  # set to https://orba.fun in the dashboard after frontend is live
-      # Secrets (set manually in Render dashboard → Environment)
+        sync: false
+      # Application secrets — never commit their values.
       - key: AUTH_SECRET
         sync: false
       - key: DEPLOYER_PRIVATE_KEY

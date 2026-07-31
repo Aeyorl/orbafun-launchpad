@@ -179,7 +179,9 @@ CREATE TABLE IF NOT EXISTS indexer_sync_state (
 -- (The indexer can also do this in application code, but the trigger ensures
 -- consistency even if the indexer is bypassed.)
 CREATE OR REPLACE FUNCTION update_user_volume()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+SET search_path = public
+AS $$
 BEGIN
     INSERT INTO users (wallet, total_volume_usdc)
     VALUES (NEW.wallet, NEW.usdc_amount)
@@ -198,7 +200,9 @@ CREATE TRIGGER trg_trades_update_user_volume
 -- Called periodically (e.g. every 60s) to refresh the rolling 24h volume.
 -- This is cheaper than computing it on every read.
 CREATE OR REPLACE FUNCTION refresh_volume_24h()
-RETURNS VOID AS $$
+RETURNS VOID
+SET search_path = public
+AS $$
 BEGIN
     UPDATE tokens t
     SET volume_24h = COALESCE((
