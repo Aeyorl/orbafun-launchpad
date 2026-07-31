@@ -153,6 +153,18 @@ describe('TokenCard', () => {
     expect(tradeLink.contains(creatorLink)).toBe(false);
   });
 
+  it('does not nest an agent badge link inside the trade link', () => {
+    const token = createMockToken({
+      is_agent: 'true',
+      agent_uuid: 'agent-123',
+      agent_name: 'Launch Bot',
+    });
+    render(<TokenCard token={token} />);
+
+    expect(document.querySelectorAll('a a')).toHaveLength(0);
+    expect(screen.getByTitle('Created by AI agent: Launch Bot')).toHaveTextContent('AI');
+  });
+
   it('shows price change percentage', () => {
     const token = createMockToken({ market_cap: '8000.000000' });
     render(<TokenCard token={token} />);

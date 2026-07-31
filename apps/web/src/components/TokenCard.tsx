@@ -49,7 +49,7 @@ export function TokenCard({ token }: { token: Token }) {
                 <div className="font-bold text-sm text-text-primary group-hover:text-accent-blue transition-colors truncate">
                   {token.name}
                 </div>
-                <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} />
+                <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} linkToAgent={false} />
               </div>
               <div className="text-xs text-text-muted font-medium">${token.symbol}</div>
             </div>

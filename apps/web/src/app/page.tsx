@@ -189,7 +189,7 @@ export default function LandingPage() {
                       <span className="font-bold text-sm text-text-primary group-hover:text-accent-blue transition-colors truncate">
                         {token.name}
                       </span>
-                      <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} />
+                      <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} linkToAgent={false} />
                     </div>
                     <span className="text-[11px] font-mono text-text-muted">${token.symbol}</span>
                   </div>

@@ -164,7 +164,7 @@ function ExplorePageContent() {
                             <span className="font-bold text-xs text-text-primary group-hover:text-accent-blue transition-colors truncate">
                               {token.name}
                             </span>
-                            <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} />
+                            <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} linkToAgent={false} />
                           </div>
                           <div className="text-[10px] text-text-muted font-mono">${token.symbol}</div>
                         </div>
@@ -211,7 +211,7 @@ function ExplorePageContent() {
                           <span className="font-bold text-xs text-text-primary group-hover:text-accent-blue transition-colors truncate">
                             {token.name}
                           </span>
-                          <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} />
+                          <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} linkToAgent={false} />
                         </div>
                         <div className="text-[10px] text-text-muted font-mono">${token.symbol}</div>
                       </div>
@@ -388,7 +388,7 @@ function TrendingHeroCard({ token }: { token: Token }) {
             {token.name}
           </h3>
           <div className="flex items-center gap-2">
-            <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} />
+            <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} linkToAgent={false} />
             <span className="text-xs font-mono text-text-muted">${token.symbol}</span>
             <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-semibold border bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
               <span className="w-1 h-1 rounded-full bg-emerald-500" />
