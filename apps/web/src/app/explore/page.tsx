@@ -9,7 +9,7 @@ import { TokenCard } from '@/components/TokenCard';
 import { AgentBadge } from '@/components/AgentBadge';
 import {
   formatMarketCap,
-  formatUsdc,
+  formatUsdDirect,
   bondingCurveProgress,
   ipfsToGateway,
   tokenEmoji,
@@ -397,7 +397,7 @@ function TrendingHeroCard({ token }: { token: Token }) {
         </div>
         <div className="text-right">
           <div className="text-[10px] text-text-muted">24h Vol</div>
-          <div className="font-bold text-accent-blue">{formatUsdc(token.volume_24h)}</div>
+          <div className="font-bold text-accent-blue">{formatUsdDirect(token.volume_24h)}</div>
         </div>
       </div>
 

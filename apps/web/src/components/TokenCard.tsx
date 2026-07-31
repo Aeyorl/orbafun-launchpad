@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Token } from '@/lib/api';
 import { AgentBadge } from '@/components/AgentBadge';
 import {
-  formatUsdc,
+  formatUsdDirect,
   formatMarketCap,
   bondingCurveProgress,
   shortenAddress,
@@ -24,11 +24,8 @@ export function TokenCard({ token }: { token: Token }) {
   const isPositive = pctChange >= 0;
 
   return (
-    <Link
-      href={`/trade/${token.contract_address}`}
-      className="card bg-bg-card border border-bg-border shadow-subtle-1 hover:border-accent-blue/50 hover:shadow-subtle-2 transition-all p-4 rounded-2xl flex flex-col justify-between group"
-    >
-      <div>
+    <article className="card bg-bg-card border border-bg-border shadow-subtle-1 hover:border-accent-blue/50 hover:shadow-subtle-2 transition-all p-4 rounded-2xl flex flex-col justify-between group">
+      <Link href={`/trade/${token.contract_address}`} className="block flex-1">
         {/* Header: avatar + symbol + status badge */}
         <div className="flex items-start justify-between mb-3">
           <div className="flex items-center gap-3">
@@ -87,7 +84,7 @@ export function TokenCard({ token }: { token: Token }) {
           </div>
           <div className="text-right">
             <div className="text-[10px] text-text-muted">24h Vol</div>
-            <div className="font-bold text-text-primary">{formatUsdc(token.volume_24h)}</div>
+            <div className="font-bold text-text-primary">{formatUsdDirect(token.volume_24h)}</div>
           </div>
         </div>
 
@@ -127,7 +124,7 @@ export function TokenCard({ token }: { token: Token }) {
             </div>
           )}
         </div>
-      </div>
+      </Link>
 
       {/* Footer info */}
       <div className="pt-2 border-t border-bg-border/60 flex items-center justify-between text-[11px] text-text-muted font-mono">
@@ -137,7 +134,6 @@ export function TokenCard({ token }: { token: Token }) {
             <Link
               href={`/agents/${token.agent_uuid}`}
               className="text-indigo-500 hover:text-indigo-400 transition-colors"
-              onClick={(e) => e.stopPropagation()}
             >
               {token.agent_name || 'AI Agent'}
             </Link>
@@ -145,7 +141,6 @@ export function TokenCard({ token }: { token: Token }) {
             <Link
               href={`/profile/${token.creator_wallet}`}
               className="hover:text-text-primary transition-colors"
-              onClick={(e) => e.stopPropagation()}
             >
               {shortenAddress(token.creator_wallet)}
             </Link>
@@ -153,6 +148,6 @@ export function TokenCard({ token }: { token: Token }) {
         </span>
         <span>{timeAgo(token.created_at)}</span>
       </div>
-    </Link>
+    </article>
   );
 }

@@ -7,7 +7,7 @@ import { api, Token, SortOption } from '@/lib/api';
 import { TokenGrid } from '@/components/TokenGrid';
 import { AgentBadge } from '@/components/AgentBadge';
 import { useTokenEvents } from '@/lib/useWebSocket';
-import { formatUsdc, formatUsdDirect, formatMarketCap, tokenEmoji, ipfsToGateway } from '@/lib/utils';
+import { formatUsdDirect, formatMarketCap, tokenEmoji, ipfsToGateway } from '@/lib/utils';
 
 type Tab = 'newest' | 'market_cap' | 'volume' | 'graduated';
 
@@ -141,7 +141,7 @@ export default function LandingPage() {
         />
         <StatCard
           label="24H VOLUME"
-          value={stats ? formatUsdc(stats.volume_24h) : '—'}
+          value={stats ? formatUsdDirect(stats.volume_24h) : '—'}
           helper="Settled in USDC"
         />
         <StatCard
@@ -202,7 +202,7 @@ export default function LandingPage() {
                   </div>
                   <div className="text-right">
                     <div className="text-[10px] text-text-muted">24h Vol</div>
-                    <div className="font-bold text-accent-blue tabular-nums">{formatUsdc(token.volume_24h)}</div>
+                    <div className="font-bold text-accent-blue tabular-nums">{formatUsdDirect(token.volume_24h)}</div>
                   </div>
                 </div>
               </Link>

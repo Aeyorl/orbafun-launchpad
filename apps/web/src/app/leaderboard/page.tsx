@@ -7,6 +7,7 @@ import { api, Token } from '@/lib/api';
 import {
   formatMarketCap,
   formatUsdc,
+  formatUsdDirect,
   shortenAddress,
   ipfsToGateway,
   tokenEmoji,
@@ -337,7 +338,7 @@ function TokensLeaderboard({ rows, activeTab }: { rows: Token[]; activeTab: Lead
 
                   {/* 24h Volume */}
                   <td className="py-3.5 px-4 text-right font-mono font-bold text-text-primary tabular-nums">
-                    {formatUsdc(token.volume_24h)}
+                    {formatUsdDirect(token.volume_24h)}
                   </td>
 
                   {/* Bonding Curve Progress */}
@@ -421,7 +422,7 @@ function TokensLeaderboard({ rows, activeTab }: { rows: Token[]; activeTab: Lead
                 </div>
                 <div className="text-center">
                   <div className="text-[10px] text-text-muted">24h Vol</div>
-                  <div className="font-bold text-text-primary">{formatUsdc(token.volume_24h)}</div>
+                  <div className="font-bold text-text-primary">{formatUsdDirect(token.volume_24h)}</div>
                 </div>
                 <div className="text-right">
                   <div className="text-[10px] text-text-muted">Status</div>

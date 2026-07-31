@@ -9,7 +9,7 @@ import { AgentBadge } from '@/components/AgentBadge';
 import {
   formatMarketCap,
   formatPrice,
-  formatUsdc,
+  formatUsdDirect,
   shortenAddress,
   bondingCurveProgress,
   tokenEmoji,
@@ -380,7 +380,7 @@ export const TokenHeader = memo(function TokenHeader({
               <div>
                 <span className="block text-[10px] uppercase font-semibold text-text-muted">24h Volume</span>
                 <span className="font-bold text-sm text-text-primary tabular-nums">
-                  {formatUsdc(token.volume_24h)}
+                  {formatUsdDirect(token.volume_24h)}
                 </span>
               </div>
               <div className="h-6 w-px bg-bg-border" />
@@ -488,7 +488,7 @@ export const TokenHeader = memo(function TokenHeader({
                 MC {formatMarketCap(token.market_cap)}
               </div>
               <div className="text-text-muted text-[11px] tabular-nums">
-                Vol {formatUsdc(token.volume_24h)}
+                Vol {formatUsdDirect(token.volume_24h)}
               </div>
             </div>
           </div>

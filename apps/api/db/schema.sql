@@ -206,7 +206,7 @@ AS $$
 BEGIN
     UPDATE tokens t
     SET volume_24h = COALESCE((
-        SELECT SUM(usdc_amount)::numeric(20,6)
+        SELECT (SUM(usdc_amount)::numeric / 1000000.0)::numeric(20,6)
         FROM trades
         WHERE token_id = t.id
           AND timestamp > NOW() - INTERVAL '24 hours'

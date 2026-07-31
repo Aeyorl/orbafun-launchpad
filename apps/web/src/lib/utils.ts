@@ -11,7 +11,7 @@ export function cn(...inputs: ClassValue[]) {
  *
  * The API returns these as strings (from Postgres BIGINT columns), so we must
  * divide by 1e6 regardless of input type. Fields using this:
- *   real_usdc, creator_fees_accrued, protocol_fees_accrued, volume_24h,
+ *   real_usdc, creator_fees_accrued, protocol_fees_accrued,
  *   total_volume_usdc, usdc_amount (trades).
  *
  * For values already in USDC dollars (market_cap, price), use formatUsdDirect
@@ -29,7 +29,8 @@ export function formatUsdc(amount: string | number | bigint): string {
 
 /**
  * Format a value that is already in USDC dollars (not micro-USDC).
- * Used for market_cap and price, which are stored as decimal dollars in the DB.
+ * Used for market_cap, price, and volume_24h, which are stored as decimal
+ * dollars in the DB.
  */
 export function formatUsdDirect(amount: string | number | bigint): string {
   const num = Number(amount);

@@ -35,7 +35,7 @@ function createMockToken(overrides: Partial<Token> = {}): Token {
     image: null,
     price: '0.000004',
     market_cap: '4000.000000',
-    volume_24h: '5000000',
+    volume_24h: '5.000000',
     real_usdc: '0',
     tokens_sold: '0',
     creator_fees_accrued: '0',
@@ -61,7 +61,7 @@ describe('TokenCard', () => {
   });
 
   it('renders market cap and 24h volume', () => {
-    const token = createMockToken({ market_cap: '40000.000000', volume_24h: '10000000' });
+    const token = createMockToken({ market_cap: '40000.000000', volume_24h: '10.000000' });
     render(<TokenCard token={token} />);
     expect(screen.getByText('$40.00K')).toBeInTheDocument();
     expect(screen.getByText('$10.00')).toBeInTheDocument();
@@ -140,6 +140,17 @@ describe('TokenCard', () => {
       'href',
       '/trade/0x1234567890abcdef1234567890abcdef12345678',
     );
+  });
+
+  it('renders separate, non-nested trade and creator links', () => {
+    const token = createMockToken();
+    render(<TokenCard token={token} />);
+    const tradeLink = screen.getByRole('link', { name: /Test Token/i });
+    const creatorLink = screen.getByRole('link', { name: /0xdead/i });
+
+    expect(tradeLink).toHaveAttribute('href', `/trade/${token.contract_address}`);
+    expect(creatorLink).toHaveAttribute('href', `/profile/${token.creator_wallet}`);
+    expect(tradeLink.contains(creatorLink)).toBe(false);
   });
 
   it('shows price change percentage', () => {
