@@ -53,6 +53,7 @@ export const TradingChart = memo(function TradingChart({
   const [metricMode, setMetricMode] = useState<MetricMode>(externalMode || 'price');
   const [scale, setScale] = useState<ScaleType>('linear');
   const [showMarkers, setShowMarkers] = useState(false);
+  const hasCandles = candles.length > 0;
 
   // Sync external mode
   useEffect(() => {
@@ -91,7 +92,7 @@ export const TradingChart = memo(function TradingChart({
 
   // Render chart
   useEffect(() => {
-    if (!ready || !chartContainerRef.current || candles.length === 0) return;
+    if (!ready || !chartContainerRef.current || !hasCandles) return;
 
     // Clean up previous chart
     if (chartRef.current) {
@@ -138,7 +139,7 @@ export const TradingChart = memo(function TradingChart({
       timeScale: {
         borderColor: isDark ? '#1e2a44' : '#ececec',
         timeVisible: true,
-        secondsVisible: false,
+        secondsVisible: timeframe === '10s',
         rightOffset: 5,
         barSpacing: 8,
       },
@@ -280,7 +281,7 @@ export const TradingChart = memo(function TradingChart({
       mainSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [ready, chartType, scale, metricMode, formatValue]);
+  }, [ready, hasCandles, chartType, scale, metricMode, timeframe, formatValue]);
 
   // Update series data when candles change without destroying chart
   useEffect(() => {
@@ -383,9 +384,9 @@ export const TradingChart = memo(function TradingChart({
           <div className="absolute inset-0 flex items-center justify-center bg-[#0a0e1a]">
             <div className="text-center text-text-muted text-sm space-y-1">
               <div className="text-2xl mb-1">📊</div>
-              <div className="font-semibold text-text-primary">No trades yet</div>
+              <div className="font-semibold text-text-primary">No trades in this timeframe</div>
               <div className="text-xs text-text-muted">
-                Once the first trade occurs, price history will appear here.
+                Select a longer interval or wait for the next trade.
               </div>
             </div>
           </div>

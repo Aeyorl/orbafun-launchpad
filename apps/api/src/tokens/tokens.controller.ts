@@ -3,7 +3,7 @@ import { TokensService, SortOption, StatusFilter } from './tokens.service';
 import { CandlesService, CandleTimeframe } from './candles.service';
 import { isValidEvmAddress } from '../common/utils';
 
-const VALID_TIMEFRAMES: CandleTimeframe[] = ['1m', '5m', '15m', '30m', '1h', '4h', '1d'];
+const VALID_TIMEFRAMES: CandleTimeframe[] = ['10s', '1m', '5m', '15m', '30m', '1h', '4h', '1d'];
 const VALID_MODES = ['price', 'mcap'] as const;
 
 @Controller('tokens')

@@ -545,15 +545,14 @@ export class ArcEventPollerService implements OnModuleInit {
    * This equals: USDC_per_token_in_micro * 1e12
    * (where micro = 1e-6 USDC)
    *
-   * So: USDC_per_token_in_micro = price / 1e12
-   * And: USDC_per_token string = format(micro / 1e6) with 6 decimal places
+   * The returned integer is USDC per token scaled by 1e18. Keep all 18
+   * decimals so small bonding-curve moves remain visible on the chart.
    */
   private formatPrice(priceScaled: bigint): string {
-    if (priceScaled === 0n) return '0.000000';
-    const microPerToken = priceScaled / 10n ** 12n;
-    const intPart = microPerToken / 10n ** 6n;
-    const fracPart = microPerToken % 10n ** 6n;
-    return `${intPart}.${fracPart.toString().padStart(6, '0')}`;
+    const scale = 10n ** 18n;
+    const intPart = priceScaled / scale;
+    const fracPart = priceScaled % scale;
+    return `${intPart}.${fracPart.toString().padStart(18, '0')}`;
   }
 
   private async loadCurveAddresses(): Promise<void> {

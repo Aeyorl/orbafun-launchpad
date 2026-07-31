@@ -15,13 +15,14 @@ export interface OhlcvCandle {
   volume: number;      // USDC volume in dollars (divided by 1e6)
 }
 
-// Support both lowercase ('1m', '5m', '15m', '30m', '1h', '4h', '1d')
+// Support both lowercase ('10s', '1m', '5m', '15m', '30m', '1h', '4h', '1d')
 // and uppercase ('1H', '4H', '1D') timeframe strings.
 export type CandleTimeframe =
-  | '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d'
+  | '10s' | '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d'
   | '1H' | '4H' | '1D';
 
 const TIMEFRAME_SECONDS: Record<string, number> = {
+  '10s': 10,
   '1m': 60,
   '5m': 300,
   '15m': 900,
@@ -33,6 +34,7 @@ const TIMEFRAME_SECONDS: Record<string, number> = {
 
 /** Default lookback windows per timeframe (in seconds) */
 const TIMEFRAME_WINDOW: Record<string, number> = {
+  '10s': 1800,         // 30 minutes
   '1m': 3600,          // 1 hour
   '5m': 21600,         // 6 hours
   '15m': 86400,        // 24 hours

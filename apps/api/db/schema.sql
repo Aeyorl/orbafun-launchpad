@@ -36,8 +36,8 @@ CREATE TABLE IF NOT EXISTS tokens (
     description     TEXT,
     image           TEXT,                     -- IPFS URI or URL
 
-    -- Pricing state (updated by indexer on each trade, in 6-dec USDC)
-    price           NUMERIC(20, 6) NOT NULL DEFAULT 0,  -- USDC per token (6-dec)
+    -- Pricing state (updated by indexer on each trade)
+    price           NUMERIC(38, 18) NOT NULL DEFAULT 0, -- USDC per token
     market_cap      NUMERIC(20, 6) NOT NULL DEFAULT 0,  -- 6-dec USDC
     volume_24h      NUMERIC(20, 6) NOT NULL DEFAULT 0,  -- rolling 24h, 6-dec
 
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS trades (
     -- Amounts (6-dec USDC, 18-dec tokens)
     usdc_amount BIGINT NOT NULL,              -- 6-dec
     token_amount NUMERIC(40, 0) NOT NULL,    -- 18-dec
-    price       NUMERIC(20, 6) NOT NULL,      -- USDC per token at trade time (6-dec)
+    price       NUMERIC(38, 18) NOT NULL,     -- USDC per token at trade time
 
     -- Curve state after this trade (for chart reconstruction)
     market_cap_after NUMERIC(20, 6) NOT NULL,  -- 6-dec
@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS amm_swaps (
     token_out       NUMERIC(40, 0) NOT NULL DEFAULT 0,  -- 18-dec
 
     -- Price after swap
-    price_after     NUMERIC(20, 6) NOT NULL,  -- 6-dec USDC per token
+    price_after     NUMERIC(38, 18) NOT NULL, -- USDC per token
 
     tx_hash         TEXT NOT NULL,
     block_number    BIGINT NOT NULL,
@@ -223,7 +223,7 @@ $$ LANGUAGE plpgsql;
 CREATE TABLE IF NOT EXISTS price_snapshots (
     id              BIGSERIAL PRIMARY KEY,
     token_id        BIGINT NOT NULL REFERENCES tokens(id) ON DELETE CASCADE,
-    price           NUMERIC(20, 6) NOT NULL,    -- USDC per token (6-dec)
+    price           NUMERIC(38, 18) NOT NULL,   -- USDC per token
     market_cap      NUMERIC(20, 6) NOT NULL,    -- 6-dec USDC
     snapshot_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -233,6 +233,52 @@ CREATE INDEX IF NOT EXISTS idx_price_snapshots_token_time
 
 CREATE INDEX IF NOT EXISTS idx_price_snapshots_token_time_asc
     ON price_snapshots(token_id, snapshot_at ASC);
+
+-- Preserve sub-micro token-price movements. Older deployments used a scale
+-- of 6, which rounded early bonding-curve trades to the same 0.000004 value.
+DO $$
+DECLARE
+    existing_scale INTEGER;
+BEGIN
+    SELECT numeric_scale INTO existing_scale
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'trades'
+      AND column_name = 'price';
+
+    IF existing_scale IS NOT NULL AND existing_scale < 18 THEN
+        ALTER TABLE tokens ALTER COLUMN price TYPE NUMERIC(38,18) USING price::numeric;
+        ALTER TABLE trades ALTER COLUMN price TYPE NUMERIC(38,18) USING price::numeric;
+        ALTER TABLE amm_swaps ALTER COLUMN price_after TYPE NUMERIC(38,18) USING price_after::numeric;
+        ALTER TABLE price_snapshots ALTER COLUMN price TYPE NUMERIC(38,18) USING price::numeric;
+
+        UPDATE trades
+        SET price = ROUND(
+                ((5866666700::numeric + real_usdc_after::numeric) * 1000000000000::numeric)
+                / ((1466666667::numeric * 1000000000000000000::numeric) - tokens_sold_after::numeric),
+                18
+            ),
+            market_cap_after = ROUND(
+                (((5866666700::numeric + real_usdc_after::numeric) * 1000000000000::numeric)
+                / ((1466666667::numeric * 1000000000000000000::numeric) - tokens_sold_after::numeric))
+                * 1000000000::numeric,
+                6
+            );
+
+        UPDATE tokens
+        SET price = ROUND(
+                ((5866666700::numeric + real_usdc::numeric) * 1000000000000::numeric)
+                / ((1466666667::numeric * 1000000000000000000::numeric) - tokens_sold::numeric),
+                18
+            ),
+            market_cap = ROUND(
+                (((5866666700::numeric + real_usdc::numeric) * 1000000000000::numeric)
+                / ((1466666667::numeric * 1000000000000000000::numeric) - tokens_sold::numeric))
+                * 1000000000::numeric,
+                6
+            );
+    END IF;
+END $$;
 
 -- ─── Token Holders ─────────────────────────────────────────────────────────
 -- Holder balances are computed on-the-fly by the API from the trades + amm_swaps

@@ -1,6 +1,9 @@
 import {
   WebSocketGateway,
   WebSocketServer,
+  SubscribeMessage,
+  MessageBody,
+  ConnectedSocket,
 } from '@nestjs/websockets';
 import { OnModuleInit, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
@@ -51,6 +54,28 @@ export class WebsocketGateway implements OnModuleInit {
   server: Server;
 
   constructor(private redis: RedisService) {}
+
+  @SubscribeMessage('join')
+  handleJoin(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() room: unknown,
+  ) {
+    if (typeof room !== 'string' || !this.isAllowedRoom(room)) return;
+    void client.join(room.toLowerCase());
+  }
+
+  @SubscribeMessage('leave')
+  handleLeave(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() room: unknown,
+  ) {
+    if (typeof room !== 'string' || !this.isAllowedRoom(room)) return;
+    void client.leave(room.toLowerCase());
+  }
+
+  private isAllowedRoom(room: string): boolean {
+    return room === 'tokens:global' || /^token:0x[0-9a-f]{40}$/i.test(room);
+  }
 
   async onModuleInit() {
     // Subscribe to the global token events channel

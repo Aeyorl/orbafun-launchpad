@@ -8,6 +8,7 @@ export type MetricMode = 'price' | 'mcap';
 export type ScaleType = 'linear' | 'log';
 
 const TIMEFRAMES: { key: CandleTimeframe; label: string }[] = [
+  { key: '10s', label: '10s' },
   { key: '1m', label: '1m' },
   { key: '5m', label: '5m' },
   { key: '15m', label: '15m' },

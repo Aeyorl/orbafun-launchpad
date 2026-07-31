@@ -157,7 +157,7 @@ export class IndexerService {
       // Use the contract's price field (spot price after trade) when available,
       // falling back to computed price from trade amounts.
       const price =
-        event.price && event.price !== '0' && event.price !== '0.000000'
+        event.price && Number(event.price) > 0
           ? event.price
           : this.computePrice(usdcAmount, tokenAmount);
       const marketCap = (parseFloat(price) * 1e9).toFixed(6);
@@ -311,7 +311,7 @@ export class IndexerService {
       const usdcAmount = BigInt(event.usdcOut);
       const tokenAmount = BigInt(event.tokensIn);
       const price =
-        event.price && event.price !== '0' && event.price !== '0.000000'
+        event.price && Number(event.price) > 0
           ? event.price
           : this.computePrice(usdcAmount, tokenAmount);
       const marketCap = (parseFloat(price) * 1e9).toFixed(6);
@@ -753,7 +753,7 @@ export class IndexerService {
 
   /**
    * Compute price (USDC per token) from 6-dec USDC and 18-dec token amounts.
-   * Returns a string suitable for NUMERIC(20,6) columns.
+   * Returns a string suitable for NUMERIC(38,18) columns.
    *
    * Uses 1e18 scaling (not 1e12) to preserve precision for sub-micro prices.
    * Without the extra 1e6 factor, integer division truncates to 0 when the
@@ -763,13 +763,11 @@ export class IndexerService {
     if (tokenAmount === 0n) return '0';
     // price = (usdcAmount / 1e6) / (tokenAmount / 1e18)
     //       = usdcAmount * 1e12 / tokenAmount
-    // Scale by 1e18 (not 1e12) to avoid truncation for sub-micro prices.
-    const scaled = (usdcAmount * 1000000000000000000n) / tokenAmount;
-    // scaled is in micro-USDC per token (1e-6 USDC per token) * 1e6
-    // Convert to USDC (6 decimal places)
-    const integerPart = scaled / 1000000000000n;
-    const fractionalPart = scaled % 1000000000000n;
-    return `${integerPart}.${fractionalPart.toString().padStart(6, '0').slice(0, 6)}`;
+    const scale = 10n ** 18n;
+    const scaled = (usdcAmount * 10n ** 30n) / tokenAmount;
+    const integerPart = scaled / scale;
+    const fractionalPart = scaled % scale;
+    return `${integerPart}.${fractionalPart.toString().padStart(18, '0')}`;
   }
 
   /**

@@ -25,6 +25,7 @@ export function useCandles(
   const [liveCandles, setLiveCandles] = useState<OhlcvCandle[]>([]);
 
   const TIMEFRAME_SECONDS: Record<CandleTimeframe, number> = {
+    '10s': 10,
     '1m': 60, '5m': 300, '15m': 900, '30m': 1800,
     '1h': 3600, '4h': 14400, '1d': 86400,
   };
@@ -39,7 +40,7 @@ export function useCandles(
 
   // Sync historical data to ref + state
   useEffect(() => {
-    if (historicalCandles && historicalCandles.length > 0) {
+    if (historicalCandles) {
       candlesRef.current = [...historicalCandles];
       setLiveCandles([...historicalCandles]);
     }
@@ -58,7 +59,8 @@ export function useCandles(
       const value = mode === 'price' ? tradePrice : tradeMcap;
       if (value <= 0) return;
 
-      const nowSec = Math.floor(Date.now() / 1000);
+      const tradeTime = trade.timestamp ? new Date(trade.timestamp).getTime() : Date.now();
+      const nowSec = Math.floor((Number.isFinite(tradeTime) ? tradeTime : Date.now()) / 1000);
       const bucketSec = TIMEFRAME_SECONDS[timeframe];
       const currentBucket = Math.floor(nowSec / bucketSec) * bucketSec;
 
