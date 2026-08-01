@@ -9,6 +9,7 @@ import { AgentBadge } from '@/components/AgentBadge';
 import {
   formatMarketCap,
   formatPrice,
+  formatUsdCompact,
   formatUsdDirect,
   shortenAddress,
   bondingCurveProgress,
@@ -18,7 +19,7 @@ import {
 
 interface TokenHeaderProps {
   token: Token;
-  change24h: { pct: number; isPositive: boolean };
+  change24h: { diff: number; pct: number; isPositive: boolean };
   totalHolders: number;
   onSelectInfoTab?: () => void;
 }
@@ -349,31 +350,33 @@ export const TokenHeader = memo(function TokenHeader({
             </div>
           </div>
 
-          {/* ROW 2: Price as Hero Metric + Inline Supporting Data */}
+          {/* ROW 2: Market cap as Hero Metric + Inline Supporting Data */}
           <div className="pt-2 flex items-baseline justify-between gap-6 border-t border-bg-border/60">
-            {/* Price Hero */}
-            <div className="flex items-baseline gap-3">
-              <span className="text-3xl font-extrabold font-mono tracking-tight text-text-primary tabular-nums">
-                {formatPrice(token.price)}
-              </span>
-              <span
-                className={`text-sm font-bold tabular-nums px-2 py-0.5 rounded-md ${
-                  change24h.isPositive
-                    ? 'text-emerald-600 bg-emerald-500/10'
-                    : 'text-rose-600 bg-rose-500/10'
-                }`}
-              >
-                {change24h.isPositive ? '+' : ''}
-                {change24h.pct.toFixed(2)}%
-              </span>
+            {/* Market Cap Hero */}
+            <div>
+              <div className="mb-0.5 text-xs font-medium text-text-muted">Market cap.</div>
+              <div className="flex items-baseline gap-3">
+                <span className="text-3xl font-extrabold tracking-tight text-text-primary tabular-nums">
+                  {formatUsdCompact(token.market_cap)}
+                </span>
+                <span
+                  className={`text-sm font-semibold tabular-nums ${
+                    change24h.isPositive ? 'text-emerald-500' : 'text-rose-500'
+                  }`}
+                >
+                  {change24h.isPositive ? '+' : '-'}
+                  {formatUsdCompact(Math.abs(change24h.diff))} ({change24h.isPositive ? '+' : '-'}
+                  {Math.abs(change24h.pct).toFixed(2)}%) <span className="text-text-muted">/ 24hr</span>
+                </span>
+              </div>
             </div>
 
             {/* Supporting Metrics Inline */}
             <div className="flex items-center gap-6 text-xs text-text-muted">
               <div>
-                <span className="block text-[10px] uppercase font-semibold text-text-muted">Market Cap</span>
-                <span className="font-bold text-sm text-text-primary tabular-nums">
-                  {formatMarketCap(token.market_cap)}
+                <span className="block text-[10px] uppercase font-semibold text-text-muted">Token Price</span>
+                <span className="font-mono font-bold text-sm text-text-primary tabular-nums">
+                  {formatPrice(token.price)}
                 </span>
               </div>
               <div className="h-6 w-px bg-bg-border" />
@@ -466,26 +469,28 @@ export const TokenHeader = memo(function TokenHeader({
             </div>
           </div>
 
-          {/* Price Block */}
+          {/* Market Cap Block */}
           <div className="flex items-baseline justify-between gap-2 pt-1 border-t border-bg-border/60">
             <div>
-              <div className="text-2xl font-extrabold font-mono text-text-primary tabular-nums">
-                {formatPrice(token.price)}
+              <div className="text-[10px] font-medium text-text-muted">Market cap.</div>
+              <div className="text-2xl font-extrabold text-text-primary tabular-nums">
+                {formatUsdCompact(token.market_cap)}
               </div>
               <div
-                className={`text-xs font-bold tabular-nums inline-block ${
+                className={`text-xs font-semibold tabular-nums inline-block ${
                   change24h.isPositive ? 'text-emerald-600' : 'text-rose-600'
                 }`}
               >
-                {change24h.isPositive ? '+' : ''}
-                {change24h.pct.toFixed(2)}%
+                {change24h.isPositive ? '+' : '-'}
+                {formatUsdCompact(Math.abs(change24h.diff))} ({change24h.isPositive ? '+' : '-'}
+                {Math.abs(change24h.pct).toFixed(2)}%) / 24hr
               </div>
             </div>
 
             <div className="text-right text-xs">
-              <div className="text-text-muted text-[10px]">MC / Vol</div>
-              <div className="font-bold text-text-primary tabular-nums">
-                MC {formatMarketCap(token.market_cap)}
+              <div className="text-text-muted text-[10px]">Price / Vol</div>
+              <div className="font-mono font-bold text-text-primary tabular-nums">
+                {formatPrice(token.price)}
               </div>
               <div className="text-text-muted text-[11px] tabular-nums">
                 Vol {formatUsdDirect(token.volume_24h)}
@@ -529,8 +534,8 @@ export const TokenHeader = memo(function TokenHeader({
             </div>
             <div className="flex items-baseline gap-2">
               <span className="font-bold text-sm text-text-primary">${token.symbol}</span>
-              <span className="font-mono text-sm font-extrabold text-text-primary tabular-nums">
-                {formatPrice(token.price)}
+              <span className="text-sm font-extrabold text-text-primary tabular-nums">
+                {formatUsdCompact(token.market_cap)} MC
               </span>
               <span
                 className={`text-xs font-semibold tabular-nums hidden sm:inline ${

@@ -41,6 +41,20 @@ export function formatUsdDirect(amount: string | number | bigint): string {
   return `$${num.toFixed(6)}`;
 }
 
+const compactUsdFormatter = new Intl.NumberFormat('en-US', {
+  style: 'currency',
+  currency: 'USD',
+  notation: 'compact',
+  maximumFractionDigits: 2,
+});
+
+/** Format a dollar value as a compact headline (for example $4K or $4.54K). */
+export function formatUsdCompact(amount: string | number | bigint): string {
+  const num = Number(amount);
+  if (!Number.isFinite(num)) return '$0';
+  return compactUsdFormatter.format(num);
+}
+
 /**
  * Format Arc native USDC balance (18-dec, from eth_getBalance / useBalance).
  * Arc's USDC is native gas with 18 decimals — NOT the 6-dec ERC-20 view.

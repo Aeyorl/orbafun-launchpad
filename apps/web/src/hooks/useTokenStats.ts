@@ -39,20 +39,20 @@ export function useTokenStats(tokenAddress: string | null) {
   // Compute 24h change
   const change24h = useMemo(() => {
     if (!token || !tradesData?.trades?.length) {
-      return { pct: 0, isPositive: true };
+      return { diff: 0, pct: 0, isPositive: true };
     }
     const cutoff = Date.now() - 24 * 60 * 60_000;
     const trades24h = tradesData.trades.filter(
       (t) => new Date(t.timestamp).getTime() >= cutoff
     );
-    if (trades24h.length === 0) return { pct: 0, isPositive: true };
+    if (trades24h.length === 0) return { diff: 0, pct: 0, isPositive: true };
 
-    const currentPrice = Number(token.price);
+    const currentMarketCap = Number(token.market_cap);
     // trades24h is desc — last element is the oldest in the 24h window
-    const oldestPrice = Number(trades24h[trades24h.length - 1].price);
-    const diff = currentPrice - oldestPrice;
-    const pct = oldestPrice > 0 ? (diff / oldestPrice) * 100 : 0;
-    return { pct, isPositive: diff >= 0 };
+    const oldestMarketCap = Number(trades24h[trades24h.length - 1].market_cap_after);
+    const diff = currentMarketCap - oldestMarketCap;
+    const pct = oldestMarketCap > 0 ? (diff / oldestMarketCap) * 100 : 0;
+    return { diff, pct, isPositive: diff >= 0 };
   }, [token, tradesData]);
 
   // WebSocket: invalidate on trade events

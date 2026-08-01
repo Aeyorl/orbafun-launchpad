@@ -3,6 +3,7 @@ import {
   cn,
   formatUsdc,
   formatUsdDirect,
+  formatUsdCompact,
   formatNativeUsdc,
   formatTokens,
   formatPrice,
@@ -222,6 +223,19 @@ describe('formatMarketCap', () => {
     // 0 delegates to formatUsdDirect which returns $0.000000
     expect(formatMarketCap(0)).toBe('$0.000000');
     expect(formatMarketCap(NaN)).toBe('$0.00');
+  });
+});
+
+describe('formatUsdCompact', () => {
+  it('omits unnecessary trailing zeros in compact headline values', () => {
+    expect(formatUsdCompact(4000)).toBe('$4K');
+    expect(formatUsdCompact(4200)).toBe('$4.2K');
+    expect(formatUsdCompact(4540)).toBe('$4.54K');
+    expect(formatUsdCompact(555)).toBe('$555');
+  });
+
+  it('handles invalid values', () => {
+    expect(formatUsdCompact(NaN)).toBe('$0');
   });
 });
 
