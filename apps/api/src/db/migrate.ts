@@ -40,12 +40,12 @@ async function provisionRuntimeRole(client) {
     DO $role$
     BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = ${sqlLiteral(roleName)}) THEN
-        CREATE ROLE ${role} LOGIN;
+        CREATE ROLE ${role} LOGIN PASSWORD ${sqlLiteral(password)};
+      ELSE
+        ALTER ROLE ${role} WITH LOGIN PASSWORD ${sqlLiteral(password)};
       END IF;
     END
     $role$;
-    ALTER ROLE ${role} WITH LOGIN PASSWORD ${sqlLiteral(password)}
-      NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
     GRANT CONNECT ON DATABASE ${databaseIdentifier} TO ${role};
     GRANT USAGE ON SCHEMA public TO ${role};
     GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${role};
@@ -55,6 +55,23 @@ async function provisionRuntimeRole(client) {
     ALTER DEFAULT PRIVILEGES IN SCHEMA public
       GRANT USAGE, SELECT ON SEQUENCES TO ${role};
   `);
+
+  const roleAttributes = await client.query(
+    `SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls
+     FROM pg_roles WHERE rolname = $1`,
+    [roleName],
+  );
+  const attributes = roleAttributes.rows[0];
+  if (
+    !attributes ||
+    attributes.rolsuper ||
+    attributes.rolcreatedb ||
+    attributes.rolcreaterole ||
+    attributes.rolreplication ||
+    attributes.rolbypassrls
+  ) {
+    throw new Error('Runtime database role has elevated privileges');
+  }
 
   const tables = await client.query(`
     SELECT tablename FROM pg_tables
