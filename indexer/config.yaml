@@ -16,6 +16,8 @@ contracts:
     events:
       - event: Buy(address indexed buyer, uint256 usdcIn, uint256 tokensOut, uint256 price)
       - event: Sell(address indexed seller, uint256 tokensIn, uint256 usdcOut, uint256 price)
+      - event: BuyV2(address indexed buyer, uint256 usdcIn, uint256 fee, uint256 usdcToCurve, uint256 tokensOut, uint256 price)
+      - event: SellV2(address indexed seller, uint256 tokensIn, uint256 usdcGross, uint256 fee, uint256 usdcOut, uint256 price)
       - event: Graduated(address indexed token, address indexed ammPair, uint256 lpUsdc, uint256 lpTokens)
       - event: CreatorFeesClaimed(address indexed creator, uint256 amount)
       - event: ProtocolFeesClaimed(address indexed owner, uint256 amount)

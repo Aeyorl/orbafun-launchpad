@@ -11,8 +11,9 @@ import { Pool, PoolClient } from 'pg';
  *   POSTGRES_HOST (default localhost)
  *   POSTGRES_PORT (default 5432)
  *   POSTGRES_DB   (default orbafun)
- *   POSTGRES_USER (default orbafun)
- *   POSTGRES_PASSWORD
+ *   POSTGRES_RUNTIME_ROLE (database role, default orbafun_runtime in production)
+ *   POSTGRES_RUNTIME_USER (connection username; derived for Supavisor if omitted)
+ *   POSTGRES_RUNTIME_PASSWORD
  */
 @Injectable()
 export class DatabaseService implements OnModuleInit, OnModuleDestroy {
@@ -21,14 +22,30 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
   constructor() {
     const host = process.env.POSTGRES_HOST || 'localhost';
+    const migrationUser = process.env.POSTGRES_USER || 'orbafun';
+    const runtimeRole = process.env.POSTGRES_RUNTIME_ROLE || 'orbafun_runtime';
+    const poolerSuffix = migrationUser.includes('.')
+      ? migrationUser.slice(migrationUser.indexOf('.'))
+      : '';
+    const runtimePassword = process.env.POSTGRES_RUNTIME_PASSWORD;
+    const useRuntimeRole = !!runtimePassword;
+
+    if (process.env.NODE_ENV === 'production' && !useRuntimeRole) {
+      throw new Error('POSTGRES_RUNTIME_PASSWORD is required in production');
+    }
     // Enable SSL for remote (cloud) databases. Local dev (localhost) skips SSL.
     const isRemote = host !== 'localhost' && host !== '127.0.0.1';
+    const sslCa = process.env.POSTGRES_SSL_CA_BASE64
+      ? Buffer.from(process.env.POSTGRES_SSL_CA_BASE64, 'base64').toString('utf8')
+      : undefined;
     this.pool = new Pool({
       host,
       port: parseInt(process.env.POSTGRES_PORT || '5432', 10),
       database: process.env.POSTGRES_DB || 'orbafun',
-      user: process.env.POSTGRES_USER || 'orbafun',
-      password: process.env.POSTGRES_PASSWORD || '',
+      user: useRuntimeRole
+        ? process.env.POSTGRES_RUNTIME_USER || `${runtimeRole}${poolerSuffix}`
+        : migrationUser,
+      password: useRuntimeRole ? runtimePassword : process.env.POSTGRES_PASSWORD || '',
       max: parseInt(process.env.POSTGRES_POOL_MAX || '10', 10),
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: parseInt(
@@ -36,18 +53,31 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
         10,
       ),
       keepAlive: true,
-      // Cloud providers (Supabase, etc.) require SSL. We don't verify the cert
-      // because Supabase uses their own CA not in Node's trust store.
-      ssl: isRemote ? { rejectUnauthorized: false } : false,
+      ssl: isRemote
+        ? { rejectUnauthorized: true, ...(sslCa ? { ca: sslCa } : {}) }
+        : false,
     });
   }
 
   async onModuleInit() {
     try {
       const client = await this.pool.connect();
-      const result = await client.query('SELECT NOW() as now');
-      this.logger.log(`Connected to PostgreSQL at ${result.rows[0].now}`);
-      client.release();
+      try {
+        const result = await client.query(
+          `SELECT NOW() AS now, current_user AS role,
+                  r.rolsuper, r.rolbypassrls
+           FROM pg_roles r WHERE r.rolname = current_user`,
+        );
+        if (
+          process.env.NODE_ENV === 'production' &&
+          (result.rows[0]?.rolsuper || result.rows[0]?.rolbypassrls)
+        ) {
+          throw new Error('Runtime database role must not bypass row-level security');
+        }
+        this.logger.log(`Connected to PostgreSQL at ${result.rows[0].now}`);
+      } finally {
+        client.release();
+      }
     } catch (err) {
       this.logger.error(`Failed to connect to PostgreSQL: ${err.message}`);
       throw err;

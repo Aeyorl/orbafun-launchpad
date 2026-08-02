@@ -43,6 +43,10 @@ const ALLOWED_METHODS = new Set([
   'net_version',
   'web3_clientVersion',
 ]);
+const MAX_BATCH_SIZE = 20;
+const MAX_LOG_BLOCK_RANGE = 2_000n;
+const MAX_LOG_ADDRESSES = 50;
+const MAX_RPC_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 const RPC_URLS = (
   process.env.ARC_RPC_URLS ||
@@ -62,13 +66,26 @@ export class RpcController {
   async proxy(@Body() body: any): Promise<any> {
     // Support single requests and JSON-RPC batches.
     const requests = Array.isArray(body) ? body : [body];
+    if (requests.length === 0 || requests.length > MAX_BATCH_SIZE) {
+      throw new HttpException(
+        `JSON-RPC batch size must be between 1 and ${MAX_BATCH_SIZE}`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
     for (const req of requests) {
-      if (!req || typeof req.method !== 'string' || !ALLOWED_METHODS.has(req.method)) {
+      if (
+        !req ||
+        req.jsonrpc !== '2.0' ||
+        typeof req.method !== 'string' ||
+        !ALLOWED_METHODS.has(req.method) ||
+        (req.params !== undefined && !Array.isArray(req.params))
+      ) {
         throw new HttpException(
           `Method not allowed: ${req?.method ?? 'unknown'}`,
           HttpStatus.FORBIDDEN,
         );
       }
+      if (req.method === 'eth_getLogs') this.validateLogFilter(req.params?.[0]);
     }
 
     // Try each provider once, rotating on rate-limit or network errors.
@@ -76,17 +93,21 @@ export class RpcController {
     for (let i = 0; i < RPC_URLS.length; i++) {
       const rpcUrl = RPC_URLS[this.rpcIndex % RPC_URLS.length];
       this.rpcIndex++;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10_000);
       try {
         const res = await fetch(rpcUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
+          signal: controller.signal,
         });
         if (!res.ok) {
           lastErr = new Error(`RPC HTTP ${res.status} (${rpcUrl})`);
           continue;
         }
-        const json: any = await res.json();
+        const responseText = await this.readLimitedResponse(res);
+        const json: any = JSON.parse(responseText);
         // On a rate-limit error, rotate to the next provider.
         const err = Array.isArray(json) ? json.find((j: any) => j.error)?.error : json.error;
         if (err) {
@@ -100,11 +121,86 @@ export class RpcController {
       } catch (err) {
         lastErr = err as Error;
         continue;
+      } finally {
+        clearTimeout(timeout);
       }
     }
     throw new HttpException(
       lastErr?.message || 'All RPC providers failed',
       HttpStatus.BAD_GATEWAY,
     );
+  }
+
+  private validateLogFilter(filter: any): void {
+    if (!filter || typeof filter !== 'object' || Array.isArray(filter)) {
+      throw new HttpException('eth_getLogs requires a filter object', HttpStatus.BAD_REQUEST);
+    }
+    const addresses = Array.isArray(filter.address) ? filter.address : [filter.address].filter(Boolean);
+    if (addresses.length === 0 || addresses.length > MAX_LOG_ADDRESSES) {
+      throw new HttpException(
+        `eth_getLogs requires 1-${MAX_LOG_ADDRESSES} addresses`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (addresses.some((address: unknown) =>
+      typeof address !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(address)
+    )) {
+      throw new HttpException('eth_getLogs contains an invalid address', HttpStatus.BAD_REQUEST);
+    }
+    if (filter.blockHash !== undefined) {
+      if (
+        typeof filter.blockHash !== 'string' ||
+        !/^0x[0-9a-fA-F]{64}$/.test(filter.blockHash) ||
+        filter.fromBlock !== undefined ||
+        filter.toBlock !== undefined
+      ) {
+        throw new HttpException(
+          'eth_getLogs blockHash must be valid and cannot be combined with a block range',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+      return;
+    }
+    const from = this.parseBlockNumber(filter.fromBlock);
+    const to = this.parseBlockNumber(filter.toBlock);
+    if (from === null || to === null || to < from || to - from > MAX_LOG_BLOCK_RANGE) {
+      throw new HttpException(
+        `eth_getLogs block range must be explicit and at most ${MAX_LOG_BLOCK_RANGE} blocks`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+  }
+
+  private parseBlockNumber(value: unknown): bigint | null {
+    if (typeof value !== 'string' || !/^0x[0-9a-fA-F]+$/.test(value)) return null;
+    try {
+      return BigInt(value);
+    } catch {
+      return null;
+    }
+  }
+
+  private async readLimitedResponse(res: Response): Promise<string> {
+    const declaredLength = Number(res.headers.get('content-length'));
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_RPC_RESPONSE_BYTES) {
+      throw new Error(`RPC response exceeded ${MAX_RPC_RESPONSE_BYTES} bytes`);
+    }
+    if (!res.body) return '';
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let total = 0;
+    let text = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_RPC_RESPONSE_BYTES) {
+        await reader.cancel();
+        throw new Error(`RPC response exceeded ${MAX_RPC_RESPONSE_BYTES} bytes`);
+      }
+      text += decoder.decode(value, { stream: true });
+    }
+    return text + decoder.decode();
   }
 }

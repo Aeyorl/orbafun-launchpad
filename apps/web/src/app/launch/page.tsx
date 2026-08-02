@@ -15,7 +15,6 @@ import { arcTestnet } from 'viem/chains';
 import {
   parseUnits,
   erc20Abi,
-  maxUint256,
   toEventSelector,
   decodeEventLog,
   type Log,
@@ -93,7 +92,7 @@ export default function LaunchPage() {
 
   const feeAmount = parseUnits(String(CREATION_FEE), USDC_DECIMALS);
   const allowanceLoaded = usdcAllowance !== undefined;
-  const needsApproval = !allowanceLoaded || usdcAllowance < feeAmount;
+  const needsApproval = !allowanceLoaded || usdcAllowance !== feeAmount;
 
   const [name, setName] = useState('');
   const [symbol, setSymbol] = useState('');
@@ -177,7 +176,7 @@ export default function LaunchPage() {
       address: CONTRACTS.USDC,
       abi: erc20Abi,
       functionName: 'approve',
-      args: [CONTRACTS.TOKEN_FACTORY, maxUint256],
+      args: [CONTRACTS.TOKEN_FACTORY, feeAmount],
       chainId: arcTestnet.id,
     });
   };

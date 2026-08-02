@@ -39,7 +39,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       retryStrategy: (times) => (times > 3 ? null : Math.min(times * 200, 1000)),
     };
     if (isTls) {
-      opts.tls = { rejectUnauthorized: false };
+      const ca = process.env.REDIS_SSL_CA_BASE64
+        ? Buffer.from(process.env.REDIS_SSL_CA_BASE64, 'base64').toString('utf8')
+        : undefined;
+      opts.tls = { rejectUnauthorized: true, ...(ca ? { ca } : {}) };
     }
     this.client = new Redis(url, opts);
     this.subscriber = new Redis(url, opts);
@@ -87,9 +90,65 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  isAvailable(): boolean {
+    return this.connected;
+  }
+
+  async setIfAbsent(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    if (!this.connected) return false;
+    const result = await this.client.set(key, value, 'EX', ttlSeconds, 'NX');
+    return result === 'OK';
+  }
+
+  async getDel(key: string): Promise<string | null> {
+    if (!this.connected) return null;
+    return this.client.getdel(key);
+  }
+
   async del(key: string): Promise<void> {
     if (!this.connected) return;
     await this.client.del(key);
+  }
+
+  async acquireConnectionSlot(
+    key: string,
+    member: string,
+    limit: number,
+    ttlSeconds: number,
+  ): Promise<boolean | null> {
+    if (!this.connected) return null;
+    const now = Date.now();
+    const expiresAt = now + ttlSeconds * 1000;
+    const result = await this.client.eval(
+      `redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
+       if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[3]) then return 0 end
+       redis.call('ZADD', KEYS[1], ARGV[2], ARGV[4])
+       redis.call('EXPIRE', KEYS[1], ARGV[5])
+       return 1`,
+      1,
+      key,
+      now,
+      expiresAt,
+      limit,
+      member,
+      ttlSeconds,
+    );
+    return Number(result) === 1;
+  }
+
+  async refreshConnectionSlot(
+    key: string,
+    member: string,
+    ttlSeconds: number,
+  ): Promise<void> {
+    if (!this.connected) return;
+    await this.client.zadd(key, 'XX', Date.now() + ttlSeconds * 1000, member);
+    await this.client.expire(key, ttlSeconds);
+  }
+
+  async releaseConnectionSlot(key: string, member: string): Promise<void> {
+    if (!this.connected) return;
+    await this.client.zrem(key, member);
   }
 
   /** Delete all keys matching a glob pattern (e.g. "tokens:list:*"). */

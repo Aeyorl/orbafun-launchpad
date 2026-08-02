@@ -144,7 +144,6 @@ const ERC20_ABI = [
 ] as const;
 
 const USDC_ADDRESS = '0x3600000000000000000000000000000000000000';
-const MAX_UINT256 = (1n << 256n) - 1n;
 
 // TokenFactory.TokenCreated event signature
 // event TokenCreated(address indexed token, address indexed curve, address indexed creator, string name, string symbol, string image, uint256 createdAt)
@@ -178,26 +177,25 @@ export class DeployerService {
   private tokenFactoryAddress: string;
 
   constructor() {
-    const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
-    if (!privateKey) {
-      this.logger.warn('DEPLOYER_PRIVATE_KEY not set — agent launches disabled');
-      return;
-    }
-
-    this.account = privateKeyToAccount(privateKey);
     this.tokenFactoryAddress = (
       process.env.ARC_TOKEN_FACTORY_ADDRESS || '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b'
     ).toLowerCase();
-
     const transport = fallback(RPC_URLS.map((url: string) => http(url)));
-
-    this.walletClient = createWalletClient({
-      account: this.account,
+    this.publicClient = createPublicClient({
       chain: arcTestnet,
       transport,
     });
 
-    this.publicClient = createPublicClient({
+    const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
+    if (!privateKey) {
+      this.logger.warn('DEPLOYER_PRIVATE_KEY not set — signed deployer actions disabled');
+      return;
+    }
+
+    this.account = privateKeyToAccount(privateKey);
+
+    this.walletClient = createWalletClient({
+      account: this.account,
       chain: arcTestnet,
       transport,
     });
@@ -236,6 +234,37 @@ export class DeployerService {
     }
 
     this.logger.log(`Launching token "${name}" (${symbol}) via deployer wallet`);
+
+    const creationFee = (await this.publicClient.readContract({
+      address: this.tokenFactoryAddress,
+      abi: TOKEN_FACTORY_ABI,
+      functionName: 'creationFee',
+    })) as bigint;
+    const allowance = (await this.publicClient.readContract({
+      address: USDC_ADDRESS,
+      abi: ERC20_ABI,
+      functionName: 'allowance',
+      args: [this.account.address, this.tokenFactoryAddress],
+    })) as bigint;
+
+    if (allowance !== creationFee) {
+      const approvalHash = await this.walletClient.writeContract({
+        address: USDC_ADDRESS,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [this.tokenFactoryAddress, creationFee],
+        chain: arcTestnet,
+        account: this.account,
+      });
+      const approvalReceipt = await this.publicClient.waitForTransactionReceipt({
+        hash: approvalHash,
+        confirmations: 1,
+        timeout: 30_000,
+      });
+      if (approvalReceipt.status !== 'success') {
+        throw new Error(`TokenFactory approval reverted (tx: ${approvalHash})`);
+      }
+    }
 
     // Submit the createToken transaction.
     const txHash = await this.walletClient.writeContract({
@@ -277,13 +306,6 @@ export class DeployerService {
       throw new Error('TokenCreated event not found in transaction logs');
     }
 
-    // Get the creation fee from the contract (for accounting).
-    const creationFee = await this.publicClient.readContract({
-      address: this.tokenFactoryAddress,
-      abi: TOKEN_FACTORY_ABI,
-      functionName: 'creationFee',
-    });
-
     this.logger.log(
       `Token launched: ${tokenAddress} (curve: ${curveAddress}), gas: ${receipt.gasUsed}`,
     );
@@ -293,7 +315,7 @@ export class DeployerService {
       curveAddress: curveAddress.toLowerCase(),
       txHash: txHash as string,
       gasUsed: receipt.gasUsed,
-      creationFee: creationFee as bigint,
+      creationFee,
     };
   }
 
@@ -311,11 +333,8 @@ export class DeployerService {
 
   /**
    * Approve the TokenFactory to spend USDC on behalf of the deployer wallet.
-   * This is a one-time setup step — the TokenFactory pulls the creation fee
-   * via transferFrom, so the deployer must approve it first.
-   *
-   * Uses max uint256 approval so it only needs to be called once.
-   * Called via the POST /agents/deployer/approve endpoint (admin-only).
+   * Administrative reserve approval. Normal launches establish the exact
+   * creation-fee allowance automatically, so this is not required for setup.
    */
   async approveTokenFactory(): Promise<string> {
     if (!this.isConfigured()) {
@@ -326,7 +345,10 @@ export class DeployerService {
       address: USDC_ADDRESS,
       abi: ERC20_ABI,
       functionName: 'approve',
-      args: [this.tokenFactoryAddress, MAX_UINT256],
+      args: [
+        this.tokenFactoryAddress,
+        BigInt(process.env.TOKEN_FACTORY_APPROVAL_CAP_USDC || '50000000'),
+      ],
       chain: arcTestnet,
       account: this.account,
     });
@@ -363,7 +385,7 @@ export class DeployerService {
     expectedTo: string,
     expectedAmount: bigint,
   ): Promise<boolean> {
-    if (!this.isConfigured()) return false;
+    if (!this.publicClient) return false;
 
     try {
       const receipt = await this.publicClient.waitForTransactionReceipt({
@@ -437,7 +459,7 @@ export class DeployerService {
     });
     const minTokensOut = (quote as bigint * (10000n - slippageBps)) / 10000n;
 
-    // Approve USDC to the bonding curve (max approval for simplicity).
+    // Approve only this buy amount.
     const allowance = await this.publicClient.readContract({
       address: USDC_ADDRESS,
       abi: ERC20_ABI,
@@ -445,12 +467,12 @@ export class DeployerService {
       args: [this.account.address, curve],
     });
 
-    if ((allowance as bigint) < usdcAmount) {
+    if ((allowance as bigint) !== usdcAmount) {
       const approveTx = await this.walletClient.writeContract({
         address: USDC_ADDRESS,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [curve, MAX_UINT256],
+        args: [curve, usdcAmount],
         chain: arcTestnet,
         account: this.account,
       });
@@ -549,12 +571,12 @@ export class DeployerService {
       args: [this.account.address, curve],
     });
 
-    if ((allowance as bigint) < tokenAmount) {
+    if ((allowance as bigint) !== tokenAmount) {
       const approveTx = await this.walletClient.writeContract({
         address: token,
         abi: ERC20_ABI,
         functionName: 'approve',
-        args: [curve, MAX_UINT256],
+        args: [curve, tokenAmount],
         chain: arcTestnet,
         account: this.account,
       });

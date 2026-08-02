@@ -1,5 +1,5 @@
 import { ImageResponse } from 'next/og';
-import { api } from '@/lib/api';
+import type { Token } from '@/lib/api';
 
 export const runtime = 'edge';
 export const size = { width: 1200, height: 630 };
@@ -23,9 +23,13 @@ export default async function OgImage({
 }) {
   const address = params.address;
 
-  let token = null;
+  let token: Token | null = null;
   try {
-    token = await api.getToken(address);
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+    const response = await fetch(`${apiUrl}/tokens/${address.toLowerCase()}`, {
+      next: { revalidate: 30 },
+    });
+    if (response.ok) token = (await response.json()) as Token;
   } catch {
     // fall through to fallback card
   }

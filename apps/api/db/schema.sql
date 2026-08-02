@@ -174,27 +174,10 @@ CREATE TABLE IF NOT EXISTS indexer_sync_state (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ─── Updated triggers for users aggregated stats ───────────────────────────
--- When a trade is inserted, update the user's total_volume_usdc.
--- (The indexer can also do this in application code, but the trigger ensures
--- consistency even if the indexer is bypassed.)
-CREATE OR REPLACE FUNCTION update_user_volume()
-RETURNS TRIGGER
-SET search_path = public
-AS $$
-BEGIN
-    INSERT INTO users (wallet, total_volume_usdc)
-    VALUES (NEW.wallet, NEW.usdc_amount)
-    ON CONFLICT (wallet) DO UPDATE
-    SET total_volume_usdc = users.total_volume_usdc + NEW.usdc_amount;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
+-- User volume is updated inside the same indexer transaction as all other
+-- trade aggregates. Keeping a second trigger here double-counts every trade.
 DROP TRIGGER IF EXISTS trg_trades_update_user_volume ON trades;
-CREATE TRIGGER trg_trades_update_user_volume
-    AFTER INSERT ON trades
-    FOR EACH ROW EXECUTE FUNCTION update_user_volume();
+DROP FUNCTION IF EXISTS update_user_volume();
 
 -- ─── volume_24h refresh function ───────────────────────────────────────────
 -- Called periodically (e.g. every 60s) to refresh the rolling 24h volume.
@@ -431,6 +414,30 @@ CREATE TABLE IF NOT EXISTS agent_trades (
 CREATE INDEX IF NOT EXISTS idx_agent_trades_agent ON agent_trades(agent_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_trades_token ON agent_trades(token_address);
 
+-- Atomic spending reservations for platform-funded agent actions. A reservation
+-- is created while the agent row is locked, before the on-chain transaction is
+-- submitted. Pending reservations count against limits so concurrent requests
+-- cannot all spend the same remaining allowance. Reservations are finalized in
+-- the same database transaction that records the confirmed launch/trade.
+CREATE TABLE IF NOT EXISTS agent_spend_reservations (
+    reservation_id  UUID PRIMARY KEY,
+    agent_id        BIGINT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    operation       TEXT NOT NULL CHECK (operation IN ('launch', 'buy')),
+    amount          BIGINT NOT NULL CHECK (amount > 0),
+    status          TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending', 'confirmed', 'released')),
+    tx_hash         TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at     TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_spend_reservations_active
+    ON agent_spend_reservations(agent_id, created_at)
+    WHERE status = 'pending';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_spend_reservations_tx_hash
+    ON agent_spend_reservations(tx_hash)
+    WHERE tx_hash IS NOT NULL;
+
 -- ─── Agent Executor State ───────────────────────────────────────────────────
 -- Cooldown tracking for the autonomous agent executor. One row per
 -- (agent, action). The executor reads last_run_at to respect per-strategy
@@ -469,11 +476,8 @@ CREATE INDEX IF NOT EXISTS idx_agent_templates_category ON agent_templates(categ
 CREATE INDEX IF NOT EXISTS idx_agent_templates_deploy ON agent_templates(deploy_count DESC);
 
 -- ─── Agent Tips ─────────────────────────────────────────────────────────────
--- USDC tips sent by users to agents. Tips go to the agent's wallet (or the
--- deployer wallet if the agent has no wallet). On-chain transfers are executed
--- by the deployer wallet (which holds the USDC). For testnet, tips are
--- recorded as off-chain attribution (the actual USDC transfer is a separate
--- on-chain tx that the user signs).
+-- USDC tips sent by users to agents. The API verifies the user's on-chain
+-- transfer before recording it; only verified rows affect public statistics.
 CREATE TABLE IF NOT EXISTS agent_tips (
     id              BIGSERIAL PRIMARY KEY,
     agent_id        BIGINT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -481,6 +485,7 @@ CREATE TABLE IF NOT EXISTS agent_tips (
     amount          BIGINT NOT NULL,                     -- 6-dec USDC
     tx_hash         TEXT,                                -- on-chain tx hash (if applicable)
     message         TEXT,
+    verified        BOOLEAN NOT NULL DEFAULT false,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     -- Prevent tip replay: one tip per tx_hash globally (a single on-chain
     -- transfer must not be double-counted as tips to multiple agents that
@@ -490,6 +495,9 @@ CREATE TABLE IF NOT EXISTS agent_tips (
 
 CREATE INDEX IF NOT EXISTS idx_agent_tips_agent ON agent_tips(agent_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agent_tips_from ON agent_tips(from_wallet, created_at DESC);
+ALTER TABLE agent_tips ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT false;
+CREATE INDEX IF NOT EXISTS idx_agent_tips_verified
+    ON agent_tips(agent_id, created_at DESC) WHERE verified = true;
 
 -- Ensure UNIQUE constraint exists even if table was created before this constraint
 -- was added to the CREATE TABLE statement (idempotent migration).
@@ -539,3 +547,17 @@ CREATE TABLE IF NOT EXISTS referrals (
 
 CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_wallet);
 CREATE INDEX IF NOT EXISTS idx_referrals_referred ON referrals(referred_wallet);
+
+-- Apply RLS as part of the normal migration path, including every table added
+-- in future schema revisions. The API runtime role should have explicit direct
+-- SQL privileges; public PostgREST access receives no permissive policies.
+DO $$
+DECLARE
+    table_record RECORD;
+BEGIN
+    FOR table_record IN
+        SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+    LOOP
+        EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', table_record.tablename);
+    END LOOP;
+END $$;

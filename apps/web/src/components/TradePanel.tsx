@@ -13,7 +13,7 @@ import {
   useConnectors,
 } from 'wagmi';
 import { arcTestnet } from 'viem/chains';
-import { parseUnits, formatUnits, erc20Abi, maxUint256 } from 'viem';
+import { parseUnits, formatUnits, erc20Abi } from 'viem';
 import toast from 'react-hot-toast';
 import { CONTRACTS, USDC_DECIMALS, TOKEN_DECIMALS } from '@/lib/config';
 import {
@@ -245,8 +245,8 @@ export function TradePanel({ token }: { token: Token }) {
   const needsApproval =
     parsedAmount > 0n &&
     (mode === 'buy'
-      ? (!usdcAllowanceLoaded || usdcAllowance < parsedAmount)
-      : (!tokenAllowanceLoaded || tokenAllowance < parsedAmount));
+      ? (!usdcAllowanceLoaded || usdcAllowance !== parsedAmount)
+      : (!tokenAllowanceLoaded || tokenAllowance !== parsedAmount));
 
   // Balance validations
   const hasInsufficientBalance = useMemo(() => {
@@ -284,7 +284,7 @@ export function TradePanel({ token }: { token: Token }) {
     }
   };
 
-  // Execute approval (Standard ERC-20 approve using maxUint256)
+  // Approve only the amount used by this trade.
   const handleApprove = async () => {
     if (!address || parsedAmount === 0n) return;
     setTxAction('approve');
@@ -293,7 +293,7 @@ export function TradePanel({ token }: { token: Token }) {
         address: CONTRACTS.USDC,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [token.curve_address as `0x${string}`, maxUint256],
+        args: [token.curve_address as `0x${string}`, parsedAmount],
         chainId: arcTestnet.id,
       });
     } else {
@@ -301,7 +301,7 @@ export function TradePanel({ token }: { token: Token }) {
         address: token.contract_address as `0x${string}`,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [token.curve_address as `0x${string}`, maxUint256],
+        args: [token.curve_address as `0x${string}`, parsedAmount],
         chainId: arcTestnet.id,
       });
     }

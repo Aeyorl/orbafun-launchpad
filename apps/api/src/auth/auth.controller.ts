@@ -30,7 +30,7 @@ export class AuthController {
   /** GET /auth/nonce — returns a random nonce for the client to sign. */
   @Get('nonce')
   @Throttle({ default: { ttl: 60_000, limit: 20 } }) // 20 nonce requests/min per IP
-  nonce() {
+  async nonce() {
     if (!process.env.AUTH_SECRET) {
       throw new HttpException(
         'Auth not configured (AUTH_SECRET missing)',

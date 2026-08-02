@@ -87,14 +87,18 @@ contract LiquidityMigration is Ownable {
         }
         tokenToAmmPair[tokenAddress] = pair;
 
+        uint256 tokenBalanceBefore = IMemeTokenMigrate(tokenAddress).balanceOf(address(this));
+        uint256 usdcBalanceBefore = IERC20Minimal(USDC).balanceOf(address(this));
+
         // 2. Pull reserved tokens + LP USDC from curve (via graduateToAmm).
         //    This also calls token.graduate(pair) which renounces ownership.
         curve.graduateToAmm(address(this), pair);
 
         // 3. Add liquidity to the AMM pair.
         //    Transfer token + USDC to the pair, then call pair.mint().
-        uint256 tokenAmount = IMemeTokenMigrate(tokenAddress).balanceOf(address(this));
-        uint256 usdcAmount = IERC20Minimal(USDC).balanceOf(address(this));
+        uint256 tokenAmount =
+            IMemeTokenMigrate(tokenAddress).balanceOf(address(this)) - tokenBalanceBefore;
+        uint256 usdcAmount = IERC20Minimal(USDC).balanceOf(address(this)) - usdcBalanceBefore;
 
         if (tokenAmount > 0 && usdcAmount > 0) {
             // Transfer tokens + USDC to the pair, then mint LP.

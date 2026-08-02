@@ -413,7 +413,6 @@ export class EnvioPollerService implements OnModuleInit {
 
   // ─── GraphQL helper ───────────────────────────────────────────────────────
   private async graphqlRequest(query: string, variables: Record<string, any>): Promise<any> {
-    const fetch = (await import('node-fetch')).default;
     const resp = await fetch(this.graphqlUrl, {
       method: 'POST',
       headers: {

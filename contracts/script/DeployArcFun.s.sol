@@ -17,6 +17,8 @@ contract DeployOrba is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
+        address adminMultisig = vm.envAddress("ADMIN_MULTISIG");
+        require(adminMultisig != address(0), "ADMIN_MULTISIG is required");
 
         console.log("=== Orba Contract Deployment ===");
         console.log("Deployer:", deployer);
@@ -49,7 +51,12 @@ contract DeployOrba is Script {
 
         // 6. Transfer treasury ownership to deployer (for now — multisig later).
         //    Treasury constructor sets msg.sender as owner, which is deployer.
-        //    No additional step needed.
+        //    Ownership is transferred below before broadcasting ends.
+        treasury.transferOwnership(adminMultisig);
+        ammFactory.transferOwnership(adminMultisig);
+        factory.transferOwnership(adminMultisig);
+        migrator.transferOwnership(adminMultisig);
+        console.log("Ownership transferred to multisig:", adminMultisig);
 
         vm.stopBroadcast();
 

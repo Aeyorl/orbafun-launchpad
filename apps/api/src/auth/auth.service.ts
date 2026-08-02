@@ -1,6 +1,15 @@
-import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
-import { createHash, createHmac, randomBytes } from 'crypto';
-import { recoverMessageAddress } from 'viem';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { createHmac, randomBytes } from 'crypto';
+import {
+  recoverMessageAddress,
+} from 'viem';
+import { parseSiweMessage, validateSiweMessage } from 'viem/siwe';
+import { RedisService } from '../redis/redis.service';
 
 /**
  * AuthService — wallet signature authentication (SIWE-style).
@@ -24,7 +33,9 @@ import { recoverMessageAddress } from 'viem';
  */
 
 const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes to sign after requesting nonce
-const TOKEN_TTL_HOURS = 24; // token valid for 24 hours
+const TOKEN_TTL_HOURS = 1;
+const ARC_TESTNET_CHAIN_ID = 5_042_002;
+const NONCE_KEY_PREFIX = 'auth:nonce:';
 
 interface AuthToken {
   wallet: string;
@@ -36,9 +47,8 @@ interface AuthToken {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
   private readonly authSecret: string;
-  private readonly nonces = new Map<string, number>(); // nonce → expiry timestamp
 
-  constructor() {
+  constructor(private readonly redis: RedisService) {
     this.authSecret = process.env.AUTH_SECRET || '';
     if (!this.authSecret) {
       this.logger.warn(
@@ -48,11 +58,19 @@ export class AuthService {
   }
 
   /** Generate a random nonce for the client to sign. */
-  generateNonce(): { nonce: string } {
+  async generateNonce(): Promise<{ nonce: string }> {
+    if (!this.redis.isAvailable()) {
+      throw new ServiceUnavailableException('Authentication nonce store unavailable');
+    }
     const nonce = randomBytes(32).toString('hex');
-    this.nonces.set(nonce, Date.now() + NONCE_TTL_MS);
-    // Cleanup expired nonces periodically
-    this.cleanupNonces();
+    const stored = await this.redis.setIfAbsent(
+      `${NONCE_KEY_PREFIX}${nonce}`,
+      '1',
+      NONCE_TTL_MS / 1000,
+    );
+    if (!stored) {
+      throw new ServiceUnavailableException('Failed to issue authentication nonce');
+    }
     return { nonce };
   }
 
@@ -71,9 +89,9 @@ export class AuthService {
 
     // Extract nonce from the message — it should appear as "Nonce: <hex>" or
     // be part of a SIWE message. We search for the nonce we issued.
-    const issuedNonce = this.findIssuedNonce(message);
-    if (!issuedNonce) {
-      throw new UnauthorizedException('No valid nonce found in message');
+    const parsed = parseSiweMessage(message);
+    if (!parsed.address || !parsed.domain || !parsed.uri || !parsed.nonce) {
+      throw new UnauthorizedException('Malformed SIWE message');
     }
 
     // Verify the signature recovers to a valid address.
@@ -86,7 +104,48 @@ export class AuthService {
     }
 
     // Consume the nonce (single-use)
-    this.nonces.delete(issuedNonce);
+    const allowedDomains = (process.env.AUTH_SIWE_DOMAINS ||
+      'orba.fun,www.orba.fun,localhost:3000')
+      .split(',')
+      .map((domain) => domain.trim().toLowerCase())
+      .filter(Boolean);
+    const domain = parsed.domain.toLowerCase();
+    let uri: URL;
+    try {
+      uri = new URL(parsed.uri);
+    } catch {
+      throw new UnauthorizedException('Invalid SIWE URI');
+    }
+
+    const issuedAt = parsed.issuedAt?.getTime();
+    const now = Date.now();
+    const validMessage =
+      validateSiweMessage({
+        message: parsed,
+        address: recoveredAddress,
+        domain: parsed.domain,
+        nonce: parsed.nonce,
+        ...(parsed.scheme ? { scheme: uri.protocol.slice(0, -1) } : {}),
+        time: new Date(now),
+      }) &&
+      allowedDomains.includes(domain) &&
+      uri.host.toLowerCase() === domain &&
+      (uri.protocol === 'https:' ||
+        (uri.protocol === 'http:' && domain.startsWith('localhost'))) &&
+      parsed.chainId === ARC_TESTNET_CHAIN_ID &&
+      parsed.version === '1' &&
+      issuedAt !== undefined &&
+      issuedAt <= now + 60_000 &&
+      issuedAt >= now - NONCE_TTL_MS;
+
+    if (!validMessage) {
+      throw new UnauthorizedException('SIWE domain, chain, URI, or time is invalid');
+    }
+
+    const consumed = await this.redis.getDel(`${NONCE_KEY_PREFIX}${parsed.nonce}`);
+    if (!consumed) {
+      throw new UnauthorizedException('Nonce is invalid, expired, or already used');
+    }
 
     const wallet = recoveredAddress.toLowerCase();
     const expires = Date.now() + TOKEN_TTL_HOURS * 60 * 60 * 1000;
@@ -145,19 +204,4 @@ export class AuthService {
   }
 
   /** Find a nonce issued by us within the message text. */
-  private findIssuedNonce(message: string): string | null {
-    const now = Date.now();
-    for (const [nonce, expiry] of this.nonces) {
-      if (now > expiry) continue;
-      if (message.includes(nonce)) return nonce;
-    }
-    return null;
-  }
-
-  private cleanupNonces(): void {
-    const now = Date.now();
-    for (const [nonce, expiry] of this.nonces) {
-      if (now > expiry) this.nonces.delete(nonce);
-    }
-  }
 }
