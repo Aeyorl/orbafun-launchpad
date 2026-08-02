@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useAccount,
@@ -73,6 +73,7 @@ export function TradePanel({ token }: { token: Token }) {
   const [amount, setAmount] = useState('');
   const [slippage, setSlippage] = useState(1); // 1% default
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isAdvancingToTrade, setIsAdvancingToTrade] = useState(false);
 
   const { address, isConnected, chainId } = useAccount();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
@@ -84,6 +85,12 @@ export function TradePanel({ token }: { token: Token }) {
   // Track active tx hash locally to separate approval vs trade states cleanly
   const [currentTxHash, setCurrentTxHash] = useState<`0x${string}` | undefined>(undefined);
   const [txAction, setTxAction] = useState<'approve' | 'trade' | null>(null);
+  const pendingTradeRef = useRef<{
+    mode: 'buy' | 'sell';
+    displayAmount: string;
+    parsedAmount: bigint;
+    minOut: bigint;
+  } | null>(null);
 
   const { writeContract, data: txHash, isPending, reset } = useWriteContract();
 
@@ -138,24 +145,30 @@ export function TradePanel({ token }: { token: Token }) {
     if (!txConfirmed || !txAction) return;
 
     if (txAction === 'approve') {
-      const asset = mode === 'buy' ? 'USDC' : token.symbol;
-      toast.success(`${asset} approved! Prompting ${mode === 'buy' ? 'Buy' : 'Sell'} in wallet…`, {
+      const pendingTrade = pendingTradeRef.current;
+      if (!pendingTrade) return;
+
+      const asset = pendingTrade.mode === 'buy' ? 'USDC' : token.symbol;
+      toast.success(`${asset} approved! Opening the ${pendingTrade.mode === 'buy' ? 'buy' : 'sell'} confirmation…`, {
         id: `approve-${currentTxHash}`,
       });
       refetchAllowance();
       refetchTokenAllowance();
       setCurrentTxHash(undefined);
       setTxAction(null);
+      setIsAdvancingToTrade(true);
       reset();
 
       const timer = setTimeout(() => {
-        handleTrade();
+        executeTrade(pendingTrade);
       }, 500);
       return () => clearTimeout(timer);
     } else if (txAction === 'trade') {
-      const verb = mode === 'buy' ? 'Bought' : 'Sold';
-      const amt = amount || '';
-      toast.success(`${verb} ${token.symbol}${amt ? ` (${amt} ${mode === 'buy' ? 'USDC' : token.symbol})` : ''}`, {
+      const completedTrade = pendingTradeRef.current;
+      const completedMode = completedTrade?.mode ?? mode;
+      const verb = completedMode === 'buy' ? 'Bought' : 'Sold';
+      const amt = completedTrade?.displayAmount ?? amount;
+      toast.success(`${verb} ${token.symbol}${amt ? ` (${amt} ${completedMode === 'buy' ? 'USDC' : token.symbol})` : ''}`, {
         id: `trade-${currentTxHash}`,
       });
 
@@ -180,6 +193,7 @@ export function TradePanel({ token }: { token: Token }) {
       const timer = setTimeout(() => {
         setCurrentTxHash(undefined);
         setTxAction(null);
+        pendingTradeRef.current = null;
         reset();
       }, 3000);
       return () => clearTimeout(timer);
@@ -260,17 +274,23 @@ export function TradePanel({ token }: { token: Token }) {
     }
   }, [isConnected, parsedAmount, mode, usdcBalance, tokenBalance]);
 
-  // Execute trade
-  const handleTrade = async () => {
-    if (!address || parsedAmount === 0n) return;
+  const createTradeIntent = () => ({
+    mode,
+    displayAmount: amount,
+    parsedAmount,
+    minOut,
+  });
+
+  const executeTrade = (trade: ReturnType<typeof createTradeIntent>) => {
+    setIsAdvancingToTrade(false);
     setTxAction('trade');
 
-    if (mode === 'buy') {
+    if (trade.mode === 'buy') {
       writeContract({
         address: token.curve_address as `0x${string}`,
         abi: BONDING_CURVE_ABI,
         functionName: 'buy',
-        args: [parsedAmount, minOut],
+        args: [trade.parsedAmount, trade.minOut],
         chainId: arcTestnet.id,
       });
     } else {
@@ -278,22 +298,32 @@ export function TradePanel({ token }: { token: Token }) {
         address: token.curve_address as `0x${string}`,
         abi: BONDING_CURVE_ABI,
         functionName: 'sell',
-        args: [parsedAmount, minOut],
+        args: [trade.parsedAmount, trade.minOut],
         chainId: arcTestnet.id,
       });
     }
   };
 
+  // Execute trade
+  const handleTrade = async () => {
+    if (!address || parsedAmount === 0n) return;
+    const trade = createTradeIntent();
+    pendingTradeRef.current = trade;
+    executeTrade(trade);
+  };
+
   // Approve only the amount used by this trade.
   const handleApprove = async () => {
     if (!address || parsedAmount === 0n) return;
+    const trade = createTradeIntent();
+    pendingTradeRef.current = trade;
     setTxAction('approve');
-    if (mode === 'buy') {
+    if (trade.mode === 'buy') {
       writeContract({
         address: CONTRACTS.USDC,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [token.curve_address as `0x${string}`, parsedAmount],
+        args: [token.curve_address as `0x${string}`, trade.parsedAmount],
         chainId: arcTestnet.id,
       });
     } else {
@@ -301,11 +331,19 @@ export function TradePanel({ token }: { token: Token }) {
         address: token.contract_address as `0x${string}`,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [token.curve_address as `0x${string}`, parsedAmount],
+        args: [token.curve_address as `0x${string}`, trade.parsedAmount],
         chainId: arcTestnet.id,
       });
     }
   };
+
+  const flowLocked = isPending || isConfirming || isAdvancingToTrade;
+  const approvalAsset = mode === 'buy' ? 'USDC' : token.symbol;
+  const approvalAmount = formatUnits(
+    parsedAmount,
+    mode === 'buy' ? USDC_DECIMALS : TOKEN_DECIMALS,
+  );
+  const curveLabel = `${token.curve_address.slice(0, 6)}…${token.curve_address.slice(-4)}`;
 
   // Set preset percentages (25%, 50%, 75%, 100%)
   const setPercentageAmount = (pct: number) => {
@@ -360,6 +398,7 @@ export function TradePanel({ token }: { token: Token }) {
             setMode('buy');
             setAmount('');
           }}
+          disabled={flowLocked}
           className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
             mode === 'buy'
               ? 'bg-accent-blue text-white shadow-sm'
@@ -375,6 +414,7 @@ export function TradePanel({ token }: { token: Token }) {
             setMode('sell');
             setAmount('');
           }}
+          disabled={flowLocked}
           className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
             mode === 'sell'
               ? 'bg-accent-blue text-white shadow-sm'
@@ -402,6 +442,7 @@ export function TradePanel({ token }: { token: Token }) {
               <button
                 type="button"
                 onClick={() => setPercentageAmount(100)}
+                disabled={flowLocked}
                 className="text-[11px] font-bold text-accent-blue hover:underline uppercase ml-1"
               >
                 MAX
@@ -415,6 +456,7 @@ export function TradePanel({ token }: { token: Token }) {
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+            disabled={flowLocked}
             placeholder="0.00"
             min="0"
             step="any"
@@ -432,6 +474,7 @@ export function TradePanel({ token }: { token: Token }) {
               key={pct}
               type="button"
               onClick={() => setPercentageAmount(pct)}
+              disabled={flowLocked}
               className="py-1 px-2 text-[11px] font-semibold font-mono rounded-lg bg-bg-input hover:bg-bg-hover text-text-secondary hover:text-text-primary border border-bg-border/60 transition-colors"
             >
               {pct === 100 ? 'MAX' : `${pct}%`}
@@ -508,6 +551,7 @@ export function TradePanel({ token }: { token: Token }) {
         <button
           type="button"
           onClick={() => setShowAdvanced((v) => !v)}
+          disabled={flowLocked}
           className="text-xs font-semibold text-text-muted hover:text-text-primary flex items-center justify-between w-full py-1"
         >
           <span>Advanced Settings</span>
@@ -528,6 +572,7 @@ export function TradePanel({ token }: { token: Token }) {
                     key={s}
                     type="button"
                     onClick={() => setSlippage(s)}
+                    disabled={flowLocked}
                     className={`flex-1 py-1 text-[11px] font-mono font-medium rounded-lg border transition-colors ${
                       slippage === s
                         ? 'bg-accent-blue/10 text-accent-blue border-accent-blue/40 font-bold'
@@ -579,6 +624,10 @@ export function TradePanel({ token }: { token: Token }) {
         <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-80">
           {txAction === 'approve' ? 'Step 1/2: Confirming approval…' : 'Step 2/2: Confirming trade on Arc…'}
         </button>
+      ) : isAdvancingToTrade ? (
+        <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-80">
+          Step 2/2: Opening trade confirmation…
+        </button>
       ) : txConfirmed ? (
         <button disabled className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl bg-emerald-600">
           ✓ {mode === 'buy' ? 'Bought' : 'Sold'} ${token.symbol}
@@ -592,7 +641,32 @@ export function TradePanel({ token }: { token: Token }) {
           Enter amount
         </button>
       ) : needsApproval ? (
-        <div className="space-y-1.5">
+        <div className="space-y-2.5">
+          <div className="rounded-xl border border-accent-blue/25 bg-accent-blue/5 p-3 text-xs space-y-2">
+            <div className="font-bold text-text-primary">Why your wallet says “Spending cap”</div>
+            <p className="text-text-secondary leading-relaxed">
+              This is the secure approval step, not the purchase. It authorizes exactly{' '}
+              <span className="font-mono font-bold text-text-primary">
+                {approvalAmount} {approvalAsset}
+              </span>{' '}
+              for this token&apos;s bonding curve. Orba opens the actual trade confirmation next.
+            </p>
+            <div className="flex items-center justify-between gap-3 text-[11px] text-text-muted">
+              <span>Approved spender</span>
+              <a
+                href={`https://testnet.arcscan.app/address/${token.curve_address}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-mono text-accent-blue hover:underline"
+                title={token.curve_address}
+              >
+                Bonding curve {curveLabel} ↗
+              </a>
+            </div>
+            <p className="text-[11px] font-medium text-text-secondary">
+              Keep the wallet cap unchanged. Orba never requests unlimited approval.
+            </p>
+          </div>
           <button
             onClick={handleApprove}
             disabled={isPending}
@@ -600,12 +674,10 @@ export function TradePanel({ token }: { token: Token }) {
           >
             {isPending
               ? 'Step 1/2: Approving in wallet…'
-              : mode === 'buy'
-              ? `Step 1/2: Approve USDC`
-              : `Step 1/2: Approve ${token.symbol}`}
+              : `Approve ${approvalAmount} ${approvalAsset} (1 of 2)`}
           </button>
           <p className="text-[11px] text-text-muted text-center">
-            First time trading this asset? Step 1 approves spending, then Step 2 executes your trade.
+            After approval confirms, your wallet will ask you to confirm the trade.
           </p>
         </div>
       ) : (

@@ -243,42 +243,44 @@ describe('TradePanel', () => {
       fireEvent.change(screen.getByPlaceholderText('0.00'), {
         target: { value: '10' },
       });
-      expect(screen.getByText('Step 1/2: Approve USDC')).toBeInTheDocument();
+      expect(screen.getByText('Approve 10 USDC (1 of 2)')).toBeInTheDocument();
     });
 
     beforeEach(() => {
       updateWagmiMock({ isConnected: true, usdcAllowance: 0n });
     });
 
-    it('shows Step 1/2: Approve USDC on buy with insufficient allowance', () => {
+    it('shows the exact one-time USDC approval on buy with insufficient allowance', () => {
       renderWithProviders(<TradePanel token={createMockToken()} />);
       fireEvent.change(screen.getByPlaceholderText('0.00'), {
         target: { value: '10' },
       });
       expect(
-        screen.getByText('Step 1/2: Approve USDC'),
+        screen.getByText('Approve 10 USDC (1 of 2)'),
       ).toBeInTheDocument();
     });
 
-    it('shows Step 1/2: Approve ADOGE on sell with insufficient token allowance', () => {
+    it('shows the exact one-time token approval on sell with insufficient allowance', () => {
       renderWithProviders(<TradePanel token={createMockToken()} />);
       fireEvent.click(screen.getByRole('tab', { name: /SELL/i }));
       fireEvent.change(screen.getByPlaceholderText('0.00'), {
         target: { value: '1000' },
       });
       expect(
-        screen.getByText('Step 1/2: Approve ADOGE'),
+        screen.getByText('Approve 1000 ADOGE (1 of 2)'),
       ).toBeInTheDocument();
     });
 
-    it('shows first-time trading info message', () => {
+    it('explains the wallet spending-cap screen before opening it', () => {
       renderWithProviders(<TradePanel token={createMockToken()} />);
       fireEvent.change(screen.getByPlaceholderText('0.00'), {
         target: { value: '10' },
       });
       expect(
-        screen.getByText(/First time trading this asset/),
+        screen.getByText(/Why your wallet says “Spending cap”/),
       ).toBeInTheDocument();
+      expect(screen.getByText(/authorizes exactly/)).toHaveTextContent('10 USDC');
+      expect(screen.getByText(/never requests unlimited approval/)).toBeInTheDocument();
     });
 
     it('shows Approving in wallet… when approval tx is pending', () => {
@@ -294,6 +296,8 @@ describe('TradePanel', () => {
       expect(
         screen.getByText(/Step 1\/2: Approving in wallet/),
       ).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('0.00')).toBeDisabled();
+      expect(screen.getByRole('tab', { name: /SELL/i })).toBeDisabled();
     });
   });
 
@@ -365,7 +369,7 @@ describe('TradePanel', () => {
       });
 
       // Click approve → txAction becomes 'approve'
-      fireEvent.click(screen.getByText('Step 1/2: Approve USDC'));
+      fireEvent.click(screen.getByText('Approve 10 USDC (1 of 2)'));
 
       // Now switch mock to confirming state and re-render
       updateWagmiMock({
