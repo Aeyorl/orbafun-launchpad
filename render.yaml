@@ -15,7 +15,10 @@ services:
     plan: starter
     buildCommand: npm ci --workspace=apps/api --workspace=packages/shared --include-workspace-root --include=dev && npm run build --workspace=packages/shared && npm run build --workspace=apps/api
     preDeployCommand: node apps/api/dist/db/migrate.js
-    startCommand: node apps/api/dist/main.js
+    # npm installs the API's HTTP adapter in its workspace-local node_modules,
+    # while the pinned Nest core package is hoisted to the repository root.
+    # Expose the workspace modules so Nest can load its adapter at runtime.
+    startCommand: NODE_PATH=./apps/api/node_modules node apps/api/dist/main.js
     healthCheckPath: /tokens?limit=1
     autoDeployTrigger: commit
     envVars:
