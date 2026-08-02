@@ -41,7 +41,13 @@ export function Navbar() {
           <img
             src="/orba-logo-light.svg"
             alt="Orba"
-            className="h-7 w-auto"
+            className="h-7 w-auto dark:hidden"
+          />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/orba-logo-dark.svg"
+            alt="Orba"
+            className="hidden h-7 w-auto dark:block"
           />
         </Link>
 
