@@ -16,7 +16,13 @@ export function Footer() {
               <img
                 src="/orba-logo-light.svg"
                 alt="Orba"
-                className="h-8 w-auto"
+                className="h-8 w-auto dark:hidden"
+              />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/orba-logo-dark.svg"
+                alt="Orba"
+                className="hidden h-8 w-auto dark:block"
               />
             </div>
             <p className="text-text-muted text-xs leading-relaxed">
