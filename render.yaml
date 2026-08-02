@@ -70,6 +70,10 @@ services:
         sync: false
       - key: POSTGRES_PASSWORD
         sync: false
+      # Base64-encoded Supabase server root certificate. Required for
+      # verify-full TLS; download it from Supabase Database Settings.
+      - key: POSTGRES_SSL_CA_BASE64
+        sync: false
       # The pre-deploy migration creates this least-privilege login and its
       # RLS policies. The API derives the Supabase pooler username suffix.
       - key: POSTGRES_RUNTIME_ROLE
