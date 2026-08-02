@@ -43,8 +43,12 @@ services:
         value: "true"
       - key: AUTH_ALLOW_INSECURE
         value: "false"
+      - key: AUTH_SIWE_DOMAINS
+        value: orba.fun,www.orba.fun
       - key: AGENT_EXECUTOR_ENABLED
         value: "false"
+      # Free self-service agents spend from the shared platform deployer and
+      # remain disabled until paid/staked creation and owner-wide caps exist.
       - key: REFERRAL_REWARD_PCT_BPS
         value: "10"
       - key: POSTGRES_POOL_MAX
@@ -53,6 +57,8 @@ services:
         value: "30000"
       - key: REDIS_CONNECT_TIMEOUT_MS
         value: "30000"
+      - key: TRUST_PROXY_HOPS
+        value: "1"
       # Existing Supabase connection values — enter these in the Render wizard.
       - key: POSTGRES_HOST
         sync: false
@@ -64,6 +70,12 @@ services:
         sync: false
       - key: POSTGRES_PASSWORD
         sync: false
+      # The pre-deploy migration creates this least-privilege login and its
+      # RLS policies. The API derives the Supabase pooler username suffix.
+      - key: POSTGRES_RUNTIME_ROLE
+        value: orbafun_runtime
+      - key: POSTGRES_RUNTIME_PASSWORD
+        generateValue: true
       # Existing Upstash Redis connection string.
       - key: REDIS_URL
         sync: false

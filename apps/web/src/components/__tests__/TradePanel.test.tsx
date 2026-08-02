@@ -234,6 +234,18 @@ describe('TradePanel', () => {
   // ─── Approval flow ──────────────────────────────────────────────────────
 
   describe('Approval flow', () => {
+    it('requires resetting a broader legacy allowance to the exact trade amount', () => {
+      updateWagmiMock({
+        isConnected: true,
+        usdcAllowance: (1n << 256n) - 1n,
+      });
+      renderWithProviders(<TradePanel token={createMockToken()} />);
+      fireEvent.change(screen.getByPlaceholderText('0.00'), {
+        target: { value: '10' },
+      });
+      expect(screen.getByText('Step 1/2: Approve USDC')).toBeInTheDocument();
+    });
+
     beforeEach(() => {
       updateWagmiMock({ isConnected: true, usdcAllowance: 0n });
     });
@@ -291,7 +303,7 @@ describe('TradePanel', () => {
     beforeEach(() => {
       updateWagmiMock({
         isConnected: true,
-        usdcAllowance: 1_000_000_000_000_000n,
+        usdcAllowance: 10_000_000n,
         // Tiny balances so any amount triggers insufficient
         balanceValue: 1n,
         tokenBalance: 1n,
@@ -328,7 +340,7 @@ describe('TradePanel', () => {
       updateWagmiMock({
         isConnected: true,
         shouldConfirm: false,
-        usdcAllowance: 1_000_000_000_000_000n,
+        usdcAllowance: 10_000_000n,
       });
     });
 
@@ -380,7 +392,7 @@ describe('TradePanel', () => {
       updateWagmiMock({
         isConnected: true,
         shouldConfirm: false,
-        usdcAllowance: 1_000_000_000_000_000n,
+        usdcAllowance: 10_000_000n,
         isConfirming: false,
       });
       const { rerender } = render(
@@ -399,7 +411,7 @@ describe('TradePanel', () => {
       updateWagmiMock({
         isConnected: true,
         shouldConfirm: true,
-        usdcAllowance: 1_000_000_000_000_000n,
+        usdcAllowance: 10_000_000n,
         isConfirming: true,
       });
       rerender(

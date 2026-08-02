@@ -1,56 +1,5 @@
 /** @type {import('next').NextConfig} */
 
-// Arc RPC endpoints whitelisted in CSP (for wagmi direct fallback transport).
-const ARC_RPC_HOSTS = [
-  'https://rpc.testnet.arc.io',
-  'https://rpc.drpc.testnet.arc.io',
-  'https://rpc.quicknode.testnet.arc.io',
-  'https://rpc.blockdaemon.testnet.arc.io',
-];
-
-// IPFS gateways for token images uploaded via Pinata.
-const IPFS_GATEWAYS = [
-  'https://gateway.pinata.cloud',
-  'https://ipfs.io',
-  'https://cloudflare-ipfs.com',
-  'https://dweb.link',
-];
-
-// WalletConnect relay server (used by injected connector for session pairing).
-const WALLETCONNECT_RELAY = 'wss://relay.walletconnect.com';
-
-// API origin — the frontend talks to this for REST + WebSocket (Socket.IO).
-// In production this is https://orba.fun (same-origin), in dev it's
-// http://localhost:4000. Both http + ws schemes are added so CSP allows
-// the API REST calls and the Socket.IO WebSocket upgrade.
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-const API_WS_URL = process.env.NEXT_PUBLIC_WS_URL || API_URL;
-// Normalize: derive ws:// from http:// for the WebSocket connect-src entry.
-const API_WS_SCHEME = API_WS_URL.replace(/^http/, 'ws');
-
-const cspDirectives = [
-  "default-src 'self'",
-  // Next.js needs 'unsafe-eval' for dev, 'unsafe-inline' for styles (styled-jsx / CSS modules)
-  process.env.NODE_ENV === 'production'
-    ? "script-src 'self' 'unsafe-inline'"
-    : "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "img-src 'self' data: blob: https: " + IPFS_GATEWAYS.join(' '),
-  "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' " +
-    API_URL + ' ' +
-    API_WS_URL + ' ' +
-    API_WS_SCHEME + ' ' +
-    ARC_RPC_HOSTS.join(' ') + ' ' +
-    IPFS_GATEWAYS.join(' ') + ' ' +
-    WALLETCONNECT_RELAY,
-  "frame-ancestors 'none'",
-  "form-action 'self'",
-  "base-uri 'self'",
-  "object-src 'none'",
-  "worker-src 'self' blob:",
-].join('; ');
-
 const nextConfig = {
   transpilePackages: ['@orbafun/shared'],
   // Security headers — applied to all routes.
@@ -68,7 +17,6 @@ const nextConfig = {
             key: 'Strict-Transport-Security',
             value: 'max-age=31536000; includeSubDomains; preload',
           },
-          { key: 'Content-Security-Policy', value: cspDirectives },
         ],
       },
     ];

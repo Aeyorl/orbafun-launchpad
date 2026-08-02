@@ -647,6 +647,32 @@
     "anonymous": false
   },
   {
+    "type": "event",
+    "name": "BuyV2",
+    "inputs": [
+      { "name": "buyer", "type": "address", "indexed": true, "internalType": "address" },
+      { "name": "usdcIn", "type": "uint256", "indexed": false, "internalType": "uint256" },
+      { "name": "fee", "type": "uint256", "indexed": false, "internalType": "uint256" },
+      { "name": "usdcToCurve", "type": "uint256", "indexed": false, "internalType": "uint256" },
+      { "name": "tokensOut", "type": "uint256", "indexed": false, "internalType": "uint256" },
+      { "name": "price", "type": "uint256", "indexed": false, "internalType": "uint256" }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SellV2",
+    "inputs": [
+      { "name": "seller", "type": "address", "indexed": true, "internalType": "address" },
+      { "name": "tokensIn", "type": "uint256", "indexed": false, "internalType": "uint256" },
+      { "name": "usdcGross", "type": "uint256", "indexed": false, "internalType": "uint256" },
+      { "name": "fee", "type": "uint256", "indexed": false, "internalType": "uint256" },
+      { "name": "usdcOut", "type": "uint256", "indexed": false, "internalType": "uint256" },
+      { "name": "price", "type": "uint256", "indexed": false, "internalType": "uint256" }
+    ],
+    "anonymous": false
+  },
+  {
     "type": "error",
     "name": "AlreadyGraduated",
     "inputs": []

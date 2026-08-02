@@ -5,9 +5,8 @@
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- 1. Enable Row Level Security (RLS) on all public tables
--- Note: Your NestJS backend connects directly via node-postgres (as postgres / superuser / service role)
--- which bypasses RLS automatically. Enabling RLS without adding public policies blocks unauthorized
--- PostgREST HTTP access from external callers while keeping your NestJS backend functioning 100%.
+-- The migration script creates a separate orbafun_runtime role and an explicit
+-- policy for it. The NestJS process must never connect as postgres/superuser.
 -- ─────────────────────────────────────────────────────────────────────────────
 ALTER TABLE IF EXISTS public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE IF EXISTS public.tokens ENABLE ROW LEVEL SECURITY;
@@ -33,18 +32,8 @@ ALTER TABLE IF EXISTS public.price_snapshots ENABLE ROW LEVEL SECURITY;
 -- 2. Secure function search_path parameters
 -- Explicitly setting search_path prevents search path hijacking attacks.
 -- ─────────────────────────────────────────────────────────────────────────────
-CREATE OR REPLACE FUNCTION public.update_user_volume()
-RETURNS TRIGGER
-SET search_path = public
-AS $$
-BEGIN
-    INSERT INTO users (wallet, total_volume_usdc)
-    VALUES (NEW.wallet, NEW.usdc_amount)
-    ON CONFLICT (wallet) DO UPDATE
-    SET total_volume_usdc = users.total_volume_usdc + NEW.usdc_amount;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_trades_update_user_volume ON public.trades;
+DROP FUNCTION IF EXISTS public.update_user_volume();
 
 CREATE OR REPLACE FUNCTION public.refresh_volume_24h()
 RETURNS VOID

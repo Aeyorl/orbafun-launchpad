@@ -8,6 +8,7 @@ import {
 import { OnModuleInit, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { RedisService } from '../redis/redis.service';
+import { createHash } from 'node:crypto';
 
 /**
  * WebsocketGateway — relays Redis pub/sub events to connected WebSocket clients.
@@ -32,6 +33,7 @@ import { RedisService } from '../redis/redis.service';
 // (chart, stats, chat, ticker). Leave room for a few tabs behind one NAT while
 // still bounding abusive connection floods.
 const MAX_CONN_PER_IP = 25;
+const CONNECTION_SLOT_TTL_SECONDS = 90;
 const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:3000')
   .split(',')
   .map((origin) => origin.trim())
@@ -104,11 +106,31 @@ export class WebsocketGateway implements OnModuleInit {
   /**
    * Handle client connection — enforce per-IP connection limit.
    */
-  handleConnection(client: Socket) {
-    const ip =
-      (client.handshake.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
-      client.handshake.address ||
-      'unknown';
+  async handleConnection(client: Socket) {
+    const ip = this.getClientIp(client);
+
+    const connectionKey = `ws:connections:${createHash('sha256').update(ip).digest('hex')}`;
+    const acquired = await this.redis.acquireConnectionSlot(
+      connectionKey,
+      client.id,
+      MAX_CONN_PER_IP,
+      CONNECTION_SLOT_TTL_SECONDS,
+    );
+    if (acquired === false) {
+      this.logger.warn(`Connection rejected — IP connection limit reached`);
+      client.disconnect(true);
+      return;
+    }
+    if (acquired) {
+      client.data.connectionLimitKey = connectionKey;
+      client.data.connectionLimitTimer = setInterval(() => {
+        void this.redis.refreshConnectionSlot(
+          connectionKey,
+          client.id,
+          CONNECTION_SLOT_TTL_SECONDS,
+        );
+      }, 30_000);
+    }
 
     let conns = this.ipConnections.get(ip);
     if (!conns) {
@@ -116,7 +138,7 @@ export class WebsocketGateway implements OnModuleInit {
       this.ipConnections.set(ip, conns);
     }
 
-    if (conns.size >= MAX_CONN_PER_IP) {
+    if (acquired === null && conns.size >= MAX_CONN_PER_IP) {
       this.logger.warn(`Connection rejected — IP ${ip} has ${conns.size} connections (limit ${MAX_CONN_PER_IP})`);
       client.disconnect(true);
       return;
@@ -130,10 +152,14 @@ export class WebsocketGateway implements OnModuleInit {
    * Handle client disconnection — remove from IP tracking.
    */
   handleDisconnect(client: Socket) {
-    const ip =
-      (client.handshake.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() ||
-      client.handshake.address ||
-      'unknown';
+    const ip = this.getClientIp(client);
+
+    if (client.data.connectionLimitTimer) {
+      clearInterval(client.data.connectionLimitTimer);
+    }
+    if (client.data.connectionLimitKey) {
+      void this.redis.releaseConnectionSlot(client.data.connectionLimitKey, client.id);
+    }
 
     const conns = this.ipConnections.get(ip);
     if (conns) {
@@ -143,5 +169,21 @@ export class WebsocketGateway implements OnModuleInit {
       }
     }
     this.logger.log(`Client disconnected: ${client.id}`);
+  }
+
+  private getClientIp(client: Socket): string {
+    const forwarded = client.handshake.headers['x-forwarded-for'];
+    const addresses = (Array.isArray(forwarded) ? forwarded.join(',') : forwarded || '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const trustedHops = Math.max(
+      0,
+      parseInt(process.env.TRUST_PROXY_HOPS || (process.env.NODE_ENV === 'production' ? '1' : '0'), 10),
+    );
+    if (trustedHops > 0 && addresses.length >= trustedHops) {
+      return addresses[addresses.length - trustedHops];
+    }
+    return client.handshake.address || 'unknown';
   }
 }

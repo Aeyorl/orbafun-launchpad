@@ -2,6 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
 
+const CURVE_SUPPLY = 880_000_000n * 10n ** 18n;
+const CURVE_VIRTUAL_USDC = 5_866_666_700n;
+const CURVE_VIRTUAL_TOKENS = 1_466_666_667n * 10n ** 18n;
+const CURVE_K = CURVE_VIRTUAL_USDC * CURVE_VIRTUAL_TOKENS;
+const CURVE_FEE_BPS = 100n;
+const BPS_DENOMINATOR = 10_000n;
+
 /**
  * IndexerService — receives decoded events from the Envio HyperIndex indexer
  * and writes them to Postgres + publishes to Redis pub/sub.
@@ -63,17 +70,9 @@ export class IndexerService {
     try {
       await client.query('BEGIN');
 
-      // Upsert user (creator)
-      await client.query(
-        `INSERT INTO users (wallet, created_at)
-         VALUES ($1, NOW())
-         ON CONFLICT (wallet) DO UPDATE
-         SET tokens_launched = users.tokens_launched + 1`,
-        [event.creator.toLowerCase()],
-      );
-
-      // Insert token (idempotent — ON CONFLICT does nothing)
-      await client.query(
+      // Insert the token first. A replay stops here so creator counters and
+      // indexer statistics are not incremented twice.
+      const tokenInsert = await client.query(
         `INSERT INTO tokens (
            contract_address, curve_address, creator_wallet,
            name, symbol, image, description,
@@ -86,7 +85,8 @@ export class IndexerService {
            0, 0, 0, 0,
            'active', $7, $8, NOW()
          )
-         ON CONFLICT (contract_address) DO NOTHING`,
+         ON CONFLICT (contract_address) DO NOTHING
+         RETURNING id`,
         [
           event.token.toLowerCase(),
           event.curve.toLowerCase(),
@@ -97,6 +97,20 @@ export class IndexerService {
           event.blockNumber.toString(),
           event.txHash,
         ],
+      );
+
+      if (tokenInsert.rowCount !== 1) {
+        await client.query('ROLLBACK');
+        return;
+      }
+
+      // Upsert user (creator) only for a newly indexed token.
+      await client.query(
+        `INSERT INTO users (wallet, tokens_launched, created_at)
+         VALUES ($1, 1, NOW())
+         ON CONFLICT (wallet) DO UPDATE
+         SET tokens_launched = users.tokens_launched + 1`,
+        [event.creator.toLowerCase()],
       );
 
       // Update indexer state
@@ -140,7 +154,8 @@ export class IndexerService {
 
       // Find token by curve address
       const tokenResult = await client.query(
-        `SELECT id, contract_address FROM tokens WHERE curve_address = $1`,
+        `SELECT id, contract_address, real_usdc, tokens_sold
+         FROM tokens WHERE curve_address = $1 FOR UPDATE`,
         [event.curveAddress.toLowerCase()],
       );
       if (tokenResult.rows.length === 0) {
@@ -152,8 +167,23 @@ export class IndexerService {
       tokenContractAddress = tokenResult.rows[0].contract_address;
 
       // Compute price and market cap
-      const usdcAmount = BigInt(event.usdcIn);
       const tokenAmount = BigInt(event.tokensOut);
+      let usdcAmount = BigInt(event.usdcIn);
+      let fee = event.accountingVersion === 2 ? BigInt(event.fee) : usdcAmount / 100n;
+      let netUsdc = event.accountingVersion === 2
+        ? BigInt(event.netUsdc)
+        : usdcAmount - fee;
+      const priorTokensSold = BigInt(tokenResult.rows[0].tokens_sold);
+      if (event.accountingVersion !== 2 && priorTokensSold + tokenAmount >= CURVE_SUPPLY) {
+        const oldX = CURVE_VIRTUAL_USDC + BigInt(tokenResult.rows[0].real_usdc);
+        const finalY = CURVE_VIRTUAL_TOKENS - CURVE_SUPPLY;
+        const netNeeded = CURVE_K / finalY - oldX;
+        usdcAmount =
+          (netNeeded * BPS_DENOMINATOR) /
+          (BPS_DENOMINATOR - CURVE_FEE_BPS);
+        fee = usdcAmount - netNeeded;
+        netUsdc = netNeeded;
+      }
       // Use the contract's price field (spot price after trade) when available,
       // falling back to computed price from trade amounts.
       const price =
@@ -163,13 +193,11 @@ export class IndexerService {
       const marketCap = (parseFloat(price) * 1e9).toFixed(6);
 
       // Update curve state (fee = 1% of input, split 50/50)
-      const fee = usdcAmount / 100n;
-      const netUsdc = usdcAmount - fee;
       const creatorFee = fee / 2n;
       const protocolFee = fee - creatorFee;
 
       // 1. Insert trade (idempotent)
-      await client.query(
+      const tradeInsert = await client.query(
         `INSERT INTO trades (
            token_id, wallet, type,
            usdc_amount, token_amount, price,
@@ -181,7 +209,8 @@ export class IndexerService {
            (SELECT tokens_sold + $8 FROM tokens WHERE id = $1),
            $9, $10, $11, NOW()
          )
-         ON CONFLICT (tx_hash, log_index) DO NOTHING`,
+         ON CONFLICT (tx_hash, log_index) DO NOTHING
+         RETURNING id`,
         [
           tokenId,
           event.buyer.toLowerCase(),
@@ -196,6 +225,10 @@ export class IndexerService {
           event.logIndex,
         ],
       );
+      if (tradeInsert.rowCount !== 1) {
+        await client.query('ROLLBACK');
+        return;
+      }
 
       // 2. Update token state (price, market cap, real usdc, tokens sold, fees, volume_24h in dollars)
       await client.query(
@@ -251,7 +284,7 @@ export class IndexerService {
       );
 
       // Record price snapshot for leaderboard gain calculation.
-      await this.recordPriceSnapshot(tokenId, price, marketCap);
+      await this.recordPriceSnapshot(client, tokenId, price, marketCap);
 
       // Update indexer state
       await client.query(
@@ -298,7 +331,8 @@ export class IndexerService {
       await client.query('BEGIN');
 
       const tokenResult = await client.query(
-        `SELECT id, contract_address FROM tokens WHERE curve_address = $1`,
+        `SELECT id, contract_address FROM tokens
+         WHERE curve_address = $1 FOR UPDATE`,
         [event.curveAddress.toLowerCase()],
       );
       if (tokenResult.rows.length === 0) {
@@ -308,7 +342,10 @@ export class IndexerService {
       const tokenId = tokenResult.rows[0].id;
       tokenContractAddress = tokenResult.rows[0].contract_address;
 
-      const usdcAmount = BigInt(event.usdcOut);
+      const netUsdcOut = BigInt(event.usdcOut);
+      const usdcAmount = event.accountingVersion === 2
+        ? BigInt(event.usdcGross)
+        : this.grossFromNet(netUsdcOut, CURVE_FEE_BPS);
       const tokenAmount = BigInt(event.tokensIn);
       const price =
         event.price && Number(event.price) > 0
@@ -316,13 +353,14 @@ export class IndexerService {
           : this.computePrice(usdcAmount, tokenAmount);
       const marketCap = (parseFloat(price) * 1e9).toFixed(6);
 
-      const fee = usdcAmount / 100n;
-      const netUsdcOut = usdcAmount - fee;
+      const fee = event.accountingVersion === 2
+        ? BigInt(event.fee)
+        : usdcAmount - netUsdcOut;
       const creatorFee = fee / 2n;
       const protocolFee = fee - creatorFee;
 
       // 1. Insert trade (idempotent)
-      await client.query(
+      const tradeInsert = await client.query(
         `INSERT INTO trades (
            token_id, wallet, type,
            usdc_amount, token_amount, price,
@@ -334,7 +372,8 @@ export class IndexerService {
            (SELECT GREATEST(0, tokens_sold - $8) FROM tokens WHERE id = $1),
            $9, $10, $11, NOW()
          )
-         ON CONFLICT (tx_hash, log_index) DO NOTHING`,
+         ON CONFLICT (tx_hash, log_index) DO NOTHING
+         RETURNING id`,
         [
           tokenId,
           event.seller.toLowerCase(),
@@ -342,13 +381,17 @@ export class IndexerService {
           tokenAmount.toString(),
           price,
           marketCap,
-          netUsdcOut.toString(),
+          usdcAmount.toString(),
           tokenAmount.toString(),
           event.txHash,
           event.blockNumber.toString(),
           event.logIndex,
         ],
       );
+      if (tradeInsert.rowCount !== 1) {
+        await client.query('ROLLBACK');
+        return;
+      }
 
       // 2. Update token state (price, market cap, real usdc, tokens sold, fees, volume_24h in dollars)
       await client.query(
@@ -370,7 +413,7 @@ export class IndexerService {
           tokenId,
           price,
           marketCap,
-          netUsdcOut.toString(),
+          usdcAmount.toString(),
           tokenAmount.toString(),
           creatorFee.toString(),
           protocolFee.toString(),
@@ -402,7 +445,7 @@ export class IndexerService {
       );
 
       // Record price snapshot for leaderboard gain calculation.
-      await this.recordPriceSnapshot(tokenId, price, marketCap);
+      await this.recordPriceSnapshot(client, tokenId, price, marketCap);
 
       await client.query(
         `UPDATE indexer_state
@@ -444,37 +487,44 @@ export class IndexerService {
     try {
       await client.query('BEGIN');
 
+      const tokenResult = await client.query(
+        `SELECT id FROM tokens WHERE contract_address = $1`,
+        [event.token.toLowerCase()],
+      );
+      if (tokenResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return;
+      }
+      const tokenId = tokenResult.rows[0].id;
+      const graduationInsert = await client.query(
+        `INSERT INTO graduations (
+           token_id, amm_pair_address, lp_usdc, lp_tokens, lp_burned,
+           tx_hash, block_number, timestamp
+         ) VALUES ($1, $2, $3, $4, 0, $5, $6, NOW())
+         ON CONFLICT (token_id) DO NOTHING
+         RETURNING id`,
+        [
+          tokenId,
+          event.ammPair.toLowerCase(),
+          event.lpUsdc.toString(),
+          event.lpTokens.toString(),
+          event.txHash,
+          event.blockNumber.toString(),
+        ],
+      );
+      if (graduationInsert.rowCount !== 1) {
+        await client.query('ROLLBACK');
+        return;
+      }
+
       await client.query(
         `UPDATE tokens SET
            status = 'graduated',
            amm_pair_address = $2,
            graduated_at = NOW()
-         WHERE contract_address = $1`,
-        [event.token.toLowerCase(), event.ammPair.toLowerCase()],
+         WHERE id = $1`,
+        [tokenId, event.ammPair.toLowerCase()],
       );
-
-      const tokenResult = await client.query(
-        `SELECT id FROM tokens WHERE contract_address = $1`,
-        [event.token.toLowerCase()],
-      );
-      if (tokenResult.rows.length > 0) {
-        const tokenId = tokenResult.rows[0].id;
-        await client.query(
-          `INSERT INTO graduations (
-             token_id, amm_pair_address, lp_usdc, lp_tokens, lp_burned,
-             tx_hash, block_number, timestamp
-           ) VALUES ($1, $2, $3, $4, 0, $5, $6, NOW())
-           ON CONFLICT (token_id) DO NOTHING`,
-          [
-            tokenId,
-            event.ammPair.toLowerCase(),
-            event.lpUsdc.toString(),
-            event.lpTokens.toString(),
-            event.txHash,
-            event.blockNumber.toString(),
-          ],
-        );
-      }
 
       await client.query(
         `UPDATE indexer_state
@@ -620,15 +670,16 @@ export class IndexerService {
         isBuy ? tokenOut : tokenIn,  // token amount (18-dec raw)
       );
 
-      // 1. Insert swap record (idempotent via ON CONFLICT).
-      await client.query(
+      // 1. Insert swap record and stop before side effects on replay.
+      const swapInsert = await client.query(
         `INSERT INTO amm_swaps (
            token_id, amm_pair_address, sender, to_address,
            is_buy, usdc_in, usdc_out, token_in, token_out,
            price_after,
            tx_hash, block_number, log_index, timestamp
          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-         ON CONFLICT (tx_hash, log_index) DO NOTHING`,
+         ON CONFLICT (tx_hash, log_index) DO NOTHING
+         RETURNING id`,
         [
           tokenId,
           event.ammPairAddress.toLowerCase(),
@@ -645,6 +696,10 @@ export class IndexerService {
           event.logIndex,
         ],
       );
+      if (swapInsert.rowCount !== 1) {
+        await client.query('ROLLBACK');
+        return;
+      }
 
       // 2. Update token price and market cap (for AMM, use swap output as price).
       // Only update if price is non-zero.
@@ -710,16 +765,17 @@ export class IndexerService {
    * Record a price snapshot for the given token after a trade.
    * Called from handleBuy and handleSell.
    */
-  private async recordPriceSnapshot(tokenId: number, price: string, marketCap: string): Promise<void> {
-    try {
-      await this.db.query(
-        `INSERT INTO price_snapshots (token_id, price, market_cap, snapshot_at)
-         VALUES ($1, $2, $3, NOW())`,
-        [tokenId, price, marketCap],
-      );
-    } catch (err) {
-      this.logger.warn(`Failed to record price snapshot: ${err.message}`);
-    }
+  private async recordPriceSnapshot(
+    client: { query: (text: string, params?: any[]) => Promise<any> },
+    tokenId: number,
+    price: string,
+    marketCap: string,
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO price_snapshots (token_id, price, market_cap, snapshot_at)
+       VALUES ($1, $2, $3, NOW())`,
+      [tokenId, price, marketCap],
+    );
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -759,6 +815,16 @@ export class IndexerService {
    * Without the extra 1e6 factor, integer division truncates to 0 when the
    * price is < 1e-6 USDC/token (common for early bonding curve buys).
    */
+  private grossFromNet(netAmount: bigint, feeBps: bigint): bigint {
+    const denominator = BPS_DENOMINATOR - feeBps;
+    let gross =
+      (netAmount * BPS_DENOMINATOR + denominator - 1n) / denominator;
+    while (gross - (gross * feeBps) / BPS_DENOMINATOR < netAmount) {
+      gross += 1n;
+    }
+    return gross;
+  }
+
   private computePrice(usdcAmount: bigint, tokenAmount: bigint): string {
     if (tokenAmount === 0n) return '0';
     // price = (usdcAmount / 1e6) / (tokenAmount / 1e18)
@@ -806,8 +872,11 @@ interface BuyEvent extends IndexerEvent {
   curveAddress: string;
   buyer: string;
   usdcIn: string;
+  fee?: string;
+  netUsdc?: string;
   tokensOut: string;
   price: string;
+  accountingVersion?: 2;
 }
 
 interface SellEvent extends IndexerEvent {
@@ -815,8 +884,11 @@ interface SellEvent extends IndexerEvent {
   curveAddress: string;
   seller: string;
   tokensIn: string;
+  usdcGross?: string;
+  fee?: string;
   usdcOut: string;
   price: string;
+  accountingVersion?: 2;
 }
 
 interface GraduatedEvent extends IndexerEvent {

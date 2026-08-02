@@ -50,6 +50,73 @@ function computeMarketCapString(price: string): string {
   return `${mcapInt}.${mcapFrac.toString().padStart(18, "0").slice(0, 6)}`;
 }
 
+function scaledCurvePriceString(value: bigint): string {
+  const scale = 10n ** 30n;
+  const intPart = value / scale;
+  const fractional = (value % scale).toString().padStart(30, "0").slice(0, 18);
+  return `${intPart}.${fractional}`;
+}
+
+async function handleAccountingV2(event: any, context: any, isBuy: boolean): Promise<void> {
+  const mapping = await context.CurveMapping.get(event.srcAddress);
+  if (!mapping) return;
+  const token = await context.Token.get(mapping.tokenId);
+  if (!token) return;
+
+  const grossUsdc = isBuy ? event.params.usdcIn : event.params.usdcGross;
+  const netUsdc = isBuy ? event.params.usdcToCurve : event.params.usdcOut;
+  const tokenAmount = isBuy ? event.params.tokensOut : event.params.tokensIn;
+  const wallet = isBuy ? event.params.buyer : event.params.seller;
+  const fee = event.params.fee;
+  const creatorFee = fee / 2n;
+  const protocolFee = fee - creatorFee;
+  const newPrice = scaledCurvePriceString(event.params.price);
+  const newMarketCap = computeMarketCapString(newPrice);
+  const realUsdcAfter = isBuy
+    ? token.realUsdc + netUsdc
+    : token.realUsdc > grossUsdc ? token.realUsdc - grossUsdc : 0n;
+  const tokensSoldAfter = isBuy
+    ? token.tokensSold + tokenAmount
+    : token.tokensSold > tokenAmount ? token.tokensSold - tokenAmount : 0n;
+
+  context.Token.set({
+    ...token,
+    price: newPrice,
+    marketCap: newMarketCap,
+    realUsdc: realUsdcAfter,
+    tokensSold: tokensSoldAfter,
+    creatorFeesAccrued: token.creatorFeesAccrued + creatorFee,
+    protocolFeesAccrued: token.protocolFeesAccrued + protocolFee,
+  });
+  context.Trade.set({
+    id: makeTradeId(event.transaction.hash, event.logIndex),
+    token_id: mapping.tokenId,
+    wallet,
+    type: isBuy ? "buy" : "sell",
+    usdcAmount: grossUsdc,
+    tokenAmount,
+    price: newPrice,
+    marketCapAfter: newMarketCap,
+    realUsdcAfter,
+    tokensSoldAfter,
+    txHash: event.transaction.hash,
+    blockNumber: event.block.number,
+    logIndex: event.logIndex,
+    timestamp: event.block.timestamp,
+  });
+
+  const user = await context.User.get(wallet);
+  context.User.set(user
+    ? { ...user, totalVolumeUsdc: user.totalVolumeUsdc + grossUsdc }
+    : {
+        id: wallet,
+        tokensLaunched: 0,
+        totalVolumeUsdc: grossUsdc,
+        createdAt: event.block.timestamp,
+      });
+  await updateIndexerState(context, event.block.number, event.block.timestamp);
+}
+
 // Generate unique trade ID from tx hash + log index
 function makeTradeId(txHash: string, logIndex: number): string {
   return `${txHash}-${logIndex}`;
@@ -307,6 +374,16 @@ indexer.onEvent(
 );
 
 // ─── BondingCurve: Graduated ───────────────────────────────────────────────
+indexer.onEvent(
+  { contract: "BondingCurve", event: "BuyV2" },
+  async ({ event, context }) => handleAccountingV2(event, context, true),
+);
+
+indexer.onEvent(
+  { contract: "BondingCurve", event: "SellV2" },
+  async ({ event, context }) => handleAccountingV2(event, context, false),
+);
+
 indexer.onEvent(
   { contract: "BondingCurve", event: "Graduated" },
   async ({ event, context }) => {

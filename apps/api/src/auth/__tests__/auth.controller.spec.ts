@@ -35,18 +35,18 @@ describe('AuthController', () => {
   // ─── GET /auth/nonce ───────────────────────────────────────────────────
 
   describe('GET /auth/nonce', () => {
-    it('returns a nonce from auth service', () => {
-      mockAuthService.generateNonce.mockReturnValue({ nonce: 'abc123' });
+    it('returns a nonce from auth service', async () => {
+      mockAuthService.generateNonce.mockResolvedValue({ nonce: 'abc123' });
 
-      const result = controller.nonce();
+      const result = await controller.nonce();
       expect(result).toEqual({ nonce: 'abc123' });
       expect(mockAuthService.generateNonce).toHaveBeenCalledTimes(1);
     });
 
-    it('throws 503 if AUTH_SECRET is not set', () => {
+    it('throws 503 if AUTH_SECRET is not set', async () => {
       delete process.env.AUTH_SECRET;
 
-      expect(() => controller.nonce()).toThrow(
+      await expect(controller.nonce()).rejects.toThrow(
         new HttpException(
           'Auth not configured (AUTH_SECRET missing)',
           HttpStatus.SERVICE_UNAVAILABLE,

@@ -34,7 +34,7 @@ contract AMMRouterTest is Test {
 
         // Deploy factory + router.
         ammFactory = new AMMFactory();
-        router = new AMMRouter();
+        router = new AMMRouter(address(ammFactory));
 
         // Deploy a test token (plain ERC-20, no cooldown/max-wallet).
         token = new MockToken();
@@ -78,7 +78,7 @@ contract AMMRouterTest is Test {
     function testSwapUSDCForTokens() public {
         uint256 amountIn = 10 * 10 ** 6; // 10 USDC
         vm.prank(swapper1);
-        uint256 out = router.swapExactUSDCForTokens(amountIn, 0, address(pair), swapper1);
+        uint256 out = router.swapExactUSDCForTokens(amountIn, 0, block.timestamp, address(pair), swapper1);
 
         // 10 USDC into 1000 USDC / 1M token pool → ~9901 tokens (18-dec).
         // Formula: 10e6 * 1e6e18 / (1000e6 + 10e6) = 9900990099009900990099
@@ -91,7 +91,7 @@ contract AMMRouterTest is Test {
     function testSwapTokensForUSDC() public {
         uint256 amountIn = 10_000 * 10 ** 18; // 10k tokens
         vm.prank(swapper1);
-        uint256 out = router.swapExactTokensForUSDC(amountIn, 0, address(pair), swapper1);
+        uint256 out = router.swapExactTokensForUSDC(amountIn, 0, block.timestamp, address(pair), swapper1);
 
         // 10k tokens into 1M token / 1000 USDC pool → ~9.9 USDC.
         assertGt(out, 9 * 10 ** 6, "expected ~9.9 USDC out");
@@ -104,21 +104,43 @@ contract AMMRouterTest is Test {
         uint256 amountIn = 10 * 10 ** 6;
         vm.prank(swapper1);
         vm.expectRevert(AMMRouter.InsufficientOutputAmount.selector);
-        router.swapExactUSDCForTokens(amountIn, type(uint256).max, address(pair), swapper1);
+        router.swapExactUSDCForTokens(amountIn, type(uint256).max, block.timestamp, address(pair), swapper1);
     }
 
     /// @notice Zero address recipient reverts.
     function testZeroAddressReverts() public {
         vm.prank(swapper1);
         vm.expectRevert(AMMRouter.ZeroAddress.selector);
-        router.swapExactUSDCForTokens(10 * 10 ** 6, 0, address(pair), address(0));
+        router.swapExactUSDCForTokens(10 * 10 ** 6, 0, block.timestamp, address(pair), address(0));
     }
 
     /// @notice Zero input reverts.
     function testZeroInputReverts() public {
         vm.prank(swapper1);
         vm.expectRevert(AMMRouter.InsufficientOutputAmount.selector);
-        router.swapExactUSDCForTokens(0, 0, address(pair), swapper1);
+        router.swapExactUSDCForTokens(0, 0, block.timestamp, address(pair), swapper1);
+    }
+
+    function testExpiredDeadlineReverts() public {
+        vm.warp(100);
+        vm.prank(swapper1);
+        vm.expectRevert(AMMRouter.Expired.selector);
+        router.swapExactUSDCForTokens(10 * 10 ** 6, 0, 99, address(pair), swapper1);
+    }
+
+    function testNonCanonicalPairReverts() public {
+        AMMPair roguePair = new AMMPair(address(token), USDC);
+        vm.prank(swapper1);
+        vm.expectRevert(AMMRouter.InvalidPair.selector);
+        router.swapExactUSDCForTokens(10 * 10 ** 6, 0, block.timestamp, address(roguePair), swapper1);
+    }
+
+    function testPairWithoutUsdcReverts() public {
+        MockToken otherToken = new MockToken();
+        AMMPair roguePair = new AMMPair(address(token), address(otherToken));
+        vm.prank(swapper1);
+        vm.expectRevert(AMMRouter.InvalidPair.selector);
+        router.swapExactTokensForUSDC(10 * 10 ** 18, 0, block.timestamp, address(roguePair), swapper1);
     }
 
     /// @notice Sequential swaps via router preserve the invariant (k increases).
@@ -128,15 +150,15 @@ contract AMMRouterTest is Test {
 
         // Swapper 1: USDC → tokens.
         vm.prank(swapper1);
-        router.swapExactUSDCForTokens(10 * 10 ** 6, 0, address(pair), swapper1);
+        router.swapExactUSDCForTokens(10 * 10 ** 6, 0, block.timestamp, address(pair), swapper1);
 
         // Swapper 2: tokens → USDC.
         vm.prank(swapper2);
-        router.swapExactTokensForUSDC(10_000 * 10 ** 18, 0, address(pair), swapper2);
+        router.swapExactTokensForUSDC(10_000 * 10 ** 18, 0, block.timestamp, address(pair), swapper2);
 
         // Swapper 3: USDC → tokens.
         vm.prank(swapper3);
-        router.swapExactUSDCForTokens(5 * 10 ** 6, 0, address(pair), swapper3);
+        router.swapExactUSDCForTokens(5 * 10 ** 6, 0, block.timestamp, address(pair), swapper3);
 
         (uint112 r0After, uint112 r1After,) = pair.getReserves();
         uint256 kAfter = uint256(r0After) * uint256(r1After);
@@ -157,11 +179,11 @@ contract AMMRouterTest is Test {
     function testMultipleSwapsAllSucceed() public {
         // 3 USDC → tokens swaps, all via router.
         vm.prank(swapper1);
-        uint256 out1 = router.swapExactUSDCForTokens(10 * 10 ** 6, 0, address(pair), swapper1);
+        uint256 out1 = router.swapExactUSDCForTokens(10 * 10 ** 6, 0, block.timestamp, address(pair), swapper1);
         vm.prank(swapper2);
-        uint256 out2 = router.swapExactUSDCForTokens(10 * 10 ** 6, 0, address(pair), swapper2);
+        uint256 out2 = router.swapExactUSDCForTokens(10 * 10 ** 6, 0, block.timestamp, address(pair), swapper2);
         vm.prank(swapper3);
-        uint256 out3 = router.swapExactUSDCForTokens(10 * 10 ** 6, 0, address(pair), swapper3);
+        uint256 out3 = router.swapExactUSDCForTokens(10 * 10 ** 6, 0, block.timestamp, address(pair), swapper3);
 
         assertGt(out1, 0, "swap 1 should succeed");
         assertGt(out2, 0, "swap 2 should succeed");

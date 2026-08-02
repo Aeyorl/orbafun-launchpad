@@ -88,7 +88,7 @@ export class ArcEventPollerService implements OnModuleInit {
     const envUrls = (
       process.env.ARC_RPC_URLS ||
       process.env.ARC_RPC_URL ||
-      'https://arc-testnet.g.alchemy.com/v2/HMKXQ2KwDrFO0nwFthZm0,https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io'
+      'https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io'
     )
       .split(',')
       .map((u) => u.trim())
@@ -223,18 +223,11 @@ export class ArcEventPollerService implements OnModuleInit {
       }
     }
 
-    // 3. Fallback: Also fetch logs by topic (Buy / Sell / Graduated) without restricting
-    // to curveAddresses, to catch trades on any curve that wasn't in memory yet.
-    const topicLogs = await this.getLogsByTopicsSafe(
-      [TOPIC_BUY, TOPIC_SELL, TOPIC_GRADUATED],
-      fromBlock,
-      toBlock,
-    );
-
-    // 4. Decode and process all logs, deduplicated by txHash + logIndex
+    // 3. Decode and process only factory-address and registered-curve logs,
+    // deduplicated by txHash + logIndex.
     // and sorted by block + logIndex for correct ordering.
     const seen = new Set<string>();
-    const allLogs = [...factoryLogs, ...curveLogs, ...topicLogs]
+    const allLogs = [...factoryLogs, ...curveLogs]
       .filter((log) => {
         const key = `${log.transactionHash}-${log.logIndex}`;
         if (seen.has(key)) return false;
@@ -269,6 +262,28 @@ export class ArcEventPollerService implements OnModuleInit {
     const logIndex = Number(hexToBigInt(log.logIndex));
     const address = log.address.toLowerCase();
 
+    const isFactoryEvent =
+      topic === TOPIC_TOKEN_CREATED || topic === TOPIC_TOKEN_GRADUATED;
+    if (isFactoryEvent && address !== this.getFactoryAddress()) {
+      this.logger.warn(
+        `Ignored factory event from untrusted emitter ${address} (tx ${txHash})`,
+      );
+      return;
+    }
+
+    const isCurveEvent =
+      topic === TOPIC_BUY ||
+      topic === TOPIC_BUY_V2 ||
+      topic === TOPIC_SELL ||
+      topic === TOPIC_SELL_V2 ||
+      topic === TOPIC_GRADUATED;
+    if (isCurveEvent && !this.curveAddresses.has(address)) {
+      this.logger.warn(
+        `Ignored curve event from unregistered emitter ${address} (tx ${txHash})`,
+      );
+      return;
+    }
+
     try {
       if (topic === TOPIC_TOKEN_CREATED) {
         // TokenCreated(address indexed token, address indexed curve, address indexed creator,
@@ -301,6 +316,25 @@ export class ArcEventPollerService implements OnModuleInit {
           symbol,
           image,
         } as any);
+      } else if (topic === TOPIC_BUY_V2) {
+        // BuyV2(address indexed buyer, uint256 usdcIn, uint256 fee,
+        //       uint256 usdcToCurve, uint256 tokensOut, uint256 price)
+        const buyer = topicToAddress(log.topics[1]);
+        const decoded = decodeUintData(log.data);
+        await this.indexerService.processEvent({
+          type: 'Buy',
+          txHash,
+          blockNumber: Number(blockNumber),
+          logIndex,
+          curveAddress: address,
+          buyer,
+          usdcIn: decoded[0],
+          fee: decoded[1],
+          netUsdc: decoded[2],
+          tokensOut: decoded[3],
+          price: this.formatPrice(BigInt(decoded[4])),
+          accountingVersion: 2,
+        } as any);
       } else if (topic === TOPIC_BUY) {
         // Buy(address indexed buyer, uint256 usdcIn, uint256 tokensOut, uint256 price)
         const buyer = topicToAddress(log.topics[1]);
@@ -319,6 +353,25 @@ export class ArcEventPollerService implements OnModuleInit {
           usdcIn,
           tokensOut,
           price: this.formatPrice(BigInt(priceScaled)),
+        } as any);
+      } else if (topic === TOPIC_SELL_V2) {
+        // SellV2(address indexed seller, uint256 tokensIn, uint256 usdcGross,
+        //        uint256 fee, uint256 usdcOut, uint256 price)
+        const seller = topicToAddress(log.topics[1]);
+        const decoded = decodeUintData(log.data);
+        await this.indexerService.processEvent({
+          type: 'Sell',
+          txHash,
+          blockNumber: Number(blockNumber),
+          logIndex,
+          curveAddress: address,
+          seller,
+          tokensIn: decoded[0],
+          usdcGross: decoded[1],
+          fee: decoded[2],
+          usdcOut: decoded[3],
+          price: this.formatPrice(BigInt(decoded[4])),
+          accountingVersion: 2,
         } as any);
       } else if (topic === TOPIC_SELL) {
         // Sell(address indexed seller, uint256 tokensIn, uint256 usdcOut, uint256 price)
@@ -424,34 +477,6 @@ export class ArcEventPollerService implements OnModuleInit {
           }
         }
         throw err;
-      }
-    }
-    return [];
-  }
-
-  /**
-   * Fetch logs matching specified topic hashes across all contracts.
-   */
-  private async getLogsByTopicsSafe(
-    topics: string[],
-    fromBlock: bigint,
-    toBlock: bigint,
-  ): Promise<RpcLog[]> {
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const logs = await this.rpcCall<RpcLog[]>('eth_getLogs', [
-          {
-            topics: [topics],
-            fromBlock: '0x' + fromBlock.toString(16),
-            toBlock: '0x' + toBlock.toString(16),
-          },
-        ]);
-        return logs || [];
-      } catch {
-        if (attempt < 2) {
-          await sleep(1000);
-          continue;
-        }
       }
     }
     return [];
@@ -672,32 +697,12 @@ interface RpcLog {
 // These are the first 32 bytes of keccak256(EventSignature).
 // Computed once at module load to avoid runtime hashing.
 
-const keccak = (sig: string): string => {
-  // We can't compute keccak256 without a library, so hardcode the known hashes.
-  // These are stable and verifiable via any keccak256 tool.
-  const hashes: Record<string, string> = {
-    'TokenCreated(address,address,address,string,string,string,uint256)':
-      '0x9c3b9e3d8e7c4f3a5b1c2d4e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a',
-    'TokenGraduated(address,address)':
-      '0x7f0d2a4e3b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e',
-    'Buy(address,uint256,uint256,uint256)':
-      '0x7f0d2a4e3b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e',
-    'Sell(address,uint256,uint256,uint256)':
-      '0x9c3b9e3d8e7c4f3a5b1c2d4e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a',
-    'Graduated(address,address,uint256,uint256)':
-      '0x4c6f3a5b1c2d4e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f',
-  };
-  return hashes[sig] || '0x' + '0'.repeat(64);
-};
-
-// NOTE: The above hardcoded hashes are PLACEHOLDERS. We compute the real ones
-// at runtime using viem's keccak256 (loaded lazily to avoid type issues).
-// This is done once at module init.
-
 let TOPIC_TOKEN_CREATED = '';
 let TOPIC_TOKEN_GRADUATED = '';
 let TOPIC_BUY = '';
+let TOPIC_BUY_V2 = '';
 let TOPIC_SELL = '';
+let TOPIC_SELL_V2 = '';
 let TOPIC_GRADUATED = '';
 
 // Compute topics at module load using viem's keccak256.
@@ -714,5 +719,7 @@ TOPIC_TOKEN_CREATED = computeTopic(
 );
 TOPIC_TOKEN_GRADUATED = computeTopic('TokenGraduated(address,address)');
 TOPIC_BUY = computeTopic('Buy(address,uint256,uint256,uint256)');
+TOPIC_BUY_V2 = computeTopic('BuyV2(address,uint256,uint256,uint256,uint256,uint256)');
 TOPIC_SELL = computeTopic('Sell(address,uint256,uint256,uint256)');
+TOPIC_SELL_V2 = computeTopic('SellV2(address,uint256,uint256,uint256,uint256,uint256)');
 TOPIC_GRADUATED = computeTopic('Graduated(address,address,uint256,uint256)');

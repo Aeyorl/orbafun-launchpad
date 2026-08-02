@@ -37,12 +37,20 @@ interface IERC20 {
 contract AMMRouter {
     /// @notice Arc USDC (6-dec ERC-20, same address as 18-dec native gas asset).
     address public constant USDC = 0x3600000000000000000000000000000000000000;
+    IAMMFactory public immutable factory;
 
     error InsufficientOutputAmount();
     error TransferFromFailed();
     error TransferFailed();
     error ExcessiveInputAmount();
     error ZeroAddress();
+    error InvalidPair();
+    error Expired();
+
+    constructor(address factory_) {
+        if (factory_ == address(0) || factory_.code.length == 0) revert ZeroAddress();
+        factory = IAMMFactory(factory_);
+    }
 
     /// @notice Swap an exact amount of USDC for as many tokens as possible.
     /// @dev Caller must have approved the router to spend `amountIn` USDC.
@@ -54,11 +62,14 @@ contract AMMRouter {
     function swapExactUSDCForTokens(
         uint256 amountIn,
         uint256 amountOutMin,
+        uint256 deadline,
         address pair,
         address to
     ) external returns (uint256 amountOut) {
         if (to == address(0)) revert ZeroAddress();
         if (amountIn == 0) revert InsufficientOutputAmount();
+        if (block.timestamp > deadline) revert Expired();
+        _validatePair(pair);
 
         // 1. Pull USDC from caller into the pair (atomic — no race window).
         //    Arc USDC's transferFrom returns void, so use SafeUSDC.
@@ -83,13 +94,15 @@ contract AMMRouter {
     function swapExactTokensForUSDC(
         uint256 amountIn,
         uint256 amountOutMin,
+        uint256 deadline,
         address pair,
         address to
     ) external returns (uint256 amountOut) {
         if (to == address(0)) revert ZeroAddress();
         if (amountIn == 0) revert InsufficientOutputAmount();
+        if (block.timestamp > deadline) revert Expired();
 
-        address tokenIn = _otherToken(pair);
+        address tokenIn = _validatePair(pair);
 
         // 1. Pull tokens from caller into the pair.
         //    MemeToken is a standard ERC-20 (returns bool on transferFrom).
@@ -142,9 +155,17 @@ contract AMMRouter {
         return IAMMPair(pair).token0() == tokenIn;
     }
 
-    /// @dev The non-USDC token in a USDC pair.
-    function _otherToken(address pair) internal view returns (address) {
-        address t0 = IAMMPair(pair).token0();
-        return t0 == USDC ? IAMMPair(pair).token1() : t0;
+    function _validatePair(address pair) internal view returns (address token) {
+        if (pair == address(0) || pair.code.length == 0) revert InvalidPair();
+        address token0 = IAMMPair(pair).token0();
+        address token1 = IAMMPair(pair).token1();
+        if (token0 == USDC && token1 != address(0) && token1 != USDC) {
+            token = token1;
+        } else if (token1 == USDC && token0 != address(0) && token0 != USDC) {
+            token = token0;
+        } else {
+            revert InvalidPair();
+        }
+        if (factory.getPair(token, USDC) != pair) revert InvalidPair();
     }
 }

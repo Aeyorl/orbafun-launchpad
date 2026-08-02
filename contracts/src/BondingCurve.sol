@@ -77,8 +77,22 @@ contract BondingCurve is ReentrancyGuard {
     bool public graduated;
 
     // ─── Events ─────────────────────────────────────────────────────────────
-    event Buy(address indexed buyer, uint256 usdcIn, uint256 tokensOut, uint256 price);
-    event Sell(address indexed seller, uint256 tokensIn, uint256 usdcOut, uint256 price);
+    event BuyV2(
+        address indexed buyer,
+        uint256 usdcIn,
+        uint256 fee,
+        uint256 usdcToCurve,
+        uint256 tokensOut,
+        uint256 price
+    );
+    event SellV2(
+        address indexed seller,
+        uint256 tokensIn,
+        uint256 usdcGross,
+        uint256 fee,
+        uint256 usdcOut,
+        uint256 price
+    );
     event Graduated(address indexed token, address indexed ammPair, uint256 lpUsdc, uint256 lpTokens);
     event CreatorFeesClaimed(address indexed creator, uint256 amount);
     event ProtocolFeesClaimed(address indexed owner, uint256 amount);
@@ -236,6 +250,10 @@ contract BondingCurve is ReentrancyGuard {
             creatorFeesAccrued += (actualFee * CREATOR_FEE_SHARE_BPS) / 10_000;
             protocolFeesAccrued += actualFee - ((actualFee * CREATOR_FEE_SHARE_BPS) / 10_000);
 
+            usdcAmount = usdcNeeded;
+            fee = actualFee;
+            usdcToCurve = usdcToCurveNeeded;
+
             tokensOut = remaining;
             realUsdc += usdcToCurveNeeded;
             tokensSold = SUPPLY_ON_CURVE;
@@ -250,7 +268,7 @@ contract BondingCurve is ReentrancyGuard {
         // Transfer tokens to buyer.
         if (!token.transfer(msg.sender, tokensOut)) revert TransferFailed();
 
-        emit Buy(msg.sender, usdcAmount, tokensOut, price());
+        emit BuyV2(msg.sender, usdcAmount, fee, usdcToCurve, tokensOut, price());
 
         // Check for graduation (after every buy that could push over threshold).
         if (marketCap() >= GRADUATION_MARKET_CAP || tokensSold >= SUPPLY_ON_CURVE) {
@@ -296,7 +314,7 @@ contract BondingCurve is ReentrancyGuard {
         // See DECISION_LOG D5, D20.
         if (!SafeUSDC.transfer(msg.sender, usdcOut)) revert TransferFailed();
 
-        emit Sell(msg.sender, tokenAmount, usdcOut, price());
+        emit SellV2(msg.sender, tokenAmount, usdcGross, fee, usdcOut, price());
     }
 
     // ─── Graduation ─────────────────────────────────────────────────────────

@@ -7,6 +7,9 @@ import { AllExceptionsFilter } from './common/all-exceptions.filter';
 import helmet from 'helmet';
 
 async function bootstrap() {
+  if (process.env.NODE_ENV === 'production' && process.env.AUTH_ALLOW_INSECURE === 'true') {
+    throw new Error('AUTH_ALLOW_INSECURE must be false in production');
+  }
   const app = await NestFactory.create(AppModule);
 
   // Security headers — helmet sets X-Content-Type-Options, X-Frame-Options,

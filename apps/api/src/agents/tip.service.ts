@@ -16,8 +16,6 @@ import { isValidEvmAddress } from '../common/utils';
  *      correct sender to the correct recipient.
  *   4. If verified, the tip is recorded in the agent_tips table with the tx hash.
  *
- * If no tx hash is provided (testnet/dev mode), the tip is recorded without
- * on-chain verification — the amount is tracked as off-chain attribution only.
  */
 @Injectable()
 export class TipService {
@@ -36,7 +34,7 @@ export class TipService {
     agentId: string,
     fromWallet: string,
     amount: bigint,
-    txHash?: string,
+    txHash: string,
     message?: string,
   ) {
     if (!isValidEvmAddress(fromWallet)) {
@@ -45,6 +43,13 @@ export class TipService {
     if (amount <= 0n) {
       throw new BadRequestException('Tip amount must be positive');
     }
+    if (amount > 9_223_372_036_854_775_807n) {
+      throw new BadRequestException('Tip amount is too large');
+    }
+    if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) {
+      throw new BadRequestException('A valid transaction hash is required');
+    }
+    const normalizedTxHash = txHash.toLowerCase();
     if (message && message.length > 280) {
       throw new BadRequestException('Message must be 280 characters or less');
     }
@@ -67,45 +72,40 @@ export class TipService {
       throw new BadRequestException('Cannot tip yourself');
     }
 
-    // If a tx hash is provided, verify the on-chain transfer.
-    let verified = false;
-    if (txHash && this.deployer.isConfigured()) {
-      // Check for replay: reject if this tx_hash was already used for ANY tip.
-      // A single on-chain transfer must not be double-counted as tips to
-      // multiple agents (especially when they share the same recipient wallet).
-      const existing = await this.db.queryOne<{ id: number }>(
-        `SELECT id FROM agent_tips WHERE tx_hash = $1`,
-        [txHash],
-      );
-      if (existing) {
-        throw new ConflictException('This transaction has already been used for a tip');
-      }
-
-      verified = await this.deployer.verifyUsdcTransfer(
-        txHash,
-        fromWallet,
-        recipientWallet,
-        amount,
-      );
-      if (!verified) {
-        throw new BadRequestException(
-          'On-chain transfer verification failed — tx not found, reverted, or amount/recipient mismatch',
-        );
-      }
-      this.logger.log(`Tip tx verified on-chain: ${txHash}`);
+    // A single on-chain transfer must not be double-counted as tips to
+    // multiple agents (especially when they share the same recipient wallet).
+    const existing = await this.db.queryOne<{ id: number }>(
+      `SELECT id FROM agent_tips WHERE tx_hash = $1`,
+      [normalizedTxHash],
+    );
+    if (existing) {
+      throw new ConflictException('This transaction has already been used for a tip');
     }
+
+    const verified = await this.deployer.verifyUsdcTransfer(
+      normalizedTxHash,
+      fromWallet,
+      recipientWallet,
+      amount,
+    );
+    if (!verified) {
+      throw new BadRequestException(
+        'On-chain transfer verification failed — tx not found, reverted, or amount/recipient mismatch',
+      );
+    }
+    this.logger.log(`Tip tx verified on-chain: ${normalizedTxHash}`);
 
     let tip: any;
     try {
       tip = await this.db.queryOne<any>(
-        `INSERT INTO agent_tips (agent_id, from_wallet, amount, tx_hash, message)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, agent_id, from_wallet, amount, tx_hash, message, created_at`,
+        `INSERT INTO agent_tips (agent_id, from_wallet, amount, tx_hash, message, verified)
+         VALUES ($1, $2, $3, $4, $5, true)
+         RETURNING id, agent_id, from_wallet, amount, tx_hash, message, verified, created_at`,
         [
           agent.id,
           fromWallet.toLowerCase(),
           amount.toString(),
-          txHash || null,
+          normalizedTxHash,
           message?.trim() || null,
         ],
       );
@@ -118,8 +118,7 @@ export class TipService {
     }
 
     this.logger.log(
-      `Tip of ${amount} USDC (6-dec) from ${fromWallet} to agent ${agentId}` +
-        (verified ? ' [verified]' : ' [unverified]'),
+      `Verified tip of ${amount} USDC (6-dec) from ${fromWallet} to agent ${agentId}`,
     );
 
     return tip;
@@ -133,7 +132,7 @@ export class TipService {
       `SELECT t.id, t.from_wallet, t.amount, t.tx_hash, t.message, t.created_at
        FROM agent_tips t
        JOIN agents a ON a.id = t.agent_id
-       WHERE a.agent_id = $1
+       WHERE a.agent_id = $1 AND t.verified = true
        ORDER BY t.created_at DESC
        LIMIT $2 OFFSET $3`,
       [agentId, limit, offset],
@@ -144,7 +143,7 @@ export class TipService {
               COALESCE(SUM(amount), 0)::text AS total_amount
        FROM agent_tips t
        JOIN agents a ON a.id = t.agent_id
-       WHERE a.agent_id = $1`,
+       WHERE a.agent_id = $1 AND t.verified = true`,
       [agentId],
     );
 
@@ -161,7 +160,7 @@ export class TipService {
   async getAgentTipTotal(agentDbId: number): Promise<bigint> {
     const result = await this.db.queryOne<{ total: string }>(
       `SELECT COALESCE(SUM(amount), 0)::text AS total
-       FROM agent_tips WHERE agent_id = $1`,
+       FROM agent_tips WHERE agent_id = $1 AND verified = true`,
       [agentDbId],
     );
     return BigInt(result?.total || '0');

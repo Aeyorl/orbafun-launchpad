@@ -15,6 +15,7 @@ contract TokenFactory is Ownable {
     /// @notice Creation fee in USDC (6-dec). [CONFIRM] — doc suggested 5 USDC.
     /// @dev Set to 5 USDC for v1. Adjustable by owner. Charged on createToken().
     uint256 public creationFee = 5 * 10 ** 6;
+    uint256 public constant MAX_CREATION_FEE = 100 * 10 ** 6;
 
     /// @notice Protocol treasury address (receives creation fees + protocol fees).
     address public treasury;
@@ -73,8 +74,12 @@ contract TokenFactory is Ownable {
     error NameTooLong();
     error SymbolTooShort();
     error SymbolTooLong();
+    error InvalidAddress();
+    error FeeTooHigh();
+    error MigratorNotConfigured();
 
     constructor(address treasury_) {
+        if (treasury_ == address(0) || treasury_.code.length == 0) revert InvalidAddress();
         _initializeOwner(msg.sender);
         treasury = treasury_;
     }
@@ -93,6 +98,7 @@ contract TokenFactory is Ownable {
         string calldata description // stored off-chain by indexer, not on-chain (gas)
     ) external returns (address tokenAddress, address curveAddress) {
         if (paused) revert FactoryPaused();
+        if (migrator == address(0)) revert MigratorNotConfigured();
 
         // Validate name and symbol lengths (on-chain enforcement — can't be
         // bypassed by calling the contract directly without the frontend).
@@ -189,12 +195,14 @@ contract TokenFactory is Ownable {
     // ─── Admin ──────────────────────────────────────────────────────────────
     /// @notice Set the creation fee (USDC, 6-dec).
     function setCreationFee(uint256 newFee) external onlyOwner {
+        if (newFee > MAX_CREATION_FEE) revert FeeTooHigh();
         emit CreationFeeUpdated(creationFee, newFee);
         creationFee = newFee;
     }
 
     /// @notice Set the treasury address.
     function setTreasury(address newTreasury) external onlyOwner {
+        if (newTreasury == address(0) || newTreasury.code.length == 0) revert InvalidAddress();
         treasury = newTreasury;
     }
 
@@ -202,6 +210,7 @@ contract TokenFactory is Ownable {
     /// @dev Applied to all new curves created after this call. Existing curves
     ///      need manual setMigrator() calls (or were set at creation).
     function setMigrator(address newMigrator) external onlyOwner {
+        if (newMigrator == address(0) || newMigrator.code.length == 0) revert InvalidAddress();
         migrator = newMigrator;
     }
 

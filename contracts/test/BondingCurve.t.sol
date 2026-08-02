@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, Vm} from "forge-std/Test.sol";
 import {MockUSDC} from "./mocks/MockUSDC.sol";
 import {MemeToken} from "../src/MemeToken.sol";
 import {BondingCurve} from "../src/BondingCurve.sol";
@@ -149,6 +149,50 @@ contract BondingCurveTest is Test {
         assertEq(usdc.balanceOf(buyer1) - buyerUsdcBefore, usdcOut, "seller received USDC");
         // Seller gets back less than they put in (fees + curve slippage).
         assertLt(usdcOut, 100 * 10 ** 6, "seller gets less than input due to fees");
+    }
+
+    /// @notice BuyV2 and SellV2 expose authoritative gross, fee, net, and output values.
+    function test_AccountingEventsAreExplicit() public {
+        launchToken();
+
+        vm.recordLogs();
+        uint256 tokensOut = buy(buyer1, 100 * 10 ** 6);
+        Vm.Log[] memory buyLogs = vm.getRecordedLogs();
+        bytes32 buyTopic = keccak256("BuyV2(address,uint256,uint256,uint256,uint256,uint256)");
+        bool foundBuy;
+        for (uint256 i = 0; i < buyLogs.length; i++) {
+            if (buyLogs[i].emitter == curve && buyLogs[i].topics[0] == buyTopic) {
+                (uint256 gross, uint256 fee, uint256 net, uint256 emittedTokens,) =
+                    abi.decode(buyLogs[i].data, (uint256, uint256, uint256, uint256, uint256));
+                assertEq(gross, 100 * 10 ** 6, "buy gross");
+                assertEq(fee, 1 * 10 ** 6, "buy fee");
+                assertEq(net, 99 * 10 ** 6, "buy curve amount");
+                assertEq(emittedTokens, tokensOut, "buy token output");
+                foundBuy = true;
+            }
+        }
+        assertTrue(foundBuy, "BuyV2 event missing");
+
+        vm.startPrank(buyer1);
+        tokenContract.approve(curve, tokensOut);
+        vm.recordLogs();
+        uint256 usdcOut = curveContract.sell(tokensOut, 0);
+        Vm.Log[] memory sellLogs = vm.getRecordedLogs();
+        vm.stopPrank();
+
+        bytes32 sellTopic = keccak256("SellV2(address,uint256,uint256,uint256,uint256,uint256)");
+        bool foundSell;
+        for (uint256 i = 0; i < sellLogs.length; i++) {
+            if (sellLogs[i].emitter == curve && sellLogs[i].topics[0] == sellTopic) {
+                (uint256 emittedTokens, uint256 gross, uint256 fee, uint256 net,) =
+                    abi.decode(sellLogs[i].data, (uint256, uint256, uint256, uint256, uint256));
+                assertEq(emittedTokens, tokensOut, "sell token input");
+                assertEq(gross - fee, net, "sell gross less fee");
+                assertEq(net, usdcOut, "sell net output");
+                foundSell = true;
+            }
+        }
+        assertTrue(foundSell, "SellV2 event missing");
     }
 
     /// @notice Test: slippage protection — buy reverts if minTokensOut not met.
@@ -305,6 +349,15 @@ contract BondingCurveTest is Test {
     function test_FullLifecycle() public {
         launchToken();
 
+        // Unrelated balances already held by the migrator must never be swept
+        // into this token's AMM liquidity.
+        uint256 donatedUsdc = 7 * 10 ** 6;
+        uint256 donatedTokens = 1 * 10 ** 18;
+        usdc.transfer(address(migrator), donatedUsdc);
+        buy(buyer1, 10 * 10 ** 6);
+        vm.prank(buyer1);
+        tokenContract.transfer(address(migrator), donatedTokens);
+
         // Buy from many wallets (max-wallet limits each to 4% = 40M tokens).
         // $100 USDC per wallet is always under max-wallet at any price point:
         //   - At $4K mcap: $100 buys ~25M tokens (< 40M limit ✓)
@@ -326,6 +379,9 @@ contract BondingCurveTest is Test {
 
         // Trigger graduation via migrator.
         migrator.checkAndMigrate(token);
+
+        assertEq(usdc.balanceOf(address(migrator)), donatedUsdc, "donated USDC preserved");
+        assertEq(tokenContract.balanceOf(address(migrator)), donatedTokens, "donated tokens preserved");
 
         // Verify graduated.
         assertTrue(curveContract.graduated(), "curve graduated");
@@ -362,6 +418,30 @@ contract BondingCurveTest is Test {
 
         // Creation fee = 5 USDC.
         assertEq(treasuryAfter - treasuryBefore, 5 * 10 ** 6, "creation fee to treasury");
+    }
+
+    function test_FactoryRequiresContractTreasury() public {
+        vm.expectRevert(TokenFactory.InvalidAddress.selector);
+        new TokenFactory(address(0));
+        vm.expectRevert(TokenFactory.InvalidAddress.selector);
+        new TokenFactory(address(0x1234));
+    }
+
+    function test_FactoryRequiresMigratorBeforeLaunch() public {
+        TokenFactory unconfigured = new TokenFactory(address(treasury));
+        vm.prank(creator);
+        vm.expectRevert(TokenFactory.MigratorNotConfigured.selector);
+        unconfigured.createToken("Test", "TST", "ipfs://img", "desc");
+    }
+
+    function test_FactoryRejectsInvalidAdminConfiguration() public {
+        vm.expectRevert(TokenFactory.InvalidAddress.selector);
+        factory.setTreasury(address(0));
+        vm.expectRevert(TokenFactory.InvalidAddress.selector);
+        factory.setMigrator(address(0x1234));
+        uint256 excessiveFee = factory.MAX_CREATION_FEE() + 1;
+        vm.expectRevert(TokenFactory.FeeTooHigh.selector);
+        factory.setCreationFee(excessiveFee);
     }
 
     /// @notice Test: factory pause prevents new launches.

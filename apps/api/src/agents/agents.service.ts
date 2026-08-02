@@ -29,6 +29,7 @@ const CREATION_FEE_USDC = 5_000_000n; // 5 USDC (6-dec)
 const MAX_NAME_LENGTH = 50;
 const MAX_SYMBOL_LENGTH = 10;
 const MAX_DESCRIPTION_LENGTH = 280;
+const AGENT_GAS_RESERVE_USDC = 10_000n;
 
 export interface AgentRegistration {
   agentId: string;
@@ -163,9 +164,6 @@ export class AgentsService {
       throw new BadRequestException(`Description must be ${MAX_DESCRIPTION_LENGTH} characters or less`);
     }
 
-    // Check spending limits.
-    await this.checkSpendingLimits(agent);
-
     // Check deployer wallet is configured.
     if (!this.deployer.isConfigured()) {
       throw new ForbiddenException('Agent launches disabled — deployer wallet not configured');
@@ -191,6 +189,12 @@ export class AgentsService {
       this.logger.warn(`Deployer balance check failed: ${(err as Error).message}`);
     }
 
+    const reservationId = await this.reserveSpending(
+      agent.id,
+      'launch',
+      CREATION_FEE_USDC,
+    );
+
     // Submit the on-chain transaction.
     const image = input.image || '';
     const description = input.description || '';
@@ -203,7 +207,11 @@ export class AgentsService {
 
     // Record the launch in the database.
     const gasPaid18dec = result.gasUsed; // 18-dec native USDC (approximate — gas price * gas used)
-    const launchRow = await this.db.queryOne(
+    const client = await this.db.connect();
+    let launchRow: { id: number } | undefined;
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query(
       `INSERT INTO agent_launches (
          agent_id, token_address, curve_address, tx_hash,
          name, symbol, image, description,
@@ -223,7 +231,16 @@ export class AgentsService {
         result.creationFee.toString(),
         gasPaid18dec.toString(),
       ],
-    );
+      );
+      launchRow = inserted.rows[0];
+      await this.confirmReservation(client, reservationId, result.txHash);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
 
     this.logger.log(
       `Agent ${agent.agentId} launched token ${result.tokenAddress} (launch id: ${launchRow?.id})`,
@@ -341,7 +358,7 @@ export class AgentsService {
        ) tr ON tr.agent_id = a.id
        LEFT JOIN (
          SELECT agent_id, SUM(amount) AS total_tips
-         FROM agent_tips GROUP BY agent_id
+         FROM agent_tips WHERE verified = true GROUP BY agent_id
        ) tip ON tip.agent_id = a.id
        WHERE a.active = true
        ORDER BY ${orderBy}
@@ -631,9 +648,6 @@ export class AgentsService {
       throw new BadRequestException('USDC amount must be positive');
     }
 
-    // Check spending limits (buys count as spending).
-    await this.checkSpendingLimits(agent, usdcAmount);
-
     if (!this.deployer.isConfigured()) {
       throw new ForbiddenException('Agent trades disabled — deployer wallet not configured');
     }
@@ -661,6 +675,8 @@ export class AgentsService {
       throw new NotFoundException('Token or bonding curve not found');
     }
 
+    const reservationId = await this.reserveSpending(agent.id, 'buy', usdcAmount);
+
     // Execute the buy on-chain.
     const result = await this.deployer.buyTokens(
       token.curve_address,
@@ -669,7 +685,10 @@ export class AgentsService {
     );
 
     // Record the trade.
-    await this.db.query(
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
       `INSERT INTO agent_trades (
          agent_id, token_address, curve_address, tx_hash,
          type, usdc_amount, token_amount, gas_paid, status
@@ -684,7 +703,15 @@ export class AgentsService {
         result.tokenAmount.toString(),
         result.gasUsed.toString(),
       ],
-    );
+      );
+      await this.confirmReservation(client, reservationId, result.txHash);
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
 
     this.logger.log(
       `Agent ${agent.agentId} bought ${result.tokenAmount} tokens for ${result.usdcAmount} USDC on ${tokenAddress}`,
@@ -811,10 +838,13 @@ export class AgentsService {
    * @param agent Agent info with limits
    * @param additionalUsdc USDC that will be spent in the upcoming operation
    */
-  private async checkSpendingLimits(
-    agent: { id: number; dailyLimit: bigint; monthlyLimit: bigint },
-    additionalUsdc?: bigint,
-  ): Promise<void> {
+  private async reserveSpending(
+    agentId: number,
+    operation: 'launch' | 'buy',
+    principalUsdc: bigint,
+  ): Promise<string> {
+    const reservationId = randomUUID();
+    const reservedAmount = principalUsdc + AGENT_GAS_RESERVE_USDC;
     // Use a transaction with SELECT FOR UPDATE on the agent row to prevent
     // concurrent requests from racing past the limit check. The row lock is
     // held until the caller commits (or rolls back) the outer transaction.
@@ -832,6 +862,16 @@ export class AgentsService {
       // would simply fail at the on-chain step if the deployer runs out of USDC.
       await client.query('BEGIN');
 
+      const agentResult = await client.query(
+        `SELECT daily_limit, monthly_limit, active
+         FROM agents WHERE id = $1 FOR UPDATE`,
+        [agentId],
+      );
+      const lockedAgent = agentResult.rows[0];
+      if (!lockedAgent || !lockedAgent.active) {
+        throw new ForbiddenException('Agent is inactive or no longer exists');
+      }
+
       // Sum launch spending + buy trade spending for the period.
       // gas_paid is 18-dec native USDC; divide by 1e12 to convert to 6-dec for summation.
       const todaySpend = await client.query(
@@ -841,8 +881,11 @@ export class AgentsService {
            + COALESCE((SELECT SUM(usdc_amount + gas_paid / 1000000000000) FROM agent_trades
             WHERE agent_id = $1 AND status = 'confirmed' AND type = 'buy'
               AND created_at >= NOW() - INTERVAL '24 hours'), 0)
+           + COALESCE((SELECT SUM(amount) FROM agent_spend_reservations
+            WHERE agent_id = $1 AND status = 'pending'
+              AND created_at >= NOW() - INTERVAL '24 hours'), 0)
          )::text AS total`,
-        [agent.id],
+        [agentId],
       );
 
       const monthSpend = await client.query(
@@ -852,27 +895,38 @@ export class AgentsService {
            + COALESCE((SELECT SUM(usdc_amount + gas_paid / 1000000000000) FROM agent_trades
             WHERE agent_id = $1 AND status = 'confirmed' AND type = 'buy'
               AND created_at >= NOW() - INTERVAL '30 days'), 0)
+           + COALESCE((SELECT SUM(amount) FROM agent_spend_reservations
+            WHERE agent_id = $1 AND status = 'pending'
+              AND created_at >= NOW() - INTERVAL '30 days'), 0)
          )::text AS total`,
-        [agent.id],
+        [agentId],
       );
-
-      await client.query('COMMIT');
 
       const todayTotal = BigInt(todaySpend.rows[0]?.total || '0');
       const monthTotal = BigInt(monthSpend.rows[0]?.total || '0');
-      const extra = additionalUsdc || CREATION_FEE_USDC + 10_000n;
+      const dailyLimit = BigInt(lockedAgent.daily_limit);
+      const monthlyLimit = BigInt(lockedAgent.monthly_limit);
 
-      if (todayTotal + extra > agent.dailyLimit) {
+      if (todayTotal + reservedAmount > dailyLimit) {
         throw new ForbiddenException(
-          `Daily spending limit exceeded (used: ${todayTotal} / limit: ${agent.dailyLimit} micro-USDC)`,
+          `Daily spending limit exceeded (used: ${todayTotal} / limit: ${dailyLimit} micro-USDC)`,
         );
       }
 
-      if (monthTotal + extra > agent.monthlyLimit) {
+      if (monthTotal + reservedAmount > monthlyLimit) {
         throw new ForbiddenException(
-          `Monthly spending limit exceeded (used: ${monthTotal} / limit: ${agent.monthlyLimit} micro-USDC)`,
+          `Monthly spending limit exceeded (used: ${monthTotal} / limit: ${monthlyLimit} micro-USDC)`,
         );
       }
+
+      await client.query(
+        `INSERT INTO agent_spend_reservations
+           (reservation_id, agent_id, operation, amount)
+         VALUES ($1, $2, $3, $4)`,
+        [reservationId, agentId, operation, reservedAmount.toString()],
+      );
+      await client.query('COMMIT');
+      return reservationId;
     } catch (err) {
       try { await client.query('ROLLBACK'); } catch {}
       throw err;
@@ -887,6 +941,22 @@ export class AgentsService {
    * List agents deployed by a given owner wallet (self-serve deploy attribution).
    * Includes executor_enabled + last activity timestamp.
    */
+  private async confirmReservation(
+    client: { query: (text: string, params?: any[]) => Promise<any> },
+    reservationId: string,
+    txHash: string,
+  ): Promise<void> {
+    const result = await client.query(
+      `UPDATE agent_spend_reservations
+       SET status = 'confirmed', tx_hash = $2, resolved_at = NOW()
+       WHERE reservation_id = $1 AND status = 'pending'`,
+      [reservationId, txHash],
+    );
+    if (result.rowCount !== 1) {
+      throw new Error(`Spending reservation ${reservationId} is not pending`);
+    }
+  }
+
   async listAgentsByOwner(ownerWallet: string, limit: number, offset: number) {
     const w = ownerWallet.toLowerCase();
     const agents = await this.db.queryRows(

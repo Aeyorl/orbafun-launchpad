@@ -406,7 +406,7 @@ export class AgentsController {
    */
   @Post('templates/:id/deploy-self')
   @Throttle({ default: { ttl: 60_000, limit: 3 } })
-  @UseGuards(AuthGuard)
+  @UseGuards(AdminGuard)
   async deployFromTemplateSelf(
     @Param('id') id: string,
     @Body() body: { name?: string; description?: string },
@@ -516,6 +516,9 @@ export class AgentsController {
     const wallet = req.wallet!;
     if (!body.amount) {
       throw new BadRequestException('amount is required (6-dec micro-USDC)');
+    }
+    if (!body.txHash) {
+      throw new BadRequestException('txHash is required');
     }
     let amount: bigint;
     try {

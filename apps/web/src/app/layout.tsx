@@ -6,6 +6,7 @@ import { LiveTicker } from '@/components/LiveTicker';
 import { Footer } from '@/components/Footer';
 import { Toaster } from 'react-hot-toast';
 import { PreLaunchWall } from '@/components/PreLaunchWall';
+import { headers } from 'next/headers';
 
 // ─── Pre-launch / mainnet gate ─────────────────────────────
 // Set NEXT_PUBLIC_MAINNET_LAUNCHED=true to disable the
@@ -51,11 +52,12 @@ export const metadata: Metadata = MAINNET_LAUNCHED
       },
     };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const nonce = (await headers()).get('x-nonce') || undefined;
   // ── Pre-launch gate ──────────────────────────────────────
   // When MAINNET_LAUNCHED is false, render ONLY the
   // PreLaunchWall — no app shell, no providers, no navbar,
@@ -95,6 +97,7 @@ export default function RootLayout({
             theme class on <html> from localStorage (or default to dark).
             Must be inline + in <head> so it executes before the body renders. */}
         <script
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var t=localStorage.getItem('orba-theme');if(t==='light'){document.documentElement.classList.remove('dark');}else{document.documentElement.classList.add('dark');}}catch(e){document.documentElement.classList.add('dark');}})();`,
           }}
