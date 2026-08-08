@@ -1,6 +1,7 @@
 'use client';
 
 import { createConfig, http, fallback } from 'wagmi';
+import { defineChain } from 'viem';
 import { arc, arcTestnet } from 'viem/chains';
 import { injected } from '@wagmi/connectors/injected';
 
@@ -11,9 +12,6 @@ if (requestedNetwork !== 'testnet' && requestedNetwork !== 'mainnet') {
 }
 
 export const IS_ARC_MAINNET = requestedNetwork === 'mainnet';
-export const ARC_CHAIN = IS_ARC_MAINNET ? arc : arcTestnet;
-export const ARC_CHAIN_ID = ARC_CHAIN.id;
-export const ARC_NETWORK_NAME = ARC_CHAIN.name;
 
 // Wagmi config for Arc testnet.
 // arcTestnet is built into viem — no custom chain definition needed.
@@ -49,6 +47,27 @@ export const ARC_RPC_URLS = (
 if (ARC_RPC_URLS.length === 0) {
   throw new Error('Arc mainnet requires NEXT_PUBLIC_ARC_RPC_URLS');
 }
+
+export const ARC_EXPLORER_URL = process.env.NEXT_PUBLIC_ARC_EXPLORER_URL ||
+  (IS_ARC_MAINNET ? '' : 'https://testnet.arcscan.app');
+
+if (!ARC_EXPLORER_URL) {
+  throw new Error('Arc mainnet requires NEXT_PUBLIC_ARC_EXPLORER_URL');
+}
+
+// Viem intentionally ships Arc mainnet without public endpoints. Build the
+// wallet-visible chain from operator-supplied values once they are published.
+export const ARC_CHAIN = IS_ARC_MAINNET
+  ? defineChain({
+      ...arc,
+      rpcUrls: { default: { http: ARC_RPC_URLS } },
+      blockExplorers: {
+        default: { name: 'ArcScan', url: ARC_EXPLORER_URL },
+      },
+    })
+  : arcTestnet;
+export const ARC_CHAIN_ID = ARC_CHAIN.id;
+export const ARC_NETWORK_NAME = ARC_CHAIN.name;
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const activeTransport = fallback(
@@ -87,13 +106,6 @@ export const CONTRACTS = {
   MIGRATOR: requiredMainnetAddress(process.env.NEXT_PUBLIC_MIGRATOR_ADDRESS, '0x34d4eC02a916164F178885B7ed05127D40847212', 'NEXT_PUBLIC_MIGRATOR_ADDRESS'),
   AMM_FACTORY: requiredMainnetAddress(process.env.NEXT_PUBLIC_AMM_FACTORY_ADDRESS, '0x4058646F179a4f5dF430E8e125b8F30fF3489BF9', 'NEXT_PUBLIC_AMM_FACTORY_ADDRESS'),
 } as const;
-
-export const ARC_EXPLORER_URL = process.env.NEXT_PUBLIC_ARC_EXPLORER_URL ||
-  (IS_ARC_MAINNET ? '' : 'https://testnet.arcscan.app');
-
-if (!ARC_EXPLORER_URL) {
-  throw new Error('Arc mainnet requires NEXT_PUBLIC_ARC_EXPLORER_URL');
-}
 
 // API URLs
 export const API_URL =
