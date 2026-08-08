@@ -1,5 +1,19 @@
 /** @type {import('next').NextConfig} */
 
+const requiredProductionEnv = [
+  'NEXT_PUBLIC_API_URL',
+  'NEXT_PUBLIC_WS_URL',
+];
+
+if (process.env.NODE_ENV === 'production') {
+  const missing = requiredProductionEnv.filter((name) => !process.env[name]?.trim());
+  if (missing.length > 0) {
+    throw new Error(
+      `Production build requires environment variables: ${missing.join(', ')}`,
+    );
+  }
+}
+
 const nextConfig = {
   transpilePackages: ['@orbafun/shared'],
   // Security headers — applied to all routes.
