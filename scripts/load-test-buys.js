@@ -57,7 +57,8 @@ const RPC_URLS = (
   .filter(Boolean);
 
 const USDC = '0x3600000000000000000000000000000000000000';
-const API = 'http://localhost:4000';
+const API = process.env.API_URL || 'http://localhost:4000';
+const SKIP_INDEXER_CHECK = process.env.SKIP_INDEXER_CHECK === 'true';
 
 const BONDING_CURVE_ABI = [
   {
@@ -335,7 +336,7 @@ async function main() {
 
   // Each buyer needs: usdcPerBuy (for the buy) + gas money (native USDC, 18-dec).
   // We fund each buyer with usdcPerBuy (ERC-20) + a small native USDC amount for gas.
-  const GAS_PER_BUYER = parseUnits('0.5', 18); // 0.5 native USDC for gas (generous)
+  const GAS_PER_BUYER = parseUnits(process.env.GAS_PER_BUYER || '0.5', 18);
   const totalUsdcNeeded = usdcPerBuy * BigInt(concurrency);
   const totalNativeNeeded = GAS_PER_BUYER * BigInt(concurrency);
 
@@ -379,7 +380,7 @@ async function main() {
 
   // ─── Step 2: Fund each buyer (USDC + native for gas) ───────────────────
   console.log('--- Step 2: Funding buyer wallets ---');
-  console.log(`  Sending ${usdcPerBuyStr} USDC + 0.5 native USDC to each buyer...`);
+  console.log(`  Sending ${usdcPerBuyStr} USDC + ${formatUnits(GAS_PER_BUYER, 18)} native USDC to each buyer...`);
 
   // Approve USDC for the total amount (one approve, then transfer to each)
   // Actually, we use transfer (not transferFrom), so no approve needed.
@@ -387,6 +388,10 @@ async function main() {
   const fundingStart = Date.now();
   let funded = 0;
   let fundingErrors = 0;
+  let fundingNonce = await publicClient.getTransactionCount({
+    address: deployerAccount.address,
+    blockTag: 'pending',
+  });
 
   // Fund buyers SEQUENTIALLY — they all use the deployer wallet's nonce,
   // so parallel sends cause nonce conflicts. Funding is not the load test.
@@ -397,17 +402,26 @@ async function main() {
       // ERC-20 USDC transfer
       const usdcHash = await writeRetry(
         deployerWallet,
-        { address: USDC, abi: erc20Abi, functionName: 'transfer', args: [buyer.account.address, usdcPerBuy] },
+        {
+          address: USDC,
+          abi: erc20Abi,
+          functionName: 'transfer',
+          args: [buyer.account.address, usdcPerBuy],
+          nonce: fundingNonce,
+        },
         `fund-usdc-${buyer.index}`,
       );
       await waitForReceipt(publicClient, usdcHash, `fund-usdc-${buyer.index}`);
+      fundingNonce++;
 
       // Native USDC transfer (for gas)
       const nativeHash = await deployerWallet.sendTransaction({
         to: buyer.account.address,
         value: GAS_PER_BUYER,
+        nonce: fundingNonce,
       });
       await waitForReceipt(publicClient, nativeHash, `fund-native-${buyer.index}`);
+      fundingNonce++;
 
       funded++;
       fundedBuyers.push(buyer);
@@ -521,7 +535,9 @@ async function main() {
 
   // ─── Step 6: Measure indexer lag ───────────────────────────────────────
   console.log('--- Step 6: Measuring indexer lag ---');
-  if (successes.length === 0) {
+  if (SKIP_INDEXER_CHECK) {
+    console.log('  Skipped by SKIP_INDEXER_CHECK=true (parallel stack is not connected to the live indexer)');
+  } else if (successes.length === 0) {
     console.log('  Skipped (no successful buys to index)');
   } else {
     console.log(`  Polling API until ${successes.length} new trades appear...`);

@@ -34,10 +34,14 @@ mainnet approval. Arc mainnet deployment remains blocked.
 ## Open blockers
 
 1. External contract audit, remediation review and deployment verification.
-2. Fresh parallel Arc testnet broadcast and E2E validation. The deployment EOA
-   had about 0.0162 USDC; fund at least 0.60 USDC before broadcast.
-3. Circle's final authoritative Arc mainnet RPC/explorer/USDC parameters.
+2. Circle's final authoritative Arc mainnet RPC/explorer/USDC parameters.
+3. Live Arc testnet graduation on the hardened parallel stack; the budget test
+   requires roughly 120 testnet USDC. Launch/buy/sell and 9-wallet concurrent
+   buys passed; see `TESTNET_DEPLOYMENT_2026-08-08.md`.
 4. Production Supabase backup/restore drill and PostgreSQL-version evidence.
-5. Production Upstash capacity/alert evidence and multi-provider RPC contracts.
+   PostgreSQL 17 client tools are installed, but the project CA must be obtained
+   from the authenticated dashboard before strict `verify-full` validation.
+5. Production Upstash alert configuration evidence. TLS ping and a temporary
+   write/read/TTL/delete drill pass; all configured Arc RPC providers pass.
 6. Reviewed managed signer integration before platform-funded agents can ever
    be enabled on mainnet.
