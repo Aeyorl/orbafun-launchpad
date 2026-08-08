@@ -158,11 +158,7 @@ export function TradePanel({ token }: { token: Token }) {
       setTxAction(null);
       setIsAdvancingToTrade(true);
       reset();
-
-      const timer = setTimeout(() => {
-        executeTrade(pendingTrade);
-      }, 500);
-      return () => clearTimeout(timer);
+      return;
     } else if (txAction === 'trade') {
       const completedTrade = pendingTradeRef.current;
       const completedMode = completedTrade?.mode ?? mode;
@@ -303,6 +299,24 @@ export function TradePanel({ token }: { token: Token }) {
       });
     }
   };
+
+  // Open the trade request only after the approval state has been cleared.
+  // Keeping this timer in its own effect prevents the approval effect cleanup
+  // from cancelling the second wallet prompt during the state transition.
+  useEffect(() => {
+    if (!isAdvancingToTrade) return;
+
+    const timer = setTimeout(() => {
+      const pendingTrade = pendingTradeRef.current;
+      if (pendingTrade) {
+        executeTrade(pendingTrade);
+      } else {
+        setIsAdvancingToTrade(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [isAdvancingToTrade]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Execute trade
   const handleTrade = async () => {

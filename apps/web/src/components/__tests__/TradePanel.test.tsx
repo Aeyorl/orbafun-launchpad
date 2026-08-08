@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TradePanel } from '../TradePanel';
 import { createMockWagmi as _createMock } from './mocks/wagmi';
@@ -298,6 +298,53 @@ describe('TradePanel', () => {
       ).toBeInTheDocument();
       expect(screen.getByPlaceholderText('0.00')).toBeDisabled();
       expect(screen.getByRole('tab', { name: /SELL/i })).toBeDisabled();
+    });
+
+    it('opens the buy confirmation after the approval receipt succeeds', async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: 0 } },
+      });
+      updateWagmiMock({
+        isConnected: true,
+        shouldConfirm: false,
+        usdcAllowance: 0n,
+        isSuccess: false,
+      });
+      const { rerender } = render(
+        <QueryClientProvider client={queryClient}>
+          <TradePanel token={createMockToken()} />
+        </QueryClientProvider>,
+      );
+      fireEvent.change(screen.getByPlaceholderText('0.00'), {
+        target: { value: '10' },
+      });
+      fireEvent.click(screen.getByText('Approve 10 USDC (1 of 2)'));
+
+      updateWagmiMock({
+        isConnected: true,
+        shouldConfirm: true,
+        usdcAllowance: 0n,
+        isSuccess: true,
+      });
+      const tradeWrite = mockWagmiRef.current.useWriteContract().writeContract;
+      rerender(
+        <QueryClientProvider client={queryClient}>
+          <TradePanel token={createMockToken()} />
+        </QueryClientProvider>,
+      );
+
+      expect(
+        await screen.findByText('Step 2/2: Opening trade confirmation…'),
+      ).toBeInTheDocument();
+      await waitFor(() => {
+        expect(tradeWrite).toHaveBeenCalledWith(
+          expect.objectContaining({
+            functionName: 'buy',
+            args: [10_000_000n, 495_000_000_000_000_000_000n],
+            chainId: 5042002,
+          }),
+        );
+      });
     });
   });
 
