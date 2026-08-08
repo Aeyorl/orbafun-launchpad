@@ -17,8 +17,8 @@
 | Sell | PASS | Tx `0xacb58b1c552810330cb7c929f61976b9608c62599f1cb94d9bca0652ae7910ac`, indexed in 6.6 seconds |
 | Image upload | PASS | Pinata URI `ipfs://QmfZnKiwY1ZUvE2doJjkxXLQtCLdQi1EPtFy4e5xUMDCmV`, gateway retrieval successful |
 | Links and description | PASS | Website, Twitter handle, Telegram, Discord, description, and banner survived authenticated creator-only write/read |
-| PostgreSQL through API | PASS | Launch, 74 trades, and metadata persisted and read back from the live API |
-| Redis | PASS | PING plus namespaced TTL write/read/delete round trip |
+| PostgreSQL through API | PASS | Launch, 74 trades, and metadata persisted and read back; deployed `/health/ready` reports PostgreSQL ready |
+| Redis | PASS | PING plus namespaced TTL write/read/delete round trip; deployed `/health/ready` reports Redis ready |
 | WebSocket transport | PASS | Live Socket.IO WebSocket connection and token room join succeeded |
 | Frontend tests | PASS | 110/110, including TradingView cold-history fallback and buy approval/receipt flow |
 | API tests | PASS | 28/28, including liveness/readiness behavior |
@@ -32,8 +32,8 @@
 - 100 concurrent virtual users
 - 300 mixed requests across home, explore, trade page, token, trades, candles, and metadata
 - 300/300 HTTP 200; 100% success
-- 70.02 requests/second
-- latency: p50 728.4 ms, p95 2543.6 ms, p99 2843.2 ms
+- 75.82 requests/second after deployment
+- latency: p50 589.0 ms, p95 2555.2 ms, p99 2632.0 ms
 
 **Result: PASS for 100 concurrent browsing/API users, with p95 latency worth improving.**
 
@@ -59,7 +59,7 @@
 
 1. Set `POSTGRES_SSL_CA_BASE64` from the Supabase Database Settings CA and rerun `node scripts/check-infrastructure-readiness.js`. Strict local verification currently fails closed; Redis independently passes PING and TTL write/read/delete.
 2. Fund enough Arc testnet USDC for all 100 wallets and rerun the hardened load test. Capacity is proven at 62 simultaneous traders, not yet 100 distinct funded wallets.
-3. Deploy this source revision and verify the TradingView bars, `/health`, `/health/ready`, launch, buy, and sell on the deployed hosts.
+3. Visually verify TradingView bars after Vercel serves revision `d662e5f`; Render is already serving that revision and both deployed health routes pass.
 4. Complete an independent credentialed smart-contract/security audit before meaningful mainnet funds.
 
 ## Test harness changes
