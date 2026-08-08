@@ -29,6 +29,7 @@ const BPS_DENOMINATOR = 10_000n;
 @Injectable()
 export class IndexerService {
   private readonly logger = new Logger(IndexerService.name);
+  private readonly cacheInvalidationTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   constructor(
     private db: DatabaseService,
@@ -149,6 +150,7 @@ export class IndexerService {
   private async handleBuy(event: BuyEvent): Promise<void> {
     const client = await this.db.connect();
     let tokenContractAddress: string | null = null;
+    let indexedTrade: Record<string, unknown> | null = null;
     try {
       await client.query('BEGIN');
 
@@ -210,7 +212,7 @@ export class IndexerService {
            $9, $10, $11, NOW()
          )
          ON CONFLICT (tx_hash, log_index) DO NOTHING
-         RETURNING id`,
+         RETURNING *`,
         [
           tokenId,
           event.buyer.toLowerCase(),
@@ -229,6 +231,7 @@ export class IndexerService {
         await client.query('ROLLBACK');
         return;
       }
+      indexedTrade = tradeInsert.rows[0];
 
       // 2. Update token state (price, market cap, real usdc, tokens sold, fees, volume_24h in dollars)
       await client.query(
@@ -307,26 +310,21 @@ export class IndexerService {
     }
 
     // Publish WebSocket event
-    const trade = await this.db.queryOne(
-      `SELECT * FROM trades WHERE tx_hash = $1 AND log_index = $2`,
-      [event.txHash, event.logIndex],
-    );
-    if (trade && tokenContractAddress) {
+    if (indexedTrade && tokenContractAddress) {
       await this.redis.publishTokenEvent(
         tokenContractAddress.toLowerCase(),
         'NEW_BUY',
-        trade,
+        indexedTrade,
       );
+      this.scheduleTokenCacheInvalidation(tokenContractAddress);
     }
-
-    // Invalidate caches so updated volume/price propagates immediately
-    await this.invalidateTokenCaches(event.curveAddress.toLowerCase());
   }
 
   // ─── Sell ────────────────────────────────────────────────────────────────
   private async handleSell(event: SellEvent): Promise<void> {
     const client = await this.db.connect();
     let tokenContractAddress: string | null = null;
+    let indexedTrade: Record<string, unknown> | null = null;
     try {
       await client.query('BEGIN');
 
@@ -373,7 +371,7 @@ export class IndexerService {
            $9, $10, $11, NOW()
          )
          ON CONFLICT (tx_hash, log_index) DO NOTHING
-         RETURNING id`,
+         RETURNING *`,
         [
           tokenId,
           event.seller.toLowerCase(),
@@ -392,6 +390,7 @@ export class IndexerService {
         await client.query('ROLLBACK');
         return;
       }
+      indexedTrade = tradeInsert.rows[0];
 
       // 2. Update token state (price, market cap, real usdc, tokens sold, fees, volume_24h in dollars)
       await client.query(
@@ -465,20 +464,14 @@ export class IndexerService {
       client.release();
     }
 
-    const trade = await this.db.queryOne(
-      `SELECT * FROM trades WHERE tx_hash = $1 AND log_index = $2`,
-      [event.txHash, event.logIndex],
-    );
-    if (trade && tokenContractAddress) {
+    if (indexedTrade && tokenContractAddress) {
       await this.redis.publishTokenEvent(
         tokenContractAddress.toLowerCase(),
         'NEW_SELL',
-        trade,
+        indexedTrade,
       );
+      this.scheduleTokenCacheInvalidation(tokenContractAddress);
     }
-
-    // Invalidate caches so updated volume/price propagates immediately
-    await this.invalidateTokenCaches(event.curveAddress.toLowerCase());
   }
 
   // ─── Graduated ───────────────────────────────────────────────────────────
@@ -788,17 +781,21 @@ export class IndexerService {
    * individual token detail). Called after every buy/sell so updated volume,
    * price, and market cap propagate immediately to the frontend.
    */
-  private async invalidateTokenCaches(curveAddress: string): Promise<void> {
+  private scheduleTokenCacheInvalidation(tokenContractAddress: string): void {
+    const address = tokenContractAddress.toLowerCase();
+    const existing = this.cacheInvalidationTimers.get(address);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      this.cacheInvalidationTimers.delete(address);
+      void this.invalidateTokenCaches(address);
+    }, 1_000);
+    timer.unref?.();
+    this.cacheInvalidationTimers.set(address, timer);
+  }
+
+  private async invalidateTokenCaches(tokenContractAddress: string): Promise<void> {
     try {
-      // Find the token's contract_address from its curve_address
-      const token = await this.db.queryOne<{ contract_address: string }>(
-        `SELECT contract_address FROM tokens WHERE curve_address = $1`,
-        [curveAddress],
-      );
-      if (token) {
-        // Invalidate individual token cache
-        await this.redis.del(`token:${token.contract_address}`);
-      }
+      await this.redis.del(`token:${tokenContractAddress}`);
       // Invalidate token list caches (explore page, all sort/filter combos)
       await this.redis.delPattern('tokens:list:*');
       // Invalidate leaderboard caches

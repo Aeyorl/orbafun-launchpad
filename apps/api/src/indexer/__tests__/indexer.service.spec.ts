@@ -9,7 +9,7 @@ describe('IndexerService idempotency and accounting', () => {
   };
 
   function harness() {
-    let tradeInserted = false;
+    const insertedTrades = new Set<string>();
     const clientQueries: Array<{ text: string; params?: any[] }> = [];
     const client = {
       query: jest.fn(async (text: string, params?: any[]) => {
@@ -18,9 +18,10 @@ describe('IndexerService idempotency and accounting', () => {
           return { rows: [tokenRow], rowCount: 1 };
         }
         if (text.includes('INSERT INTO trades')) {
-          if (tradeInserted) return { rows: [], rowCount: 0 };
-          tradeInserted = true;
-          return { rows: [{ id: 7 }], rowCount: 1 };
+          const key = `${params?.[8]}:${params?.[10]}`;
+          if (insertedTrades.has(key)) return { rows: [], rowCount: 0 };
+          insertedTrades.add(key);
+          return { rows: [{ id: insertedTrades.size, tx_hash: params?.[8], log_index: params?.[10] }], rowCount: 1 };
         }
         return { rows: [], rowCount: 1 };
       }),
@@ -42,6 +43,7 @@ describe('IndexerService idempotency and accounting', () => {
     return {
       service: new IndexerService(db as any, redis as any),
       clientQueries,
+      db,
       redis,
     };
   }
@@ -71,6 +73,34 @@ describe('IndexerService idempotency and accounting', () => {
     expect(clientQueries.filter(({ text }) => text.includes('UPDATE referrals'))).toHaveLength(1);
     expect(clientQueries.filter(({ text }) => text.includes('INSERT INTO price_snapshots'))).toHaveLength(1);
     expect(redis.publishTokenEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('publishes returned trades without a readback and coalesces burst cache invalidation', async () => {
+    jest.useFakeTimers();
+    const { service, db, redis } = harness();
+    const baseEvent = {
+      type: 'Buy',
+      blockNumber: 102,
+      curveAddress: '0x0000000000000000000000000000000000000002',
+      buyer: '0x0000000000000000000000000000000000000003',
+      usdcIn: '10000',
+      fee: '100',
+      netUsdc: '9900',
+      tokensOut: '1000000000000000',
+      price: '0.000001',
+      accountingVersion: 2,
+    };
+
+    await service.processEvent({ ...baseEvent, txHash: `0x${'3'.repeat(64)}`, logIndex: 1 } as any);
+    await service.processEvent({ ...baseEvent, txHash: `0x${'4'.repeat(64)}`, logIndex: 2 } as any);
+    await jest.runAllTimersAsync();
+
+    expect(redis.publishTokenEvent).toHaveBeenCalledTimes(2);
+    expect(db.queryOne).not.toHaveBeenCalled();
+    expect(redis.delPattern).toHaveBeenCalledTimes(2);
+    expect(redis.delPattern).toHaveBeenCalledWith('tokens:list:*');
+    expect(redis.delPattern).toHaveBeenCalledWith('leaderboard:*');
+    jest.useRealTimers();
   });
 
   it('uses authoritative V2 sell gross and fee values', async () => {
