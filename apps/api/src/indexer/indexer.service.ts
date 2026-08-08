@@ -622,9 +622,12 @@ export class IndexerService {
 
       // In Uniswap V2, token0 is the lower-address token.
       // USDC on Arc testnet: 0x3600000000000000000000000000000000000000
+      const configuredUsdc = process.env.ARC_USDC_ADDRESS;
+      if (!configuredUsdc && Number(process.env.ARC_CHAIN_ID || 5_042_002) === 5_042) {
+        throw new Error('Arc mainnet requires ARC_USDC_ADDRESS');
+      }
       const usdcAddress = (
-        process.env.ARC_USDC_ADDRESS ||
-        '0x3600000000000000000000000000000000000000'
+        configuredUsdc || '0x3600000000000000000000000000000000000000'
       ).toLowerCase();
 
       const usdcIsToken0 = usdcAddress < tokenAddress;

@@ -23,6 +23,7 @@ export function createMockWagmi(overrides: {
   tokenBalance?: bigint;
   usdcAllowance?: bigint;
   tokenAllowance?: bigint;
+  maxWallet?: bigint;
   quote?: bigint;
   isPending?: boolean;
   isConfirming?: boolean;
@@ -40,6 +41,7 @@ export function createMockWagmi(overrides: {
     tokenBalance = 1_000_000_000_000_000_000_000n,
     usdcAllowance = 0n,
     tokenAllowance = 0n,
+    maxWallet = 40_000_000n * 10n ** 18n,
     quote = 500_000_000_000_000_000_000n,
     isPending = false,
     isConfirming = false,
@@ -82,6 +84,7 @@ export function createMockWagmi(overrides: {
         allowance: functionName === 'allowance' ? usdcAllowance : tokenAllowance,
         quoteBuy: quote,
         quoteSell: quote / 2n,
+        maxWallet,
       };
       return {
         data: dataMap[functionName] ?? dataMap.quoteBuy,

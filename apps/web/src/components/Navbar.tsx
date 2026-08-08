@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAccount, useDisconnect, useBalance, useConnectors, useConnect } from 'wagmi';
 import { formatUsdc, formatNativeUsdc, shortenAddress } from '@/lib/utils';
-import { arcTestnet } from 'viem/chains';
+import { ARC_CHAIN_ID } from '@/lib/config';
 import { useState, useEffect } from 'react';
 import { SearchBar } from './SearchBar';
 import { ThemeToggle } from './ThemeToggle';
@@ -26,11 +26,11 @@ export function Navbar() {
 
   const { data: balance } = useBalance({
     address: address,
-    chainId: arcTestnet.id,
+    chainId: ARC_CHAIN_ID,
     query: { enabled: !!address },
   });
 
-  const isWrongChain = mounted && isConnected && chain?.id !== arcTestnet.id;
+  const isWrongChain = mounted && isConnected && chain?.id !== ARC_CHAIN_ID;
 
   return (
     <nav className="sticky top-0 z-50 bg-bg-base/80 backdrop-blur-md border-b border-bg-border">

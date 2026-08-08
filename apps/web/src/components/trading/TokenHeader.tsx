@@ -4,6 +4,7 @@ import { memo, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { Token } from '@/lib/api';
+import { ARC_EXPLORER_URL } from '@/lib/config';
 import { FavoriteButton } from '@/components/FavoriteButton';
 import { AgentBadge } from '@/components/AgentBadge';
 import {
@@ -315,7 +316,7 @@ export const TokenHeader = memo(function TokenHeader({
                         📋 Copy contract address
                       </button>
                       <a
-                        href={`https://testnet.arcscan.app/address/${token.contract_address}`}
+                        href={`${ARC_EXPLORER_URL}/address/${token.contract_address}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={() => setMoreOpen(false)}

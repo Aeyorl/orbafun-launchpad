@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { api, Trade } from '@/lib/api';
 import { formatUsdc, formatTokens, shortenAddress, timeAgo } from '@/lib/utils';
+import { ARC_EXPLORER_URL } from '@/lib/config';
 
 const PAGE_SIZE = 50;
-const ARCSCAN_BASE = 'https://testnet.arcscan.app';
+const ARCSCAN_BASE = ARC_EXPLORER_URL;
 
 type TradeFilter = 'all' | 'buy' | 'sell';
 

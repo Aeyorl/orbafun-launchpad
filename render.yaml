@@ -29,7 +29,7 @@ services:
       - key: CORS_ORIGIN
         value: https://orba.fun,https://www.orba.fun,http://localhost:3000
       - key: ARC_RPC_URLS
-        value: https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io
+        value: https://rpc.testnet.arc.network,https://rpc.drpc.testnet.arc.network,https://rpc.quicknode.testnet.arc.network,https://rpc.blockdaemon.testnet.arc.network
       - key: ARC_CHAIN_ID
         value: "5042002"
       - key: ARC_USDC_ADDRESS

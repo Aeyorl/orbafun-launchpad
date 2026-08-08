@@ -177,6 +177,13 @@ describe('TradePanel', () => {
       expect(maxBtns.length).toBeGreaterThanOrEqual(1);
     });
 
+    it('keeps a native USDC reserve for gas when MAX is selected', () => {
+      updateWagmiMock({ balanceValue: 100n * 10n ** 18n });
+      renderWithProviders(<TradePanel token={createMockToken()} />);
+      fireEvent.click(screen.getAllByText('MAX')[0]);
+      expect(screen.getByPlaceholderText('0.00')).toHaveValue(99.99);
+    });
+
     it('shows balance display', () => {
       renderWithProviders(<TradePanel token={createMockToken()} />);
       expect(screen.getByText(/Balance/)).toBeInTheDocument();
@@ -380,6 +387,25 @@ describe('TradePanel', () => {
       expect(
         screen.getByText('Insufficient ADOGE balance'),
       ).toBeInTheDocument();
+    });
+  });
+
+  describe('On-chain trade preflight', () => {
+    it('blocks a buy that would exceed the token max-wallet limit', () => {
+      updateWagmiMock({
+        isConnected: true,
+        usdcAllowance: 47_384_539n,
+        tokenBalance: 34_168_246n * 10n ** 18n,
+        quote: 11_063_258n * 10n ** 18n,
+        maxWallet: 40_000_000n * 10n ** 18n,
+      });
+      renderWithProviders(<TradePanel token={createMockToken()} />);
+      fireEvent.change(screen.getByPlaceholderText('0.00'), {
+        target: { value: '47.384539' },
+      });
+
+      expect(screen.getByRole('alert')).toHaveTextContent('4% wallet limit');
+      expect(screen.getByText('Reduce buy — 4% wallet limit')).toBeDisabled();
     });
   });
 

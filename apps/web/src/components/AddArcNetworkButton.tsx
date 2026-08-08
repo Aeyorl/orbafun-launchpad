@@ -1,8 +1,8 @@
 'use client';
 
 import { useAccount, useSwitchChain } from 'wagmi';
-import { arcTestnet } from 'viem/chains';
 import { useState } from 'react';
+import { ARC_CHAIN_ID, ARC_NETWORK_NAME } from '@/lib/config';
 
 /**
  * AddArcNetworkButton — adds the Arc testnet network to the user's wallet
@@ -23,7 +23,7 @@ export function AddArcNetworkButton() {
     setError(null);
     try {
       await switchChain(
-        { chainId: arcTestnet.id },
+        { chainId: ARC_CHAIN_ID },
         {
           onError: (err) => {
             setError(err.message || 'Failed to add network');
@@ -48,7 +48,7 @@ export function AddArcNetworkButton() {
         title={
           !isConnected
             ? 'Connect your wallet first to add the Arc network'
-            : 'Add Arc Testnet to your wallet (EIP-3085)'
+            : `Add ${ARC_NETWORK_NAME} to your wallet (EIP-3085)`
         }
       >
         {/* Arc orb icon — small inline SVG so it works without asset loading */}

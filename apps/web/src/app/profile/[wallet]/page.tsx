@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { api, UserHolding, Token } from '@/lib/api';
 import { TokenCard } from '@/components/TokenCard';
 import { ReferralPanel } from '@/components/ReferralPanel';
+import { ARC_EXPLORER_URL } from '@/lib/config';
 import {
   formatUsdc,
   shortenAddress,
@@ -292,7 +293,7 @@ export default function ProfilePage() {
                       📋 Copy wallet address
                     </button>
                     <a
-                      href={`https://testnet.arcscan.app/address/${wallet}`}
+                      href={`${ARC_EXPLORER_URL}/address/${wallet}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => setMoreOpen(false)}
@@ -663,7 +664,7 @@ export default function ProfilePage() {
 
                   {item.txHash && (
                     <a
-                      href={`https://testnet.arcscan.app/tx/${item.txHash}`}
+                      href={`${ARC_EXPLORER_URL}/tx/${item.txHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-text-muted hover:text-accent-blue font-mono text-[11px]"

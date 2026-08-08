@@ -1,6 +1,5 @@
 import { createPublicClient, http, parseAbi } from 'viem';
-import { arcTestnet } from 'viem/chains';
-import { API_URL, DEFAULT_ARC_RPC_URLS } from './config';
+import { API_URL, ARC_CHAIN, ARC_RPC_URLS } from './config';
 
 // API client for the NestJS backend.
 // All requests go through this — centralizes error handling and base URL.
@@ -596,8 +595,8 @@ export interface ExecutorStateEntry {
 }
 
 const fallbackClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http(DEFAULT_ARC_RPC_URLS[0]),
+  chain: ARC_CHAIN,
+  transport: http(ARC_RPC_URLS[0]),
 });
 
 async function fetchTokenOnChainFallback(address: string): Promise<Token | null> {

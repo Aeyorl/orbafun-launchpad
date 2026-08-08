@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { API_URL, ARC_RPC_URLS as DIRECT_ARC_RPC_URLS } from './config';
 
 /**
  * Fallback receipt poller for the Arc testnet.
@@ -17,20 +18,13 @@ import { useState, useEffect } from 'react';
  * Providers (from https://docs.arc.io/arc/references/rpc-endpoints):
  *   Circle, dRPC, QuickNode, Blockdaemon — each with independent rate limits.
  */
-const API_RPC_PROXY = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/rpc`;
+const API_RPC_PROXY = `${API_URL}/rpc`;
 
-const ARC_RPC_URLS = [
+const RECEIPT_RPC_URLS = [
   // Our API's same-origin RPC proxy first — never blocked by browser
   // shields/adblockers, and it rotates providers server-side.
   API_RPC_PROXY,
-  ...(
-    process.env.NEXT_PUBLIC_ARC_RPC_URLS ||
-    process.env.NEXT_PUBLIC_ARC_RPC_URL ||
-    'https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io'
-  )
-    .split(',')
-    .map((u) => u.trim())
-    .filter(Boolean),
+  ...DIRECT_ARC_RPC_URLS,
 ];
 
 export function useArcReceiptFallback(
@@ -63,7 +57,7 @@ export function useArcReceiptFallback(
         return;
       }
       // Rotate to the next RPC provider on each attempt.
-      const rpcUrl = ARC_RPC_URLS[rpcIndex % ARC_RPC_URLS.length];
+      const rpcUrl = RECEIPT_RPC_URLS[rpcIndex % RECEIPT_RPC_URLS.length];
       rpcIndex++;
       try {
         const res = await fetch(rpcUrl, {

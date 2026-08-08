@@ -88,22 +88,30 @@ export class ArcEventPollerService implements OnModuleInit {
     const envUrls = (
       process.env.ARC_RPC_URLS ||
       process.env.ARC_RPC_URL ||
-      'https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io'
+      (Number(process.env.ARC_CHAIN_ID || 5_042_002) === 5_042
+        ? ''
+        : 'https://rpc.testnet.arc.network,https://rpc.drpc.testnet.arc.network,https://rpc.quicknode.testnet.arc.network,https://rpc.blockdaemon.testnet.arc.network')
     )
       .split(',')
       .map((u) => u.trim())
       .filter(Boolean);
+
+    if (envUrls.length === 0) {
+      throw new Error('Arc mainnet requires ARC_RPC_URLS');
+    }
 
     this.rpcUrls = envUrls;
     this.rpcUrl = this.rpcUrls[0]; // kept for backward-compat logging
   }
 
   private getFactoryAddress(): string {
-    return (
-      process.env.ARC_TOKEN_FACTORY_ADDRESS ||
-      process.env.NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS ||
-      '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b'
-    ).toLowerCase();
+    const configured = process.env.ARC_TOKEN_FACTORY_ADDRESS ||
+      process.env.NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS;
+    if (configured) return configured.toLowerCase();
+    if (Number(process.env.ARC_CHAIN_ID || 5_042_002) === 5_042) {
+      throw new Error('Arc mainnet requires ARC_TOKEN_FACTORY_ADDRESS');
+    }
+    return '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b'.toLowerCase();
   }
 
   async onModuleInit(): Promise<void> {

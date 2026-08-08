@@ -12,10 +12,16 @@ import {
   useConnect,
   useConnectors,
 } from 'wagmi';
-import { arcTestnet } from 'viem/chains';
 import { parseUnits, formatUnits, erc20Abi } from 'viem';
 import toast from 'react-hot-toast';
-import { CONTRACTS, USDC_DECIMALS, TOKEN_DECIMALS } from '@/lib/config';
+import {
+  ARC_CHAIN_ID,
+  ARC_EXPLORER_URL,
+  ARC_NETWORK_NAME,
+  CONTRACTS,
+  USDC_DECIMALS,
+  TOKEN_DECIMALS,
+} from '@/lib/config';
 import {
   formatUsdc,
   formatNativeUsdc,
@@ -64,6 +70,19 @@ const BONDING_CURVE_ABI = [
   },
 ] as const;
 
+const MEME_TOKEN_ABI = [
+  {
+    name: 'maxWallet',
+    type: 'function',
+    stateMutability: 'pure',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const;
+
+const ARC_ERC20_TO_NATIVE_FACTOR = 10n ** 12n;
+const ARC_GAS_RESERVE_NATIVE = 10n ** 16n; // Keep $0.01 USDC for gas.
+
 /**
  * TradePanel — professional, high-density terminal trading form for Orba.
  */
@@ -74,13 +93,14 @@ export function TradePanel({ token }: { token: Token }) {
   const [slippage, setSlippage] = useState(1); // 1% default
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isAdvancingToTrade, setIsAdvancingToTrade] = useState(false);
+  const [tradeError, setTradeError] = useState<string | null>(null);
 
   const { address, isConnected, chainId } = useAccount();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
   const connectors = useConnectors();
   const { connect } = useConnect();
 
-  const wrongNetwork = isConnected && chainId !== arcTestnet.id;
+  const wrongNetwork = isConnected && chainId !== ARC_CHAIN_ID;
 
   // Track active tx hash locally to separate approval vs trade states cleanly
   const [currentTxHash, setCurrentTxHash] = useState<`0x${string}` | undefined>(undefined);
@@ -92,15 +112,26 @@ export function TradePanel({ token }: { token: Token }) {
     minOut: bigint;
   } | null>(null);
 
-  const { writeContract, data: txHash, isPending, reset } = useWriteContract();
+  const {
+    writeContract,
+    data: txHash,
+    isPending,
+    isError: isWriteError,
+    error: writeError,
+    reset,
+  } = useWriteContract();
 
   useEffect(() => {
     if (txHash) setCurrentTxHash(txHash);
   }, [txHash]);
 
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
+  const {
+    isLoading: isConfirming,
+    isSuccess,
+    isError: isReceiptError,
+  } = useWaitForTransactionReceipt({
     hash: currentTxHash,
-    chainId: arcTestnet.id,
+    chainId: ARC_CHAIN_ID,
   });
   const fallback = useArcReceiptFallback(currentTxHash);
   const txConfirmed = isSuccess || fallback.confirmed;
@@ -108,7 +139,7 @@ export function TradePanel({ token }: { token: Token }) {
   // Wallet balances
   const { data: usdcBalance, refetch: refetchUsdcBalance } = useBalance({
     address,
-    chainId: arcTestnet.id,
+    chainId: ARC_CHAIN_ID,
     query: { refetchInterval: 5_000, enabled: !!address },
   });
 
@@ -117,8 +148,16 @@ export function TradePanel({ token }: { token: Token }) {
     abi: erc20Abi,
     functionName: 'balanceOf',
     args: [address!],
-    chainId: arcTestnet.id,
+    chainId: ARC_CHAIN_ID,
     query: { enabled: !!address, refetchInterval: 5_000 },
+  });
+
+  const { data: maxWallet } = useReadContract({
+    address: token.contract_address as `0x${string}`,
+    abi: MEME_TOKEN_ABI,
+    functionName: 'maxWallet',
+    chainId: ARC_CHAIN_ID,
+    query: { enabled: !!address && token.status === 'active' },
   });
 
   // Allowances
@@ -127,7 +166,7 @@ export function TradePanel({ token }: { token: Token }) {
     abi: erc20Abi,
     functionName: 'allowance',
     args: [address!, token.curve_address as `0x${string}`],
-    chainId: arcTestnet.id,
+    chainId: ARC_CHAIN_ID,
     query: { enabled: !!address },
   });
 
@@ -136,7 +175,7 @@ export function TradePanel({ token }: { token: Token }) {
     abi: erc20Abi,
     functionName: 'allowance',
     args: [address!, token.curve_address as `0x${string}`],
-    chainId: arcTestnet.id,
+    chainId: ARC_CHAIN_ID,
     query: { enabled: !!address && mode === 'sell' },
   });
 
@@ -214,7 +253,7 @@ export function TradePanel({ token }: { token: Token }) {
     abi: BONDING_CURVE_ABI,
     functionName: mode === 'buy' ? 'quoteBuy' : 'quoteSell',
     args: [parsedAmount],
-    chainId: arcTestnet.id,
+    chainId: ARC_CHAIN_ID,
     query: { enabled: parsedAmount > 0n },
   });
 
@@ -258,12 +297,25 @@ export function TradePanel({ token }: { token: Token }) {
       ? (!usdcAllowanceLoaded || usdcAllowance !== parsedAmount)
       : (!tokenAllowanceLoaded || tokenAllowance !== parsedAmount));
 
+  const buyWouldExceedMaxWallet =
+    mode === 'buy' &&
+    quote !== undefined &&
+    tokenBalance !== undefined &&
+    maxWallet !== undefined &&
+    tokenBalance + quote > maxWallet;
+
+  const remainingWalletCapacity =
+    maxWallet !== undefined && tokenBalance !== undefined && maxWallet > tokenBalance
+      ? maxWallet - tokenBalance
+      : 0n;
+
   // Balance validations
   const hasInsufficientBalance = useMemo(() => {
     if (!isConnected || parsedAmount === 0n) return false;
     if (mode === 'buy') {
       const bal = usdcBalance?.value ?? 0n;
-      return parsedAmount > bal;
+      const requiredNative = parsedAmount * ARC_ERC20_TO_NATIVE_FACTOR + ARC_GAS_RESERVE_NATIVE;
+      return requiredNative > bal;
     } else {
       const bal = tokenBalance ?? 0n;
       return parsedAmount > bal;
@@ -278,6 +330,7 @@ export function TradePanel({ token }: { token: Token }) {
   });
 
   const executeTrade = (trade: ReturnType<typeof createTradeIntent>) => {
+    setTradeError(null);
     setIsAdvancingToTrade(false);
     setTxAction('trade');
 
@@ -287,7 +340,7 @@ export function TradePanel({ token }: { token: Token }) {
         abi: BONDING_CURVE_ABI,
         functionName: 'buy',
         args: [trade.parsedAmount, trade.minOut],
-        chainId: arcTestnet.id,
+        chainId: ARC_CHAIN_ID,
       });
     } else {
       writeContract({
@@ -295,7 +348,7 @@ export function TradePanel({ token }: { token: Token }) {
         abi: BONDING_CURVE_ABI,
         functionName: 'sell',
         args: [trade.parsedAmount, trade.minOut],
-        chainId: arcTestnet.id,
+        chainId: ARC_CHAIN_ID,
       });
     }
   };
@@ -321,6 +374,7 @@ export function TradePanel({ token }: { token: Token }) {
   // Execute trade
   const handleTrade = async () => {
     if (!address || parsedAmount === 0n) return;
+    setTradeError(null);
     const trade = createTradeIntent();
     pendingTradeRef.current = trade;
     executeTrade(trade);
@@ -329,6 +383,7 @@ export function TradePanel({ token }: { token: Token }) {
   // Approve only the amount used by this trade.
   const handleApprove = async () => {
     if (!address || parsedAmount === 0n) return;
+    setTradeError(null);
     const trade = createTradeIntent();
     pendingTradeRef.current = trade;
     setTxAction('approve');
@@ -338,7 +393,7 @@ export function TradePanel({ token }: { token: Token }) {
         abi: erc20Abi,
         functionName: 'approve',
         args: [token.curve_address as `0x${string}`, trade.parsedAmount],
-        chainId: arcTestnet.id,
+        chainId: ARC_CHAIN_ID,
       });
     } else {
       writeContract({
@@ -346,7 +401,7 @@ export function TradePanel({ token }: { token: Token }) {
         abi: erc20Abi,
         functionName: 'approve',
         args: [token.curve_address as `0x${string}`, trade.parsedAmount],
-        chainId: arcTestnet.id,
+        chainId: ARC_CHAIN_ID,
       });
     }
   };
@@ -359,12 +414,47 @@ export function TradePanel({ token }: { token: Token }) {
   );
   const curveLabel = `${token.curve_address.slice(0, 6)}…${token.curve_address.slice(-4)}`;
 
+  useEffect(() => {
+    if (!isWriteError) return;
+
+    const message = writeError?.message?.toLowerCase().includes('user rejected')
+      ? 'Transaction cancelled in wallet.'
+      : 'Wallet could not submit the transaction. Check the amount and try again.';
+    setTradeError(message);
+    setCurrentTxHash(undefined);
+    setTxAction(null);
+    setIsAdvancingToTrade(false);
+    reset();
+  }, [isWriteError, writeError, reset]);
+
+  useEffect(() => {
+    if ((!fallback.failed && !isReceiptError) || !txAction) return;
+
+    const message = buyWouldExceedMaxWallet
+      ? `This buy exceeds the 4% wallet limit. You can receive at most ${formatTokens(remainingWalletCapacity)} ${token.symbol}.`
+      : 'Transaction reverted on Arc. Refresh the quote and try a smaller amount.';
+    setTradeError(message);
+    setCurrentTxHash(undefined);
+    setTxAction(null);
+    setIsAdvancingToTrade(false);
+    reset();
+  }, [
+    fallback.failed,
+    isReceiptError,
+    txAction,
+    buyWouldExceedMaxWallet,
+    remainingWalletCapacity,
+    token.symbol,
+    reset,
+  ]);
+
   // Set preset percentages (25%, 50%, 75%, 100%)
   const setPercentageAmount = (pct: number) => {
     if (mode === 'buy') {
       const bal = usdcBalance?.value ?? 0n;
       if (bal === 0n) return;
-      const target = (bal * BigInt(pct)) / 100n;
+      const spendable = bal > ARC_GAS_RESERVE_NATIVE ? bal - ARC_GAS_RESERVE_NATIVE : 0n;
+      const target = (spendable * BigInt(pct)) / 100n;
       // usdcBalance.value is 18-decimal Arc native USDC
       setAmount(formatUnits(target, usdcBalance?.decimals ?? 18));
     } else {
@@ -386,7 +476,7 @@ export function TradePanel({ token }: { token: Token }) {
         </p>
         {token.amm_pair_address && (
           <a
-            href={`https://testnet.arcscan.app/address/${token.amm_pair_address}`}
+            href={`${ARC_EXPLORER_URL}/address/${token.amm_pair_address}`}
             target="_blank"
             rel="noopener noreferrer"
             className="btn-primary inline-flex items-center gap-1.5 text-xs px-4 py-2 rounded-full font-bold"
@@ -612,13 +702,22 @@ export function TradePanel({ token }: { token: Token }) {
             {/* Network Info */}
             <div className="flex justify-between items-center text-text-muted text-[11px] pt-1 border-t border-bg-border/60">
               <span>Execution network</span>
-              <span className="font-mono text-text-secondary">Arc Testnet (5042002)</span>
+              <span className="font-mono text-text-secondary">{ARC_NETWORK_NAME} ({ARC_CHAIN_ID})</span>
             </div>
           </div>
         )}
       </div>
 
       {/* 6. PRIMARY ACTION CTA BUTTON WITH POLISHED STATES */}
+      {buyWouldExceedMaxWallet && (
+        <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
+          This wallet can receive at most{' '}
+          <span className="font-mono font-bold">
+            {formatTokens(remainingWalletCapacity)} {token.symbol}
+          </span>{' '}
+          before reaching the token&apos;s 4% wallet limit. Reduce the buy amount.
+        </div>
+      )}
       {!isConnected ? (
         <button
           onClick={() => connect({ connector: connectors[0] })}
@@ -628,11 +727,11 @@ export function TradePanel({ token }: { token: Token }) {
         </button>
       ) : wrongNetwork ? (
         <button
-          onClick={() => switchChain({ chainId: arcTestnet.id })}
+          onClick={() => switchChain({ chainId: ARC_CHAIN_ID })}
           disabled={isSwitching}
           className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl shadow-sm"
         >
-          {isSwitching ? 'Switching Network…' : `Switch to Arc Testnet (${arcTestnet.id})`}
+          {isSwitching ? 'Switching Network…' : `Switch to ${ARC_NETWORK_NAME} (${ARC_CHAIN_ID})`}
         </button>
       ) : isConfirming && !txConfirmed ? (
         <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-80">
@@ -645,6 +744,10 @@ export function TradePanel({ token }: { token: Token }) {
       ) : txConfirmed ? (
         <button disabled className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl bg-emerald-600">
           ✓ {mode === 'buy' ? 'Bought' : 'Sold'} ${token.symbol}
+        </button>
+      ) : buyWouldExceedMaxWallet ? (
+        <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-60">
+          Reduce buy — 4% wallet limit
         </button>
       ) : hasInsufficientBalance ? (
         <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-60">
@@ -668,7 +771,7 @@ export function TradePanel({ token }: { token: Token }) {
             <div className="flex items-center justify-between gap-3 text-[11px] text-text-muted">
               <span>Approved spender</span>
               <a
-                href={`https://testnet.arcscan.app/address/${token.curve_address}`}
+                href={`${ARC_EXPLORER_URL}/address/${token.curve_address}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-mono text-accent-blue hover:underline"
@@ -714,9 +817,9 @@ export function TradePanel({ token }: { token: Token }) {
           Confirming on Arc blockchain (~0.5s block time)…
         </p>
       )}
-      {fallback.failed && (
+      {tradeError && (
         <p role="alert" className="text-xs text-rose-500 font-medium text-center">
-          Transaction failed on-chain. Please try again.
+          {tradeError}
         </p>
       )}
     </div>

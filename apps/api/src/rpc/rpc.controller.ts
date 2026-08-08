@@ -51,11 +51,17 @@ const MAX_RPC_RESPONSE_BYTES = 2 * 1024 * 1024;
 const RPC_URLS = (
   process.env.ARC_RPC_URLS ||
   process.env.ARC_RPC_URL ||
-  'https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io'
+  (Number(process.env.ARC_CHAIN_ID || 5_042_002) === 5_042
+    ? ''
+    : 'https://rpc.testnet.arc.network,https://rpc.drpc.testnet.arc.network,https://rpc.quicknode.testnet.arc.network,https://rpc.blockdaemon.testnet.arc.network')
 )
   .split(',')
   .map((u) => u.trim())
   .filter(Boolean);
+
+if (RPC_URLS.length === 0) {
+  throw new Error('Arc mainnet requires ARC_RPC_URLS');
+}
 
 @Controller('rpc')
 export class RpcController {

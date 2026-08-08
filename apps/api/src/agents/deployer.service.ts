@@ -32,7 +32,20 @@ const {
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { privateKeyToAccount } = require('viem/accounts');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { arcTestnet } = require('viem/chains');
+const { arc, arcTestnet } = require('viem/chains');
+
+const ARC_CHAIN_ID = Number(process.env.ARC_CHAIN_ID || arcTestnet.id);
+if (ARC_CHAIN_ID !== arcTestnet.id && ARC_CHAIN_ID !== arc.id) {
+  throw new Error(`Unsupported ARC_CHAIN_ID: ${ARC_CHAIN_ID}`);
+}
+const ACTIVE_ARC_CHAIN = ARC_CHAIN_ID === arc.id ? arc : arcTestnet;
+const IS_ARC_MAINNET = ARC_CHAIN_ID === arc.id;
+
+function requiredMainnetAddress(value: string | undefined, fallbackAddress: string, name: string) {
+  if (value) return value;
+  if (IS_ARC_MAINNET) throw new Error(`Arc mainnet requires ${name}`);
+  return fallbackAddress;
+}
 
 const TOKEN_FACTORY_ABI = [
   {
@@ -143,7 +156,11 @@ const ERC20_ABI = [
   },
 ] as const;
 
-const USDC_ADDRESS = '0x3600000000000000000000000000000000000000';
+const USDC_ADDRESS = requiredMainnetAddress(
+  process.env.ARC_USDC_ADDRESS,
+  '0x3600000000000000000000000000000000000000',
+  'ARC_USDC_ADDRESS',
+);
 
 // TokenFactory.TokenCreated event signature
 // event TokenCreated(address indexed token, address indexed curve, address indexed creator, string name, string symbol, string image, uint256 createdAt)
@@ -154,11 +171,17 @@ const TOKEN_CREATED_EVENT_TOPIC = keccak256(
 const RPC_URLS = (
   process.env.ARC_RPC_URLS ||
   process.env.ARC_RPC_URL ||
-  'https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io'
+  (IS_ARC_MAINNET
+    ? ''
+    : 'https://rpc.testnet.arc.network,https://rpc.drpc.testnet.arc.network,https://rpc.quicknode.testnet.arc.network,https://rpc.blockdaemon.testnet.arc.network')
 )
   .split(',')
   .map((u: string) => u.trim())
   .filter(Boolean);
+
+if (RPC_URLS.length === 0) {
+  throw new Error('Arc mainnet requires ARC_RPC_URLS');
+}
 
 export interface LaunchResult {
   tokenAddress: string;
@@ -177,12 +200,14 @@ export class DeployerService {
   private tokenFactoryAddress: string;
 
   constructor() {
-    this.tokenFactoryAddress = (
-      process.env.ARC_TOKEN_FACTORY_ADDRESS || '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b'
+    this.tokenFactoryAddress = requiredMainnetAddress(
+      process.env.ARC_TOKEN_FACTORY_ADDRESS,
+      '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b',
+      'ARC_TOKEN_FACTORY_ADDRESS',
     ).toLowerCase();
     const transport = fallback(RPC_URLS.map((url: string) => http(url)));
     this.publicClient = createPublicClient({
-      chain: arcTestnet,
+      chain: ACTIVE_ARC_CHAIN,
       transport,
     });
 
@@ -196,7 +221,7 @@ export class DeployerService {
 
     this.walletClient = createWalletClient({
       account: this.account,
-      chain: arcTestnet,
+      chain: ACTIVE_ARC_CHAIN,
       transport,
     });
 
@@ -253,7 +278,7 @@ export class DeployerService {
         abi: ERC20_ABI,
         functionName: 'approve',
         args: [this.tokenFactoryAddress, creationFee],
-        chain: arcTestnet,
+        chain: ACTIVE_ARC_CHAIN,
         account: this.account,
       });
       const approvalReceipt = await this.publicClient.waitForTransactionReceipt({
@@ -272,7 +297,7 @@ export class DeployerService {
       abi: TOKEN_FACTORY_ABI,
       functionName: 'createToken',
       args: [name, symbol.toUpperCase(), image, description],
-      chain: arcTestnet,
+      chain: ACTIVE_ARC_CHAIN,
       account: this.account,
     });
 
@@ -349,7 +374,7 @@ export class DeployerService {
         this.tokenFactoryAddress,
         BigInt(process.env.TOKEN_FACTORY_APPROVAL_CAP_USDC || '50000000'),
       ],
-      chain: arcTestnet,
+      chain: ACTIVE_ARC_CHAIN,
       account: this.account,
     });
 
@@ -473,7 +498,7 @@ export class DeployerService {
         abi: ERC20_ABI,
         functionName: 'approve',
         args: [curve, usdcAmount],
-        chain: arcTestnet,
+        chain: ACTIVE_ARC_CHAIN,
         account: this.account,
       });
       await this.publicClient.waitForTransactionReceipt({
@@ -490,7 +515,7 @@ export class DeployerService {
       abi: BONDING_CURVE_ABI,
       functionName: 'buy',
       args: [usdcAmount, minTokensOut],
-      chain: arcTestnet,
+      chain: ACTIVE_ARC_CHAIN,
       account: this.account,
     });
 
@@ -577,7 +602,7 @@ export class DeployerService {
         abi: ERC20_ABI,
         functionName: 'approve',
         args: [curve, tokenAmount],
-        chain: arcTestnet,
+        chain: ACTIVE_ARC_CHAIN,
         account: this.account,
       });
       await this.publicClient.waitForTransactionReceipt({
@@ -594,7 +619,7 @@ export class DeployerService {
       abi: BONDING_CURVE_ABI,
       functionName: 'sell',
       args: [tokenAmount, minUsdcOut],
-      chain: arcTestnet,
+      chain: ACTIVE_ARC_CHAIN,
       account: this.account,
     });
 

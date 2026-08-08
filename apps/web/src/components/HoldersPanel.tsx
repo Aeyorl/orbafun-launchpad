@@ -5,8 +5,9 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { api, Holder } from '@/lib/api';
 import { formatTokens, shortenAddress } from '@/lib/utils';
+import { ARC_EXPLORER_URL } from '@/lib/config';
 
-const ARCSCAN_BASE = 'https://testnet.arcscan.app';
+const ARCSCAN_BASE = ARC_EXPLORER_URL;
 
 type HolderTab = 'top' | 'whales' | 'recent';
 

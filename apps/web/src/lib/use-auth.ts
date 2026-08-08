@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useAccount, useSignMessage } from 'wagmi';
-import { API_URL } from './config';
+import { API_URL, ARC_CHAIN_ID } from './config';
 
 let activeToken: string | null = null;
 let activeWallet: string | null = null;
@@ -108,7 +108,7 @@ function constructAuthMessage(nonce: string, address: string): string {
     '',
     `URI: ${uri}`,
     'Version: 1',
-    'Chain ID: 5042002',
+    `Chain ID: ${ARC_CHAIN_ID}`,
     `Nonce: ${nonce}`,
     `Issued At: ${issuedAt}`,
     `Expiration Time: ${expirationTime}`,

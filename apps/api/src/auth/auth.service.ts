@@ -34,7 +34,10 @@ import { RedisService } from '../redis/redis.service';
 
 const NONCE_TTL_MS = 5 * 60 * 1000; // 5 minutes to sign after requesting nonce
 const TOKEN_TTL_HOURS = 1;
-const ARC_TESTNET_CHAIN_ID = 5_042_002;
+const ARC_CHAIN_ID = Number(process.env.ARC_CHAIN_ID || 5_042_002);
+if (ARC_CHAIN_ID !== 5_042_002 && ARC_CHAIN_ID !== 5_042) {
+  throw new Error(`Unsupported ARC_CHAIN_ID: ${ARC_CHAIN_ID}`);
+}
 const NONCE_KEY_PREFIX = 'auth:nonce:';
 
 interface AuthToken {
@@ -132,7 +135,7 @@ export class AuthService {
       uri.host.toLowerCase() === domain &&
       (uri.protocol === 'https:' ||
         (uri.protocol === 'http:' && domain.startsWith('localhost'))) &&
-      parsed.chainId === ARC_TESTNET_CHAIN_ID &&
+      parsed.chainId === ARC_CHAIN_ID &&
       parsed.version === '1' &&
       issuedAt !== undefined &&
       issuedAt <= now + 60_000 &&

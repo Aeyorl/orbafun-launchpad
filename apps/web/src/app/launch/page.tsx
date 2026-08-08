@@ -11,7 +11,6 @@ import {
   useReadContract,
   useSwitchChain,
 } from 'wagmi';
-import { arcTestnet } from 'viem/chains';
 import {
   parseUnits,
   erc20Abi,
@@ -19,7 +18,7 @@ import {
   decodeEventLog,
   type Log,
 } from 'viem';
-import { CONTRACTS, USDC_DECIMALS } from '@/lib/config';
+import { ARC_CHAIN_ID, ARC_NETWORK_NAME, CONTRACTS, USDC_DECIMALS } from '@/lib/config';
 import { formatUsdDirect, formatNativeUsdc, shortenAddress, ipfsToGateway, tokenEmoji } from '@/lib/utils';
 import { useArcReceiptFallback } from '@/lib/use-arc-receipt';
 import { useAuth } from '@/lib/use-auth';
@@ -67,26 +66,26 @@ export default function LaunchPage() {
   const { address, isConnected, chainId } = useAccount();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
 
-  const wrongNetwork = isConnected && chainId !== arcTestnet.id;
+  const wrongNetwork = isConnected && chainId !== ARC_CHAIN_ID;
   const [txAction, setTxAction] = useState<'approve' | 'launch' | null>(null);
   const { writeContract, data: txHash, isPending, reset } = useWriteContract();
 
   const { isLoading: isConfirming, isSuccess, data: receipt } = useWaitForTransactionReceipt({
     hash: txHash,
-    chainId: arcTestnet.id,
+    chainId: ARC_CHAIN_ID,
   });
   const fallback = useArcReceiptFallback(txHash);
   const txConfirmed = isSuccess || fallback.confirmed;
   const { getAuthToken, authenticate } = useAuth();
 
-  const { data: balance } = useBalance({ address, chainId: arcTestnet.id });
+  const { data: balance } = useBalance({ address, chainId: ARC_CHAIN_ID });
 
   const { data: usdcAllowance, refetch: refetchAllowance } = useReadContract({
     address: CONTRACTS.USDC,
     abi: erc20Abi,
     functionName: 'allowance',
     args: [address!, CONTRACTS.TOKEN_FACTORY],
-    chainId: arcTestnet.id,
+    chainId: ARC_CHAIN_ID,
     query: { enabled: !!address },
   });
 
@@ -177,7 +176,7 @@ export default function LaunchPage() {
       abi: erc20Abi,
       functionName: 'approve',
       args: [CONTRACTS.TOKEN_FACTORY, feeAmount],
-      chainId: arcTestnet.id,
+      chainId: ARC_CHAIN_ID,
     });
   };
 
@@ -192,7 +191,7 @@ export default function LaunchPage() {
       abi: TOKEN_FACTORY_ABI,
       functionName: 'createToken',
       args: [name.trim(), symbol.trim().toUpperCase(), image, description],
-      chainId: arcTestnet.id,
+      chainId: ARC_CHAIN_ID,
     });
   };
 
@@ -667,11 +666,11 @@ export default function LaunchPage() {
               </button>
             ) : wrongNetwork ? (
               <button
-                onClick={() => switchChain({ chainId: arcTestnet.id })}
+                onClick={() => switchChain({ chainId: ARC_CHAIN_ID })}
                 disabled={isSwitching}
                 className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl shadow-sm"
               >
-                {isSwitching ? 'Switching Network…' : `Switch to Arc Testnet (${arcTestnet.id})`}
+                {isSwitching ? 'Switching Network…' : `Switch to ${ARC_NETWORK_NAME} (${ARC_CHAIN_ID})`}
               </button>
             ) : needsApproval && !launchConfirmed ? (
               <button
@@ -832,7 +831,7 @@ export default function LaunchPage() {
           </button>
         ) : wrongNetwork ? (
           <button
-            onClick={() => switchChain({ chainId: arcTestnet.id })}
+            onClick={() => switchChain({ chainId: ARC_CHAIN_ID })}
             className="btn-primary text-xs px-4 py-2.5 rounded-full font-bold"
           >
             Switch Network
