@@ -16,12 +16,17 @@ const IPFS_GATEWAYS = [
 
 export function proxy(request: NextRequest) {
   const nonce = crypto.randomUUID().replace(/-/g, '');
+  const isTradingViewRuntime = request.nextUrl.pathname.startsWith(
+    '/vendor/tradingview/charting_library/',
+  );
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
   const wsUrl = process.env.NEXT_PUBLIC_WS_URL || apiUrl;
   const wsSchemeUrl = wsUrl.replace(/^http/, 'ws');
-  const scriptPolicy = process.env.NODE_ENV === 'production'
-    ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`
-    : `script-src 'self' 'nonce-${nonce}' 'unsafe-eval'`;
+  const scriptPolicy = isTradingViewRuntime
+    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+    : process.env.NODE_ENV === 'production'
+      ? `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`
+      : `script-src 'self' 'nonce-${nonce}' 'unsafe-eval'`;
   const csp = [
     "default-src 'self'",
     scriptPolicy,
@@ -29,7 +34,8 @@ export function proxy(request: NextRequest) {
     `img-src 'self' data: blob: https: ${IPFS_GATEWAYS.join(' ')}`,
     "font-src 'self' data: https://fonts.gstatic.com",
     `connect-src 'self' ${apiUrl} ${wsUrl} ${wsSchemeUrl} ${ARC_RPC_HOSTS.join(' ')} ${IPFS_GATEWAYS.join(' ')} wss://relay.walletconnect.com`,
-    "frame-ancestors 'none'",
+    "frame-src 'self' blob:",
+    isTradingViewRuntime ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
     "form-action 'self'",
     "base-uri 'self'",
     "object-src 'none'",
@@ -42,6 +48,7 @@ export function proxy(request: NextRequest) {
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set('Content-Security-Policy', csp);
+  response.headers.set('X-Frame-Options', isTradingViewRuntime ? 'SAMEORIGIN' : 'DENY');
   return response;
 }
 

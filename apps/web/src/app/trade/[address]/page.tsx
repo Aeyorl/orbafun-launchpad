@@ -10,7 +10,7 @@ import { useTokenStats } from '@/hooks/useTokenStats';
 import { useCandles } from '@/hooks/useCandles';
 
 import { TokenHeader } from '@/components/trading/TokenHeader';
-import { TradingChart } from '@/components/trading/TradingChart';
+import { AdvancedTradingChart } from '@/components/trading/AdvancedTradingChart';
 import { TradeTerminal } from '@/components/trading/TradeTerminal';
 
 import { TradeHistory } from '@/components/TradeHistory';
@@ -164,8 +164,10 @@ export default function TradePage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
         {/* Chart Column */}
         <div className="lg:col-span-8 space-y-3">
-          <TradingChart
+          <AdvancedTradingChart
             candles={candles}
+            tokenAddress={address}
+            tokenName={token.name}
             tokenSymbol={token.symbol}
             timeframe={timeframe}
             isConnected={isConnected}

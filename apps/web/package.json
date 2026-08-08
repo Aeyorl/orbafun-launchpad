@@ -5,6 +5,7 @@
   "license": "BSL-1.1",
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/prepare-tradingview.mjs",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "next lint",
