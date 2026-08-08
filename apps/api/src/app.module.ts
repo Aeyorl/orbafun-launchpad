@@ -17,6 +17,7 @@ import { AuthModule } from './auth/auth.module';
 import { AgentsModule } from './agents/agents.module';
 import { ReferralModule } from './referrals/referral.module';
 import { RpcController } from './rpc/rpc.controller';
+import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
@@ -46,7 +47,7 @@ import { RpcController } from './rpc/rpc.controller';
     AgentsModule,
     ReferralModule,
   ],
-  controllers: [RpcController],
+  controllers: [RpcController, HealthController],
   providers: [
     // Apply ThrottlerGuard globally — every HTTP route is rate-limited.
     { provide: APP_GUARD, useClass: ThrottlerGuard },

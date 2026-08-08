@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
-import { DeployerService } from './deployer.service';
+import { DeployerService, LaunchResult, TradeResult } from './deployer.service';
 import { MessagesService } from '../messages/messages.service';
 import { TokenMetadataService, TokenMetadataInput } from '../token-metadata/token-metadata.service';
 import { isValidEvmAddress } from '../common/utils';
@@ -198,12 +198,18 @@ export class AgentsService {
     // Submit the on-chain transaction.
     const image = input.image || '';
     const description = input.description || '';
-    const result = await this.deployer.launchToken(
-      input.name.trim(),
-      input.symbol.trim().toUpperCase(),
-      image,
-      description,
-    );
+    let result: LaunchResult;
+    try {
+      result = await this.deployer.launchToken(
+        input.name.trim(),
+        input.symbol.trim().toUpperCase(),
+        image,
+        description,
+      );
+    } catch (err) {
+      await this.releaseReservation(reservationId);
+      throw err;
+    }
 
     // Record the launch in the database.
     const gasPaid18dec = result.gasUsed; // 18-dec native USDC (approximate — gas price * gas used)
@@ -678,16 +684,23 @@ export class AgentsService {
     const reservationId = await this.reserveSpending(agent.id, 'buy', usdcAmount);
 
     // Execute the buy on-chain.
-    const result = await this.deployer.buyTokens(
-      token.curve_address,
-      usdcAmount,
-      slippageBps,
-    );
+    let result: TradeResult;
+    try {
+      result = await this.deployer.buyTokens(
+        token.curve_address,
+        usdcAmount,
+        slippageBps,
+      );
+    } catch (err) {
+      await this.releaseReservation(reservationId);
+      throw err;
+    }
 
     // Record the trade.
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
+
       await client.query(
       `INSERT INTO agent_trades (
          agent_id, token_address, curve_address, tx_hash,
@@ -862,6 +875,10 @@ export class AgentsService {
       // would simply fail at the on-chain step if the deployer runs out of USDC.
       await client.query('BEGIN');
 
+      // Serialize platform-wide spend checks across all agents. PostgreSQL
+      // releases this transaction-scoped advisory lock automatically.
+      await client.query('SELECT pg_advisory_xact_lock($1)', [0x4f524241]);
+
       const agentResult = await client.query(
         `SELECT daily_limit, monthly_limit, active
          FROM agents WHERE id = $1 FOR UPDATE`,
@@ -907,6 +924,33 @@ export class AgentsService {
       const dailyLimit = BigInt(lockedAgent.daily_limit);
       const monthlyLimit = BigInt(lockedAgent.monthly_limit);
 
+      const platformDailyLimit = this.requiredPlatformLimit(
+        'PLATFORM_DEPLOYER_DAILY_LIMIT_MICRO_USDC',
+      );
+      const platformMonthlyLimit = this.requiredPlatformLimit(
+        'PLATFORM_DEPLOYER_MONTHLY_LIMIT_MICRO_USDC',
+      );
+
+      const platformSpend = await client.query(
+        `SELECT
+           (COALESCE((SELECT SUM(fee_paid + gas_paid / 1000000000000) FROM agent_launches
+              WHERE status = 'confirmed' AND created_at >= NOW() - INTERVAL '24 hours'), 0)
+            + COALESCE((SELECT SUM(usdc_amount + gas_paid / 1000000000000) FROM agent_trades
+              WHERE status = 'confirmed' AND type = 'buy'
+                AND created_at >= NOW() - INTERVAL '24 hours'), 0)
+            + COALESCE((SELECT SUM(amount) FROM agent_spend_reservations
+              WHERE status = 'pending' AND created_at >= NOW() - INTERVAL '24 hours'), 0))::text AS daily,
+           (COALESCE((SELECT SUM(fee_paid + gas_paid / 1000000000000) FROM agent_launches
+              WHERE status = 'confirmed' AND created_at >= NOW() - INTERVAL '30 days'), 0)
+            + COALESCE((SELECT SUM(usdc_amount + gas_paid / 1000000000000) FROM agent_trades
+              WHERE status = 'confirmed' AND type = 'buy'
+                AND created_at >= NOW() - INTERVAL '30 days'), 0)
+            + COALESCE((SELECT SUM(amount) FROM agent_spend_reservations
+              WHERE status = 'pending' AND created_at >= NOW() - INTERVAL '30 days'), 0))::text AS monthly`,
+      );
+      const platformDaily = BigInt(platformSpend.rows[0]?.daily || '0');
+      const platformMonthly = BigInt(platformSpend.rows[0]?.monthly || '0');
+
       if (todayTotal + reservedAmount > dailyLimit) {
         throw new ForbiddenException(
           `Daily spending limit exceeded (used: ${todayTotal} / limit: ${dailyLimit} micro-USDC)`,
@@ -917,6 +961,13 @@ export class AgentsService {
         throw new ForbiddenException(
           `Monthly spending limit exceeded (used: ${monthTotal} / limit: ${monthlyLimit} micro-USDC)`,
         );
+      }
+
+      if (platformDaily + reservedAmount > platformDailyLimit) {
+        throw new ForbiddenException('Platform deployer daily spending cap exceeded');
+      }
+      if (platformMonthly + reservedAmount > platformMonthlyLimit) {
+        throw new ForbiddenException('Platform deployer monthly spending cap exceeded');
       }
 
       await client.query(
@@ -955,6 +1006,29 @@ export class AgentsService {
     if (result.rowCount !== 1) {
       throw new Error(`Spending reservation ${reservationId} is not pending`);
     }
+  }
+
+  private requiredPlatformLimit(name: string): bigint {
+    const raw = process.env[name];
+    if (!raw) {
+      throw new ForbiddenException(`Platform-funded actions disabled: ${name} is not configured`);
+    }
+    try {
+      const value = BigInt(raw);
+      if (value <= 0n) throw new Error();
+      return value;
+    } catch {
+      throw new ForbiddenException(`Platform-funded actions disabled: ${name} is invalid`);
+    }
+  }
+
+  private async releaseReservation(reservationId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE agent_spend_reservations
+       SET status = 'released', resolved_at = NOW()
+       WHERE reservation_id = $1 AND status = 'pending'`,
+      [reservationId],
+    );
   }
 
   async listAgentsByOwner(ownerWallet: string, limit: number, offset: number) {

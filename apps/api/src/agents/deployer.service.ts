@@ -40,6 +40,35 @@ if (ARC_CHAIN_ID !== arcTestnet.id && ARC_CHAIN_ID !== arc.id) {
 }
 const ACTIVE_ARC_CHAIN = ARC_CHAIN_ID === arc.id ? arc : arcTestnet;
 const IS_ARC_MAINNET = ARC_CHAIN_ID === arc.id;
+const DEPLOYER_ACTIONS_ENABLED = process.env.DEPLOYER_ACTIONS_ENABLED === 'true';
+
+function positiveBigIntEnv(name: string): bigint | undefined {
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  try {
+    const value = BigInt(raw);
+    if (value <= 0n) throw new Error();
+    return value;
+  } catch {
+    throw new Error(`${name} must be a positive integer in micro-USDC`);
+  }
+}
+
+const DEPLOYER_MAX_ACTION_USDC = positiveBigIntEnv(
+  'DEPLOYER_MAX_ACTION_MICRO_USDC',
+);
+const DEPLOYER_MAX_BALANCE_USDC = positiveBigIntEnv(
+  'DEPLOYER_MAX_BALANCE_MICRO_USDC',
+);
+
+if (
+  DEPLOYER_ACTIONS_ENABLED &&
+  (!DEPLOYER_MAX_ACTION_USDC || !DEPLOYER_MAX_BALANCE_USDC)
+) {
+  throw new Error(
+    'DEPLOYER_ACTIONS_ENABLED requires DEPLOYER_MAX_ACTION_MICRO_USDC and DEPLOYER_MAX_BALANCE_MICRO_USDC',
+  );
+}
 
 function requiredMainnetAddress(value: string | undefined, fallbackAddress: string, name: string) {
   if (value) return value;
@@ -217,6 +246,12 @@ export class DeployerService {
       return;
     }
 
+    if (IS_ARC_MAINNET) {
+      throw new Error(
+        'Environment private-key signing is forbidden on Arc mainnet; use a reviewed managed signer integration',
+      );
+    }
+
     this.account = privateKeyToAccount(privateKey);
 
     this.walletClient = createWalletClient({
@@ -225,12 +260,40 @@ export class DeployerService {
       transport,
     });
 
-    this.logger.log(`Deployer wallet initialized: ${this.account.address}`);
+    this.logger.log(
+      `Deployer wallet initialized: ${this.account.address}; funded actions ${
+        DEPLOYER_ACTIONS_ENABLED ? 'enabled with caps' : 'disabled'
+      }`,
+    );
   }
 
   /** Check if the deployer wallet is configured. */
   isConfigured(): boolean {
-    return !!this.account;
+    return !!this.account && DEPLOYER_ACTIONS_ENABLED;
+  }
+
+  private async assertActionAllowed(spendMicroUsdc: bigint): Promise<void> {
+    if (!this.account || !DEPLOYER_ACTIONS_ENABLED) {
+      throw new Error('Platform-funded deployer actions are disabled');
+    }
+    if (
+      DEPLOYER_MAX_ACTION_USDC === undefined ||
+      DEPLOYER_MAX_BALANCE_USDC === undefined
+    ) {
+      throw new Error('Deployer safety caps are not configured');
+    }
+    if (spendMicroUsdc > DEPLOYER_MAX_ACTION_USDC) {
+      throw new Error('Requested action exceeds the deployer per-action cap');
+    }
+    const nativeBalance = (await this.publicClient.getBalance({
+      address: this.account.address,
+    })) as bigint;
+    const maxBalance18dec = DEPLOYER_MAX_BALANCE_USDC * 1_000_000_000_000n;
+    if (nativeBalance > maxBalance18dec) {
+      throw new Error(
+        'Deployer balance exceeds its configured hot-wallet ceiling; move excess funds to treasury',
+      );
+    }
   }
 
   /** Get the deployer wallet address. */
@@ -265,6 +328,7 @@ export class DeployerService {
       abi: TOKEN_FACTORY_ABI,
       functionName: 'creationFee',
     })) as bigint;
+    await this.assertActionAllowed(creationFee);
     const allowance = (await this.publicClient.readContract({
       address: USDC_ADDRESS,
       abi: ERC20_ABI,
@@ -349,7 +413,7 @@ export class DeployerService {
    * Used to monitor if the wallet needs topping up.
    */
   async getBalance(): Promise<bigint> {
-    if (!this.isConfigured()) return 0n;
+    if (!this.account) return 0n;
     const balance = await this.publicClient.getBalance({
       address: this.account.address,
     });
@@ -365,6 +429,13 @@ export class DeployerService {
     if (!this.isConfigured()) {
       throw new Error('Deployer wallet not configured');
     }
+    await this.assertActionAllowed(0n);
+    const approvalCap = positiveBigIntEnv('TOKEN_FACTORY_APPROVAL_CAP_USDC');
+    if (!approvalCap || approvalCap > DEPLOYER_MAX_ACTION_USDC!) {
+      throw new Error(
+        'TOKEN_FACTORY_APPROVAL_CAP_USDC is required and cannot exceed the deployer per-action cap',
+      );
+    }
 
     const txHash = await this.walletClient.writeContract({
       address: USDC_ADDRESS,
@@ -372,7 +443,7 @@ export class DeployerService {
       functionName: 'approve',
       args: [
         this.tokenFactoryAddress,
-        BigInt(process.env.TOKEN_FACTORY_APPROVAL_CAP_USDC || '50000000'),
+        approvalCap,
       ],
       chain: ACTIVE_ARC_CHAIN,
       account: this.account,
@@ -471,6 +542,7 @@ export class DeployerService {
     if (!this.isConfigured()) {
       throw new Error('Deployer wallet not configured');
     }
+    await this.assertActionAllowed(usdcAmount);
 
     const curve = curveAddress.toLowerCase();
     this.logger.log(`Buying on curve ${curve} with ${usdcAmount} USDC (6-dec)`);
@@ -501,11 +573,14 @@ export class DeployerService {
         chain: ACTIVE_ARC_CHAIN,
         account: this.account,
       });
-      await this.publicClient.waitForTransactionReceipt({
+      const approvalReceipt = await this.publicClient.waitForTransactionReceipt({
         hash: approveTx,
         confirmations: 1,
         timeout: 30_000,
       });
+      if (approvalReceipt.status !== 'success') {
+        throw new Error(`Curve approval reverted (tx: ${approveTx})`);
+      }
       this.logger.log(`USDC approved for curve ${curve}`);
     }
 
@@ -560,6 +635,7 @@ export class DeployerService {
     if (!this.isConfigured()) {
       throw new Error('Deployer wallet not configured');
     }
+    await this.assertActionAllowed(0n);
 
     const token = tokenAddress.toLowerCase();
     const curve = curveAddress.toLowerCase();
@@ -605,11 +681,14 @@ export class DeployerService {
         chain: ACTIVE_ARC_CHAIN,
         account: this.account,
       });
-      await this.publicClient.waitForTransactionReceipt({
+      const approvalReceipt = await this.publicClient.waitForTransactionReceipt({
         hash: approveTx,
         confirmations: 1,
         timeout: 30_000,
       });
+      if (approvalReceipt.status !== 'success') {
+        throw new Error(`Token approval reverted (tx: ${approveTx})`);
+      }
       this.logger.log(`Token approved for curve ${curve}`);
     }
 
