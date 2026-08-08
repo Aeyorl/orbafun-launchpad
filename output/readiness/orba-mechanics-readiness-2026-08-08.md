@@ -48,7 +48,7 @@
 
 ## Resolved in source, awaiting deployment verification
 
-1. TradingView history now merges the page's already-loaded candles with its own cold history request, sorts/deduplicates bars, and rejects malformed values. Targeted tests pass, but the deployed chart must be rechecked after this commit reaches production.
+1. TradingView history now merges the page's already-loaded candles with its own cold history request, sorts/deduplicates bars, and rejects malformed values. Targeted tests pass, and a clean deployed-browser capture shows OHLC candles and volume rendered with `Live` status.
 2. WebSocket status now distinguishes initial `Connecting` from a genuine post-disconnect `Reconnecting` state. A clean production browser showed `Live`; the earlier hydration/provider errors reproduced only in a browser profile with conflicting wallet extensions.
 3. Image upload copy and client validation now exactly match the API: PNG, JPEG, GIF, or WebP only.
 4. `nanoid` was upgraded to 3.3.17. Production and full development dependency audits now report zero vulnerabilities.
@@ -59,8 +59,8 @@
 
 1. Set `POSTGRES_SSL_CA_BASE64` from the Supabase Database Settings CA and rerun `node scripts/check-infrastructure-readiness.js`. Strict local verification currently fails closed; Redis independently passes PING and TTL write/read/delete.
 2. Fund enough Arc testnet USDC for all 100 wallets and rerun the hardened load test. Capacity is proven at 62 simultaneous traders, not yet 100 distinct funded wallets.
-3. Visually verify TradingView bars after Vercel serves revision `d662e5f`; Render is already serving that revision and both deployed health routes pass.
-4. Complete an independent credentialed smart-contract/security audit before meaningful mainnet funds.
+3. Complete an independent credentialed smart-contract/security audit before meaningful mainnet funds.
+4. When Arc mainnet operator endpoints are available, provision redundant RPCs, deploy the audited contract set, transfer every owner role to the Safe, configure the mainnet environment, and rerun the full launch/buy/sell/graduation checks. Testnet success is not evidence of a completed mainnet deployment.
 
 ## Test harness changes
 
