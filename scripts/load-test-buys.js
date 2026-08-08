@@ -126,6 +126,25 @@ function saveBuyerWallets(buyers, curve) {
   return outputPath;
 }
 
+function loadBuyerWallets(walletFile, concurrency) {
+  const inputPath = path.resolve(walletFile);
+  const saved = JSON.parse(fs.readFileSync(inputPath, 'utf8'));
+  if (saved.chainId !== arcTestnet.id || !Array.isArray(saved.wallets)) {
+    throw new Error(`Invalid Arc testnet wallet recovery file: ${inputPath}`);
+  }
+  if (saved.wallets.length < concurrency) {
+    throw new Error(`Recovery file has ${saved.wallets.length} wallets; ${concurrency} requested`);
+  }
+  return {
+    walletFile: inputPath,
+    buyers: saved.wallets.slice(0, concurrency).map(({ privateKey, index }, position) => ({
+      pk: privateKey,
+      account: privateKeyToAccount(privateKey),
+      index: Number.isInteger(index) ? index : position,
+    })),
+  };
+}
+
 /**
  * Retry wrapper for RPC reads — handles Arc testnet rate limits (-32011).
  */
@@ -403,15 +422,23 @@ async function main() {
   console.log('');
 
   // ─── Step 1: Generate ephemeral buyer wallets ──────────────────────────
-  console.log(`--- Step 1: Generating ${concurrency} ephemeral buyer wallets ---`);
-  const buyers = [];
-  for (let i = 0; i < concurrency; i++) {
-    const pk = generatePrivateKey();
-    const account = privateKeyToAccount(pk);
-    buyers.push({ account, pk, index: i });
+  const configuredWalletFile = process.env.LOAD_TEST_WALLET_FILE;
+  console.log(`--- Step 1: ${configuredWalletFile ? 'Loading' : 'Generating'} ${concurrency} ephemeral buyer wallets ---`);
+  let buyers;
+  let walletFile;
+  if (configuredWalletFile && fs.existsSync(path.resolve(configuredWalletFile))) {
+    ({ buyers, walletFile } = loadBuyerWallets(configuredWalletFile, concurrency));
+    console.log(`  Loaded ${buyers.length} wallets from the recovery file`);
+  } else {
+    buyers = [];
+    for (let i = 0; i < concurrency; i++) {
+      const pk = generatePrivateKey();
+      const account = privateKeyToAccount(pk);
+      buyers.push({ account, pk, index: i });
+    }
+    console.log(`  Generated ${buyers.length} wallets`);
+    walletFile = saveBuyerWallets(buyers, curve);
   }
-  console.log(`  Generated ${buyers.length} wallets`);
-  const walletFile = saveBuyerWallets(buyers, curve);
   console.log(`  Recovery file: ${walletFile}`);
   console.log('  It contains testnet private keys; keep it private and delete it after recovering funds.');
   console.log('');
@@ -431,9 +458,18 @@ async function main() {
   for (let i = 0; i < buyers.length; i++) {
     const buyer = buyers[i];
     try {
+      const currentBalance = await publicClient.getBalance({ address: buyer.account.address });
+      if (currentBalance >= fundingPerBuyer) {
+        funded++;
+        fundedBuyers.push(buyer);
+        if ((i + 1) % 5 === 0 || i === buyers.length - 1) {
+          console.log(`  Ready ${i + 1}/${buyers.length}...`);
+        }
+        continue;
+      }
       const nativeHash = await deployerWallet.sendTransaction({
         to: buyer.account.address,
-        value: fundingPerBuyer,
+        value: fundingPerBuyer - currentBalance,
       });
       await waitForReceipt(publicClient, nativeHash, `fund-buyer-${buyer.index}`);
 

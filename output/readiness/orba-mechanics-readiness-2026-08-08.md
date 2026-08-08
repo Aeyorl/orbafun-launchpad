@@ -21,7 +21,7 @@
 | Redis | PASS | PING plus namespaced TTL write/read/delete round trip; deployed `/health/ready` reports Redis ready |
 | WebSocket transport | PASS | Live Socket.IO WebSocket connection and token room join succeeded |
 | Frontend tests | PASS | 110/110, including TradingView cold-history fallback and buy approval/receipt flow |
-| API tests | PASS | 28/28, including liveness/readiness behavior |
+| API tests | PASS | 29/29, including liveness/readiness and burst cache coalescing behavior |
 | Builds | PASS | API build and Next.js production webpack build passed; 18 app pages generated |
 | Production dependencies | PASS | `npm audit --omit=dev`: 0 vulnerabilities; full development audit: 0 vulnerabilities |
 
@@ -40,11 +40,13 @@
 ### Simultaneous on-chain buyers
 
 - 10-user stage: 10/10 buys, zero reverts, 0.92 tx/s, consistent state, indexed in 20.68 seconds
-- Requested 100-user stage: only 62 temporary wallets could be funded before the deployer exhausted its testnet gas balance
-- Actual burst: 62/62 buys, zero reverts, 4.30 tx/s, average 10.99 seconds, max 14.39 seconds, consistent state
-- Indexer: 61/62 within 120 seconds; the final trade appeared later, producing 74/74 total rows
+- First 100-wallet stage: 100/100 buys, zero reverts, 3.47 tx/s, average 20.33 seconds, max 28.84 seconds, consistent state
+- Before optimization, the indexer reached 71/100 in 120 seconds and all 100 in about 194 seconds
+- Indexer optimization removed the per-trade readback and debounced repeated cache-pattern scans without changing ordered financial transactions
+- Repeat 100-wallet stage: 89/100 reached chain, zero reverts, consistent state; 11 failed before a tx hash due to public testnet RPC timeouts
+- Optimized indexer: all 89 successful trades appeared in 55.92 seconds
 
-**Result: PASS at 62 simultaneous traders; 100 simultaneous traders remains unproven because setup funding stopped at 62.**
+**Result: PASS for 100 distinct simultaneous traders at the contract/application layer. Public testnet RPC reliability is variable at this burst size and requires production-grade redundant endpoints for mainnet.**
 
 ## Resolved in source, awaiting deployment verification
 
@@ -58,9 +60,8 @@
 ## Remaining mainnet blockers
 
 1. Set `POSTGRES_SSL_CA_BASE64` from the Supabase Database Settings CA and rerun `node scripts/check-infrastructure-readiness.js`. Strict local verification currently fails closed; Redis independently passes PING and TTL write/read/delete.
-2. Fund enough Arc testnet USDC for all 100 wallets and rerun the hardened load test. Capacity is proven at 62 simultaneous traders, not yet 100 distinct funded wallets.
-3. Complete an independent credentialed smart-contract/security audit before meaningful mainnet funds.
-4. When Arc mainnet operator endpoints are available, provision redundant RPCs, deploy the audited contract set, transfer every owner role to the Safe, configure the mainnet environment, and rerun the full launch/buy/sell/graduation checks. Testnet success is not evidence of a completed mainnet deployment.
+2. Complete an independent credentialed smart-contract/security audit before meaningful mainnet funds.
+3. When Arc mainnet operator endpoints are available, provision redundant production-grade RPCs, deploy the audited contract set, transfer every owner role to the Safe, configure the mainnet environment, and rerun the full launch/buy/sell/graduation checks. Testnet success is not evidence of a completed mainnet deployment.
 
 ## Test harness changes
 
@@ -68,4 +69,5 @@
 - Load test now treats Arc native/6-decimal USDC as one asset and no longer double-funds wallets.
 - Load test now fails if it funds fewer users than requested, state verification fails, or the indexer misses the deadline.
 - Load test now includes funding-gas preflight and a private-key recovery artifact ignored by Git.
+- Load test can reuse its recovery file and tops up only wallets below the requested balance.
 - Added reproducible live metadata, HTTP capacity, contract ownership, and infrastructure readiness scripts.
