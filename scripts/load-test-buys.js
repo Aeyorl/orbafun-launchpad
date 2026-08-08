@@ -7,7 +7,8 @@
  *
  * What this script does:
  *   1. Generates N ephemeral buyer wallets (random private keys)
- *   2. Funds each from the deployer wallet with USDC (for buying) + native USDC (for gas)
+ *   2. Funds each from the deployer wallet once; Arc exposes the same USDC as
+ *      native gas (18 decimals) and ERC-20 spendable USDC (6 decimals)
  *   3. All N wallets concurrently approve USDC + call buy() on the same curve
  *   4. Measures: throughput (txs/s), success/failure count, RPC errors,
  *      indexer lag (time for all trades to appear in API)
@@ -23,10 +24,8 @@
  *
  * Requirements:
  *   - DEPLOYER_PRIVATE_KEY env var (funded wallet)
- *   - API running on localhost:4000 (for indexer lag measurement)
- *   - Docker (pg + redis) running
- *   - Deployer wallet has at least (concurrency * usdc-per-buy + concurrency * 1) USDC
- *     for funding buyers + gas
+ *   - E2E_API_URL may override the deployed API used for indexer lag measurement
+ *   - Deployer wallet has enough USDC for each buy plus the configurable gas buffer
  *
  * Safety:
  *   - Uses small buy amounts to stay well under max-wallet (4% of supply)
@@ -35,6 +34,8 @@
  *   - Idempotent: can re-run against the same curve (buys just add to tokensSold)
  */
 require('dotenv').config();
+const fs = require('node:fs');
+const path = require('node:path');
 const {
   createWalletClient,
   createPublicClient,
@@ -50,14 +51,14 @@ const { generatePrivateKey, privateKeyToAccount } = require('viem/accounts');
 const DEPLOYER_PK = process.env.DEPLOYER_PRIVATE_KEY;
 const RPC_URLS = (
   process.env.ARC_RPC_URLS ||
-  'https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io'
+  'https://rpc.testnet.arc.network,https://rpc.drpc.testnet.arc.network,https://rpc.quicknode.testnet.arc.network,https://rpc.blockdaemon.testnet.arc.network'
 )
   .split(',')
   .map((u) => u.trim())
   .filter(Boolean);
 
 const USDC = '0x3600000000000000000000000000000000000000';
-const API = 'http://localhost:4000';
+const API = (process.env.E2E_API_URL || 'https://orbafun-api.onrender.com').replace(/\/$/, '');
 
 const BONDING_CURVE_ABI = [
   {
@@ -101,6 +102,29 @@ const BONDING_CURVE_ABI = [
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function saveBuyerWallets(buyers, curve) {
+  const outputPath = path.resolve(
+    process.env.LOAD_TEST_WALLET_FILE || path.join(
+      'output',
+      'load-tests',
+      `buyers-${curve.toLowerCase()}-${new Date().toISOString().replace(/[:.]/g, '-')}.wallets.json`,
+    ),
+  );
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, JSON.stringify({
+    network: 'Arc Testnet',
+    chainId: arcTestnet.id,
+    curve,
+    createdAt: new Date().toISOString(),
+    wallets: buyers.map(({ account, pk, index }) => ({
+      index,
+      address: account.address,
+      privateKey: pk,
+    })),
+  }, null, 2), { encoding: 'utf8', mode: 0o600 });
+  return outputPath;
+}
 
 /**
  * Retry wrapper for RPC reads — handles Arc testnet rate limits (-32011).
@@ -333,27 +357,37 @@ async function main() {
     process.exit(1);
   }
 
-  // Each buyer needs: usdcPerBuy (for the buy) + gas money (native USDC, 18-dec).
-  // We fund each buyer with usdcPerBuy (ERC-20) + a small native USDC amount for gas.
-  const GAS_PER_BUYER = parseUnits('0.5', 18); // 0.5 native USDC for gas (generous)
-  const totalUsdcNeeded = usdcPerBuy * BigInt(concurrency);
-  const totalNativeNeeded = GAS_PER_BUYER * BigInt(concurrency);
-
-  if (deployerUsdcBalance < totalUsdcNeeded) {
-    console.error(
-      `Insufficient USDC: need ${formatUnits(totalUsdcNeeded, 6)} USDC for buys, have ${formatUnits(deployerUsdcBalance, 6)} USDC`,
-    );
+  // Arc's native and ERC-20 USDC views represent the same asset at different
+  // decimal scales. One native transfer therefore funds both the buy and gas.
+  const gasBufferPerBuyer = parseUnits(process.env.LOAD_TEST_GAS_BUFFER_USDC || '0.01', 18);
+  const buyPerBuyerNative = usdcPerBuy * 1_000_000_000_000n;
+  const fundingPerBuyer = buyPerBuyerNative + gasBufferPerBuyer;
+  let fundingGasPerBuyer;
+  let fundingGasPrice;
+  try {
+    [fundingGasPerBuyer, fundingGasPrice] = await Promise.all([
+      publicClient.estimateGas({
+        account: deployerAccount,
+        to: deployerAccount.address,
+        value: fundingPerBuyer,
+      }),
+      publicClient.getGasPrice(),
+    ]);
+  } catch (e) {
+    console.error(`Cannot estimate funding cost safely: ${e.shortMessage || e.message}`);
     process.exit(1);
   }
+  const estimatedFundingFees = fundingGasPerBuyer * fundingGasPrice * BigInt(concurrency);
+  const fundingFeeReserve = (estimatedFundingFees * 125n) / 100n;
+  const totalFundingNeeded = (fundingPerBuyer * BigInt(concurrency)) + fundingFeeReserve;
 
-  // Check deployer native balance for gas funding
   let deployerNativeBalance;
   try {
     deployerNativeBalance = await publicClient.getBalance({ address: deployerAccount.address });
     console.log(`  Deployer native balance: ${formatUnits(deployerNativeBalance, 18)} USDC (native)`);
-    if (deployerNativeBalance < totalNativeNeeded) {
+    if (deployerNativeBalance < totalFundingNeeded) {
       console.error(
-        `Insufficient native USDC for gas: need ${formatUnits(totalNativeNeeded, 18)}, have ${formatUnits(deployerNativeBalance, 18)}`,
+        `Insufficient USDC: need ${formatUnits(totalFundingNeeded, 18)}, have ${formatUnits(deployerNativeBalance, 18)}`,
       );
       process.exit(1);
     }
@@ -362,8 +396,10 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`  Total USDC needed for buys: ${formatUnits(totalUsdcNeeded, 6)} USDC`);
-  console.log(`  Total native needed for gas: ${formatUnits(totalNativeNeeded, 18)} USDC`);
+  console.log(`  Buyer funding value: ${formatUnits(fundingPerBuyer * BigInt(concurrency), 18)} USDC`);
+  console.log(`  Estimated funding fees + 25% reserve: ${formatUnits(fundingFeeReserve, 18)} USDC`);
+  console.log(`  Total pre-flight requirement: ${formatUnits(totalFundingNeeded, 18)} USDC`);
+  console.log(`  Gas buffer per buyer: ${formatUnits(gasBufferPerBuyer, 18)} USDC`);
   console.log('');
 
   // ─── Step 1: Generate ephemeral buyer wallets ──────────────────────────
@@ -375,15 +411,16 @@ async function main() {
     buyers.push({ account, pk, index: i });
   }
   console.log(`  Generated ${buyers.length} wallets`);
+  const walletFile = saveBuyerWallets(buyers, curve);
+  console.log(`  Recovery file: ${walletFile}`);
+  console.log('  It contains testnet private keys; keep it private and delete it after recovering funds.');
   console.log('');
 
   // ─── Step 2: Fund each buyer (USDC + native for gas) ───────────────────
   console.log('--- Step 2: Funding buyer wallets ---');
-  console.log(`  Sending ${usdcPerBuyStr} USDC + 0.5 native USDC to each buyer...`);
+  console.log(`  Sending ${formatUnits(fundingPerBuyer, 18)} USDC to each buyer...`);
 
-  // Approve USDC for the total amount (one approve, then transfer to each)
-  // Actually, we use transfer (not transferFrom), so no approve needed.
-  // Send USDC + native to each buyer sequentially (funding is not the load test)
+  // Fund once per buyer because Arc native and ERC-20 USDC are the same asset.
   const fundingStart = Date.now();
   let funded = 0;
   let fundingErrors = 0;
@@ -394,20 +431,11 @@ async function main() {
   for (let i = 0; i < buyers.length; i++) {
     const buyer = buyers[i];
     try {
-      // ERC-20 USDC transfer
-      const usdcHash = await writeRetry(
-        deployerWallet,
-        { address: USDC, abi: erc20Abi, functionName: 'transfer', args: [buyer.account.address, usdcPerBuy] },
-        `fund-usdc-${buyer.index}`,
-      );
-      await waitForReceipt(publicClient, usdcHash, `fund-usdc-${buyer.index}`);
-
-      // Native USDC transfer (for gas)
       const nativeHash = await deployerWallet.sendTransaction({
         to: buyer.account.address,
-        value: GAS_PER_BUYER,
+        value: fundingPerBuyer,
       });
-      await waitForReceipt(publicClient, nativeHash, `fund-native-${buyer.index}`);
+      await waitForReceipt(publicClient, nativeHash, `fund-buyer-${buyer.index}`);
 
       funded++;
       fundedBuyers.push(buyer);
@@ -423,9 +451,12 @@ async function main() {
   const fundingDuration = Date.now() - fundingStart;
   console.log(`  Funding complete: ${funded} funded, ${fundingErrors} errors in ${fmtDuration(fundingDuration)}`);
   if (fundedBuyers.length < concurrency) {
-    console.error(`  Only ${fundedBuyers.length} buyers funded — proceeding with available buyers`);
+    console.error(`  Only ${fundedBuyers.length}/${concurrency} buyers funded. Aborting instead of reporting a partial load test.`);
+    console.error(`  Recover any funded testnet balances with: ${walletFile}`);
+    process.exit(1);
   }
   const activeBuyers = fundedBuyers;
+  const allBuyersFunded = activeBuyers.length === concurrency;
   console.log('');
 
   // ─── Step 3: Concurrent buys (the actual load test) ────────────────────
@@ -493,6 +524,7 @@ async function main() {
   // ─── Step 5: Verify on-chain state integrity ───────────────────────────
   console.log('--- Step 5: Verifying on-chain state integrity ---');
   let tokensSoldAfter, marketCapAfter, reserveTokensAfter;
+  let stateConsistent = false;
   try {
     // Wait a moment for finality
     await sleep(3000);
@@ -513,6 +545,7 @@ async function main() {
       console.log('  ⚠ WARNING: tokensSold did not increase despite successful buys — possible state corruption!');
     } else {
       console.log('  ✓ On-chain state consistent with successful buys');
+      stateConsistent = true;
     }
   } catch (e) {
     console.log(`  ⚠ Could not verify on-chain state: ${e.message}`);
@@ -521,6 +554,7 @@ async function main() {
 
   // ─── Step 6: Measure indexer lag ───────────────────────────────────────
   console.log('--- Step 6: Measuring indexer lag ---');
+  let indexerComplete = successes.length === 0;
   if (successes.length === 0) {
     console.log('  Skipped (no successful buys to index)');
   } else {
@@ -555,6 +589,7 @@ async function main() {
           }
           if (indexedCount >= successes.length) {
             indexerLagMs = Date.now() - indexerStart;
+            indexerComplete = true;
             console.log(`  ✓ All ${successes.length} trades indexed in ${fmtDuration(indexerLagMs)}`);
             break;
           }
@@ -597,11 +632,13 @@ async function main() {
 
   console.log('');
   console.log('  Pass criteria:');
+  console.log(`    ✓ Requested buyers funded:    ${allBuyersFunded ? 'PASS' : 'FAIL'} (${activeBuyers.length}/${concurrency})`);
   console.log(`    ✓ Success rate >= 80%:        ${successRate >= 0.8 ? 'PASS' : 'FAIL'} (${(successRate * 100).toFixed(1)}%)`);
   console.log(`    ✓ No contract reverts:        ${contractReverts === 0 ? 'PASS' : 'FAIL'} (${contractReverts} reverts)`);
-  console.log(`    ✓ On-chain state consistent:  ${tokensSoldAfter && tokensSoldAfter > tokensSoldBefore ? 'PASS' : 'CHECK'}`);
+  console.log(`    ✓ On-chain state consistent:  ${stateConsistent ? 'PASS' : 'FAIL'}`);
+  console.log(`    ✓ Indexer caught up:          ${indexerComplete ? 'PASS' : 'FAIL'}`);
 
-  const overallPass = successRate >= 0.8 && contractReverts === 0;
+  const overallPass = allBuyersFunded && successRate >= 0.8 && contractReverts === 0 && stateConsistent && indexerComplete;
   console.log('');
   console.log(`  Overall: ${overallPass ? '✓ PASS' : '✗ FAIL'}`);
   console.log('========================================');

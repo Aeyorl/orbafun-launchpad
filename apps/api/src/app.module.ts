@@ -17,6 +17,7 @@ import { AuthModule } from './auth/auth.module';
 import { AgentsModule } from './agents/agents.module';
 import { ReferralModule } from './referrals/referral.module';
 import { RpcController } from './rpc/rpc.controller';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { RpcController } from './rpc/rpc.controller';
     AuthModule,
     AgentsModule,
     ReferralModule,
+    HealthModule,
   ],
   controllers: [RpcController],
   providers: [

@@ -41,6 +41,7 @@ yarn-error.log*
 # Testing
 coverage/
 .nyc_output/
+output/load-tests/*.wallets.json
 
 # Envio / Goldsky
 .envio/

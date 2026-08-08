@@ -4,6 +4,7 @@ import { useRef, useEffect, useCallback, useState, memo } from 'react';
 import { OhlcvCandle, CandleTimeframe } from '@/lib/api';
 import { formatMarketCap, formatPrice } from '@/lib/utils';
 import { ChartToolbar, ChartType, MetricMode, ScaleType } from './ChartToolbar';
+import { ConnectionStatus } from '@/lib/useWebSocket';
 
 // Dynamic imports for lightweight-charts (client-side only)
 let createChart: any;
@@ -31,6 +32,7 @@ export const TradingChart = memo(function TradingChart({
   tokenSymbol,
   timeframe,
   isConnected,
+  connectionStatus,
   onTimeframeChange,
   metricMode: externalMode,
   onMetricModeChange: externalModeChange,
@@ -39,6 +41,7 @@ export const TradingChart = memo(function TradingChart({
   tokenSymbol?: string;
   timeframe: CandleTimeframe;
   isConnected?: boolean;
+  connectionStatus?: ConnectionStatus;
   onTimeframeChange: (tf: CandleTimeframe) => void;
   metricMode?: MetricMode;
   onMetricModeChange?: (mode: MetricMode) => void;
@@ -341,6 +344,7 @@ export const TradingChart = memo(function TradingChart({
       {/* Toolbar */}
       <ChartToolbar
         isConnected={isConnected}
+        connectionStatus={connectionStatus}
         timeframe={timeframe}
         chartType={chartType}
         metricMode={metricMode}

@@ -4,6 +4,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, CandleTimeframe, OhlcvCandle } from '@/lib/api';
 import { MetricMode } from './ChartToolbar';
 import { TradingChart } from './TradingChart';
+import { ConnectionStatus } from '@/lib/useWebSocket';
 
 const LIBRARY_PATH = '/vendor/tradingview/charting_library/';
 const LIBRARY_SCRIPT = `${LIBRARY_PATH}charting_library.standalone.js`;
@@ -134,12 +135,14 @@ export function createOrbaDatafeed({
   tokenSymbol,
   metricMode,
   subscribers,
+  getSeedCandles = () => [],
 }: {
   tokenAddress: string;
   tokenName: string;
   tokenSymbol: string;
   metricMode: MetricMode;
   subscribers: Map<string, { resolution: TvResolution; callback: RealtimeCallback }>;
+  getSeedCandles?: () => OhlcvCandle[];
 }) {
   const displaySymbol = `${tokenSymbol}/${metricMode === 'price' ? 'USDC' : 'MCAP'}`;
 
@@ -201,7 +204,25 @@ export function createOrbaDatafeed({
 
       try {
         const timeframe = RESOLUTION_TO_TIMEFRAME[resolution];
-        const candles = await api.getCandles(tokenAddress, timeframe, metricMode, 2000);
+        const fetchedCandles = await api.getCandles(tokenAddress, timeframe, metricMode, 2000);
+        // The widget asks for history only once during initialization. If that
+        // request races a cold API response, use the candles already loaded by
+        // the page rather than permanently displaying an empty chart.
+        const byTimestamp = new Map<number, OhlcvCandle>();
+        for (const candle of [...getSeedCandles(), ...fetchedCandles]) {
+          if (
+            Number.isFinite(candle.timestamp) &&
+            Number.isFinite(candle.open) &&
+            Number.isFinite(candle.high) &&
+            Number.isFinite(candle.low) &&
+            Number.isFinite(candle.close) &&
+            candle.timestamp > 0 && candle.open > 0 && candle.high > 0 &&
+            candle.low > 0 && candle.close > 0
+          ) {
+            byTimestamp.set(candle.timestamp, candle);
+          }
+        }
+        const candles = [...byTimestamp.values()].sort((a, b) => a.timestamp - b.timestamp);
         const eligible = candles.filter((candle) => candle.timestamp < periodParams.to);
         const requested = eligible.filter((candle) => candle.timestamp >= periodParams.from);
         const selected = requested.length >= periodParams.countBack
@@ -239,6 +260,7 @@ type AdvancedChartProps = {
   tokenSymbol: string;
   timeframe: CandleTimeframe;
   isConnected?: boolean;
+  connectionStatus?: ConnectionStatus;
   onTimeframeChange: (timeframe: CandleTimeframe) => void;
   metricMode: MetricMode;
   onMetricModeChange: (mode: MetricMode) => void;
@@ -251,6 +273,7 @@ function LicensedAdvancedChart({
   tokenSymbol,
   timeframe,
   isConnected,
+  connectionStatus,
   onTimeframeChange,
   metricMode,
   onMetricModeChange,
@@ -258,6 +281,7 @@ function LicensedAdvancedChart({
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<TvWidget | null>(null);
   const timeframeRef = useRef(timeframe);
+  const candlesRef = useRef(candles);
   const subscribersRef = useRef(
     new Map<string, { resolution: TvResolution; callback: RealtimeCallback }>(),
   );
@@ -269,6 +293,7 @@ function LicensedAdvancedChart({
       tokenSymbol,
       metricMode,
       subscribers: subscribersRef.current,
+      getSeedCandles: () => candlesRef.current,
     }),
     [metricMode, tokenAddress, tokenName, tokenSymbol],
   );
@@ -276,6 +301,10 @@ function LicensedAdvancedChart({
   useEffect(() => {
     timeframeRef.current = timeframe;
   }, [timeframe]);
+
+  useEffect(() => {
+    candlesRef.current = candles;
+  }, [candles]);
 
   useEffect(() => {
     const TradingView = window.TradingView;
@@ -371,7 +400,7 @@ function LicensedAdvancedChart({
       <div className="flex h-10 items-center justify-between border-b border-[#1e2a44] px-3 text-xs">
         <div className="flex items-center gap-2 text-[#8b95a8]">
           <span className={`h-2 w-2 ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-          <span>{isConnected ? 'Live' : 'Reconnecting'}</span>
+          <span>{isConnected ? 'Live' : connectionStatus === 'reconnecting' ? 'Reconnecting' : 'Connecting'}</span>
           <span className="text-[#4f5d75]">TradingView Advanced Charts</span>
         </div>
         <div className="flex items-center border border-[#1e2a44]">
@@ -423,6 +452,7 @@ export const AdvancedTradingChart = memo(function AdvancedTradingChart(props: Ad
         tokenSymbol={props.tokenSymbol}
         timeframe={props.timeframe}
         isConnected={props.isConnected}
+        connectionStatus={props.connectionStatus}
         onTimeframeChange={props.onTimeframeChange}
         metricMode={props.metricMode}
         onMetricModeChange={handleMetricModeChange}

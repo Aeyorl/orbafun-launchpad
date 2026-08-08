@@ -59,6 +59,62 @@ describe('Orba Advanced Charts datafeed', () => {
     );
   });
 
+  it('uses page-loaded candles when the initial history request returns empty', async () => {
+    vi.spyOn(api, 'getCandles').mockResolvedValueOnce([]);
+    const datafeed = createOrbaDatafeed({
+      tokenAddress: '0xabc',
+      tokenName: 'Arc Dog',
+      tokenSymbol: 'ADOGE',
+      metricMode: 'price',
+      subscribers: new Map(),
+      getSeedCandles: () => candles,
+    });
+    const onHistory = vi.fn();
+
+    await datafeed.getBars(
+      {},
+      '5',
+      { from: 1_719_999_000, to: 1_720_001_000, countBack: 2 },
+      onHistory,
+      vi.fn(),
+    );
+
+    expect(onHistory).toHaveBeenCalledWith(
+      candles.map((candle) => expect.objectContaining({ time: candle.timestamp * 1000 })),
+      { noData: false },
+    );
+  });
+
+  it('sorts, deduplicates, and rejects malformed history bars', async () => {
+    const newest = { ...candles[1], close: 0.0000057 };
+    vi.spyOn(api, 'getCandles').mockResolvedValueOnce([
+      newest,
+      { ...candles[0], close: Number.NaN },
+    ]);
+    const datafeed = createOrbaDatafeed({
+      tokenAddress: '0xabc',
+      tokenName: 'Arc Dog',
+      tokenSymbol: 'ADOGE',
+      metricMode: 'price',
+      subscribers: new Map(),
+      getSeedCandles: () => [candles[1], candles[0]],
+    });
+    const onHistory = vi.fn();
+
+    await datafeed.getBars(
+      {},
+      '5',
+      { from: 1_719_999_000, to: 1_720_001_000, countBack: 2 },
+      onHistory,
+      vi.fn(),
+    );
+
+    expect(onHistory).toHaveBeenCalledWith([
+      expect.objectContaining({ time: candles[0].timestamp * 1000, close: candles[0].close }),
+      expect.objectContaining({ time: newest.timestamp * 1000, close: newest.close }),
+    ], { noData: false });
+  });
+
   it('registers and removes real-time subscribers', () => {
     const subscribers = new Map();
     const datafeed = createOrbaDatafeed({
