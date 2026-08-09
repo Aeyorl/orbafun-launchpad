@@ -21,6 +21,10 @@ export PGHOST=$restore_host
 export PGPORT=$restore_port
 export PGUSER=$restore_user
 export PGPASSWORD=${RESTORE_PGPASSWORD:-}
+# The restore target is constrained to localhost above. Do not carry the remote
+# Supabase CA/verify-full settings into this isolated, non-TLS scratch server.
+export PGSSLMODE=disable
+unset PGSSLROOTCERT
 
 for command in psql createdb dropdb pg_restore; do
   command -v "$command" >/dev/null || { echo "$command is required" >&2; exit 1; }
