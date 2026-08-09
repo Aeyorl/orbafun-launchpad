@@ -37,9 +37,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             postgresql-17 postgresql-client-17 postgresql-contrib-17
-          sudo systemctl start postgresql
-          sudo -u postgres psql --set=ON_ERROR_STOP=1 \
+          sudo pg_ctlcluster 17 main start || true
+          restore_port=$(pg_lsclusters --no-header | awk '$1 == "17" && $2 == "main" { print $3; exit }')
+          test -n "$restore_port"
+          test "$(sudo -u postgres psql --port="$restore_port" --tuples-only --no-align --command='show server_version_num')" -ge 170000
+          sudo -u postgres psql --port="$restore_port" --set=ON_ERROR_STOP=1 \
             --command="alter user postgres password 'orba-restore-ci-only';"
+          echo "RESTORE_PGPORT=$restore_port" >> "$GITHUB_ENV"
 
       - name: Prepare pinned Supabase CA
         shell: bash
@@ -65,7 +69,6 @@ jobs:
           BACKUP_OUTPUT_DIR: ${{ runner.temp }}/orba-backups
           VALIDATE_RESTORE: '1'
           RESTORE_PGHOST: 127.0.0.1
-          RESTORE_PGPORT: '5432'
           RESTORE_PGUSER: postgres
           RESTORE_PGPASSWORD: orba-restore-ci-only
           RESTORE_PGDATABASE: orba_restore_ci
