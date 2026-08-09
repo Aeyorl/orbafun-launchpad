@@ -37,7 +37,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends \
             postgresql-17 postgresql-client-17 postgresql-contrib-17
-          sudo pg_ctlcluster 17 main start || true
+          if pg_lsclusters --no-header | awk '$1 == "17" && $2 == "main" { found = 1 } END { exit !found }'; then
+            sudo pg_ctlcluster 17 main start || true
+          else
+            sudo pg_createcluster 17 main --start
+          fi
           restore_port=$(pg_lsclusters --no-header | awk '$1 == "17" && $2 == "main" { print $3; exit }')
           test -n "$restore_port"
           test "$(sudo -u postgres psql --port="$restore_port" --tuples-only --no-align --command='show server_version_num')" -ge 170000
