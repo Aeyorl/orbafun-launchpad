@@ -58,7 +58,8 @@ const RPC_URLS = (
   .filter(Boolean);
 
 const USDC = '0x3600000000000000000000000000000000000000';
-const API = (process.env.E2E_API_URL || 'https://orbafun-api.onrender.com').replace(/\/$/, '');
+const API = (process.env.E2E_API_URL || process.env.API_URL || 'https://orbafun-api.onrender.com').replace(/\/$/, '');
+const SKIP_INDEXER_CHECK = process.env.SKIP_INDEXER_CHECK === 'true';
 
 const BONDING_CURVE_ABI = [
   {
@@ -590,8 +591,10 @@ async function main() {
 
   // ─── Step 6: Measure indexer lag ───────────────────────────────────────
   console.log('--- Step 6: Measuring indexer lag ---');
-  let indexerComplete = successes.length === 0;
-  if (successes.length === 0) {
+  let indexerComplete = SKIP_INDEXER_CHECK || successes.length === 0;
+  if (SKIP_INDEXER_CHECK) {
+    console.log('  Skipped by SKIP_INDEXER_CHECK=true (parallel stack is not connected to the live indexer)');
+  } else if (successes.length === 0) {
     console.log('  Skipped (no successful buys to index)');
   } else {
     console.log(`  Polling API until ${successes.length} new trades appear...`);

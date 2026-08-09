@@ -29,6 +29,9 @@ contract TokenFactory is Ownable {
     /// @notice Whether the factory is paused (no new token launches).
     bool public paused;
 
+    /// @notice Safe allowed to stop launches immediately, but never unpause or reconfigure.
+    address public pauseGuardian;
+
     struct LaunchToken {
         address token;
         address curve;
@@ -63,6 +66,7 @@ contract TokenFactory is Ownable {
     event CreationFeeUpdated(uint256 oldFee, uint256 newFee);
     /// @notice Emitted when factory is paused/unpaused.
     event PauseStateChanged(bool paused);
+    event PauseGuardianUpdated(address indexed oldGuardian, address indexed newGuardian);
 
     error FactoryPaused();
     error NotPaused();
@@ -77,6 +81,7 @@ contract TokenFactory is Ownable {
     error InvalidAddress();
     error FeeTooHigh();
     error MigratorNotConfigured();
+    error UnauthorizedPause();
 
     constructor(address treasury_) {
         if (treasury_ == address(0) || treasury_.code.length == 0) revert InvalidAddress();
@@ -142,12 +147,16 @@ contract TokenFactory is Ownable {
         // Charge creation fee (USDC transferFrom to treasury).
         if (creationFee > 0) {
             (bool ok, bytes memory data) = USDC.call(
-                abi.encodeWithSignature("transferFrom(address,address,uint256)", msg.sender, treasury, creationFee)
+                abi.encodeWithSignature(
+                    "transferFrom(address,address,uint256)", msg.sender, treasury, creationFee
+                )
             );
             if (!ok || data.length > 0 && !abi.decode(data, (bool))) revert TransferFailed();
         }
 
-        emit TokenCreated(tokenAddress, curveAddress, msg.sender, name, symbol, imageURI, block.timestamp);
+        emit TokenCreated(
+            tokenAddress, curveAddress, msg.sender, name, symbol, imageURI, block.timestamp
+        );
     }
 
     /// @notice Marks a token as graduated. Only callable by the token's curve.
@@ -214,8 +223,16 @@ contract TokenFactory is Ownable {
         migrator = newMigrator;
     }
 
+    /// @notice Set the emergency guardian. Configuration remains owner/timelock-only.
+    function setPauseGuardian(address newGuardian) external onlyOwner {
+        if (newGuardian == address(0) || newGuardian.code.length == 0) revert InvalidAddress();
+        emit PauseGuardianUpdated(pauseGuardian, newGuardian);
+        pauseGuardian = newGuardian;
+    }
+
     /// @notice Pause new token launches (existing tokens keep trading).
-    function pause() external onlyOwner {
+    function pause() external {
+        if (msg.sender != owner() && msg.sender != pauseGuardian) revert UnauthorizedPause();
         paused = true;
         emit PauseStateChanged(true);
     }

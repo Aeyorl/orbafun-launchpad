@@ -45,7 +45,7 @@ const RPC_URLS = (
   .filter(Boolean);
 
 const USDC = '0x3600000000000000000000000000000000000000';
-const AMM_FACTORY = '0x05188D467dC4Ff29Df531563a160eaA7c59e2ec1'; // existing AMM factory
+const AMM_FACTORY = process.env.ARC_AMM_FACTORY_ADDRESS;
 const BURN_ADDRESS = '0x000000000000000000000000000000000000dEaD';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -305,6 +305,10 @@ async function deployContract(walletClient, publicClient, bytecode, abi, args, l
 async function main() {
   if (!DEPLOYER_PK) {
     console.error('DEPLOYER_PRIVATE_KEY not set');
+    process.exit(1);
+  }
+  if (!AMM_FACTORY) {
+    console.error('ARC_AMM_FACTORY_ADDRESS not set');
     process.exit(1);
   }
 
@@ -631,19 +635,14 @@ async function main() {
   }
 
   // 7g. Factory marks token as graduated
-  // Note: getToken() returns a struct with strings + uint256 which viem struggles
-  // to decode (known issue — see e2e-graduation.js comment). We use a raw eth_call
-  // and extract just the graduated bool (last byte of the return data).
   console.log('\n  [7] Factory marks token as graduated');
   try {
-    const rawData = await publicClient.call({
-      to: testFactoryAddress,
-      data: '0x8da5dc03' + tokenAddress.slice(2).padStart(64, '0'), // getToken(address) selector
-    });
-    // The return is a struct: (address token, address curve, address creator, string name, string symbol, string image, uint256 createdAt, bool graduated)
-    // The graduated bool is the very last byte of the encoded return data
-    const lastByte = rawData.data.slice(-2);
-    const isGraduated = lastByte === '01';
+    const tokenInfo = await readRetry(
+      publicClient,
+      { address: testFactoryAddress, abi: factoryArtifact.abi, functionName: 'getToken', args: [tokenAddress] },
+      'factoryToken',
+    );
+    const isGraduated = tokenInfo.graduated ?? tokenInfo[7];
     console.log(`    Factory graduated flag: ${isGraduated}`);
     if (isGraduated) {
       console.log('    ✓ PASS: Factory marks token as graduated');
@@ -652,8 +651,8 @@ async function main() {
       allPass = false;
     }
   } catch (e) {
-    console.log(`    ⚠ SKIP: Could not decode factory getToken() — ${e.shortMessage || e.message}`);
-    console.log('    (This is a known viem ABI decoding issue, not a contract bug.)');
+    console.log(`    ✗ FAIL: Could not verify factory graduation flag — ${e.shortMessage || e.message}`);
+    allPass = false;
   }
 
   // ─── Summary ───────────────────────────────────────────────────────────

@@ -19,7 +19,7 @@ services:
     # while the pinned Nest core package is hoisted to the repository root.
     # Expose the workspace modules so Nest can load its adapter at runtime.
     startCommand: NODE_PATH=./apps/api/node_modules node apps/api/dist/main.js
-    healthCheckPath: /tokens?limit=1
+    healthCheckPath: /health/ready
     autoDeployTrigger: commit
     envVars:
       - key: NODE_VERSION
@@ -27,7 +27,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: CORS_ORIGIN
-        value: https://orba.fun,https://www.orba.fun,http://localhost:3000
+        value: https://orba.fun,https://www.orba.fun
       - key: ARC_RPC_URLS
         value: https://rpc.testnet.arc.network,https://rpc.drpc.testnet.arc.network,https://rpc.quicknode.testnet.arc.network,https://rpc.blockdaemon.testnet.arc.network
       - key: ARC_CHAIN_ID
@@ -50,6 +50,40 @@ services:
         value: orba.fun,www.orba.fun
       - key: AGENT_EXECUTOR_ENABLED
         value: "false"
+      - key: DEPLOYER_ACTIONS_ENABLED
+        value: "false"
+      - key: DEPLOYER_SIGNER_PROVIDER
+        value: local
+      # Required before enabling platform-funded testnet actions. Values are
+      # integer micro-USDC and deliberately have no permissive defaults.
+      - key: DEPLOYER_MAX_ACTION_MICRO_USDC
+        sync: false
+      - key: DEPLOYER_MAX_BALANCE_MICRO_USDC
+        sync: false
+      - key: PLATFORM_DEPLOYER_DAILY_LIMIT_MICRO_USDC
+        sync: false
+      - key: PLATFORM_DEPLOYER_MONTHLY_LIMIT_MICRO_USDC
+        sync: false
+      - key: DEPLOYER_MIN_BALANCE_MICRO_USDC
+        sync: false
+      - key: DEPLOYER_MONITOR_ADDRESS
+        sync: false
+      - key: MONITORING_ENABLED
+        value: "true"
+      - key: RPC_MIN_HEALTHY_PROVIDERS
+        value: "2"
+      - key: RPC_MAX_DIVERGENCE_BLOCKS
+        value: "8"
+      - key: INDEXER_MAX_LAG_BLOCKS
+        value: "60"
+      - key: POSTGRES_POOL_WARN_PERCENT
+        value: "80"
+      - key: REDIS_KEY_WARN_COUNT
+        sync: false
+      - key: ALERT_WEBHOOK_URL
+        sync: false
+      - key: ALERT_WEBHOOK_BEARER_TOKEN
+        sync: false
       # Free self-service agents spend from the shared platform deployer and
       # remain disabled until paid/staked creation and owner-wide caps exist.
       - key: REFERRAL_REWARD_PCT_BPS
@@ -90,6 +124,14 @@ services:
       - key: AUTH_SECRET
         sync: false
       - key: DEPLOYER_PRIVATE_KEY
+        sync: false
+      # Mainnet replaces DEPLOYER_PRIVATE_KEY with a non-exportable AWS KMS
+      # secp256k1 signer. These stay unset for the current testnet deployment.
+      - key: AWS_REGION
+        sync: false
+      - key: AWS_KMS_KEY_ID
+        sync: false
+      - key: AWS_KMS_EXPECTED_ADDRESS
         sync: false
       - key: ADMIN_WALLETS
         sync: false

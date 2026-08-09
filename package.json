@@ -14,7 +14,8 @@
     "dev:api": "npm run dev --workspace=apps/api",
     "build": "npm run build --workspaces",
     "lint": "npm run lint --workspaces",
-    "test": "npm run test --workspaces"
+    "test": "npm run test --workspaces",
+    "mainnet:check": "node scripts/validate-mainnet-readiness.js"
   },
   "engines": {
     "node": ">=20.0.0"

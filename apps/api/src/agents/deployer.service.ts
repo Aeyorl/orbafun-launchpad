@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { createAwsKmsAccount } from './aws-kms-account';
 
 /**
  * DeployerService — manages the platform-funded deployer wallet that submits
@@ -12,8 +13,8 @@ import { Injectable, Logger } from '@nestjs/common';
  * for attribution, but the on-chain creator is the deployer wallet (msg.sender).
  *
  * Security:
- *   - DEPLOYER_PRIVATE_KEY is loaded from env, never logged or exposed.
- *   - All transactions are submitted via viem with the Arc testnet chain.
+ *   - Testnet may use DEPLOYER_PRIVATE_KEY; Arc mainnet requires AWS KMS.
+ *   - All transactions are submitted via viem on the configured Arc chain.
  *   - RPC rotation across 4 providers (same as the frontend/poller).
  *
  * Note: viem is imported via require() (CommonJS) to avoid TypeScript deep
@@ -40,6 +41,36 @@ if (ARC_CHAIN_ID !== arcTestnet.id && ARC_CHAIN_ID !== arc.id) {
 }
 const ACTIVE_ARC_CHAIN = ARC_CHAIN_ID === arc.id ? arc : arcTestnet;
 const IS_ARC_MAINNET = ARC_CHAIN_ID === arc.id;
+const DEPLOYER_ACTIONS_ENABLED = process.env.DEPLOYER_ACTIONS_ENABLED === 'true';
+const DEPLOYER_SIGNER_PROVIDER = process.env.DEPLOYER_SIGNER_PROVIDER || 'local';
+
+function positiveBigIntEnv(name: string): bigint | undefined {
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  try {
+    const value = BigInt(raw);
+    if (value <= 0n) throw new Error();
+    return value;
+  } catch {
+    throw new Error(`${name} must be a positive integer in micro-USDC`);
+  }
+}
+
+const DEPLOYER_MAX_ACTION_USDC = positiveBigIntEnv(
+  'DEPLOYER_MAX_ACTION_MICRO_USDC',
+);
+const DEPLOYER_MAX_BALANCE_USDC = positiveBigIntEnv(
+  'DEPLOYER_MAX_BALANCE_MICRO_USDC',
+);
+
+if (
+  DEPLOYER_ACTIONS_ENABLED &&
+  (!DEPLOYER_MAX_ACTION_USDC || !DEPLOYER_MAX_BALANCE_USDC)
+) {
+  throw new Error(
+    'DEPLOYER_ACTIONS_ENABLED requires DEPLOYER_MAX_ACTION_MICRO_USDC and DEPLOYER_MAX_BALANCE_MICRO_USDC',
+  );
+}
 
 function requiredMainnetAddress(value: string | undefined, fallbackAddress: string, name: string) {
   if (value) return value;
@@ -192,7 +223,7 @@ export interface LaunchResult {
 }
 
 @Injectable()
-export class DeployerService {
+export class DeployerService implements OnModuleInit {
   private readonly logger = new Logger(DeployerService.name);
   private walletClient: any;
   private publicClient: any;
@@ -211,9 +242,23 @@ export class DeployerService {
       transport,
     });
 
+    if (IS_ARC_MAINNET && process.env.DEPLOYER_PRIVATE_KEY) {
+      throw new Error(
+        'DEPLOYER_PRIVATE_KEY is forbidden on Arc mainnet; configure AWS KMS instead',
+      );
+    }
+
+    if (DEPLOYER_SIGNER_PROVIDER === 'aws-kms') return;
+    if (IS_ARC_MAINNET && DEPLOYER_ACTIONS_ENABLED) {
+      throw new Error('Arc mainnet deployer actions require DEPLOYER_SIGNER_PROVIDER=aws-kms');
+    }
+    if (DEPLOYER_SIGNER_PROVIDER !== 'local') {
+      throw new Error(`Unsupported DEPLOYER_SIGNER_PROVIDER: ${DEPLOYER_SIGNER_PROVIDER}`);
+    }
+
     const privateKey = process.env.DEPLOYER_PRIVATE_KEY;
     if (!privateKey) {
-      this.logger.warn('DEPLOYER_PRIVATE_KEY not set — signed deployer actions disabled');
+      this.logger.warn('No testnet deployer signer configured; funded actions disabled');
       return;
     }
 
@@ -225,12 +270,66 @@ export class DeployerService {
       transport,
     });
 
-    this.logger.log(`Deployer wallet initialized: ${this.account.address}`);
+    this.logger.log(
+      `Deployer wallet initialized: ${this.account.address}; funded actions ${
+        DEPLOYER_ACTIONS_ENABLED ? 'enabled with caps' : 'disabled'
+      }`,
+    );
+  }
+
+  async onModuleInit(): Promise<void> {
+    if (DEPLOYER_SIGNER_PROVIDER !== 'aws-kms') return;
+    const keyId = process.env.AWS_KMS_KEY_ID;
+    const expectedAddress = process.env.AWS_KMS_EXPECTED_ADDRESS;
+    if (!keyId || !expectedAddress) {
+      if (DEPLOYER_ACTIONS_ENABLED) {
+        throw new Error(
+          'AWS_KMS_KEY_ID and AWS_KMS_EXPECTED_ADDRESS are required when deployer actions are enabled',
+        );
+      }
+      this.logger.warn('AWS KMS signer is incomplete; funded actions disabled');
+      return;
+    }
+    this.account = await createAwsKmsAccount({
+      keyId,
+      expectedAddress,
+      region: process.env.AWS_REGION,
+    });
+    this.walletClient = createWalletClient({
+      account: this.account,
+      chain: ACTIVE_ARC_CHAIN,
+      transport: fallback(RPC_URLS.map((url: string) => http(url))),
+    });
+    this.logger.log(`AWS KMS deployer initialized: ${this.account.address}`);
   }
 
   /** Check if the deployer wallet is configured. */
   isConfigured(): boolean {
-    return !!this.account;
+    return !!this.account && DEPLOYER_ACTIONS_ENABLED;
+  }
+
+  private async assertActionAllowed(spendMicroUsdc: bigint): Promise<void> {
+    if (!this.account || !DEPLOYER_ACTIONS_ENABLED) {
+      throw new Error('Platform-funded deployer actions are disabled');
+    }
+    if (
+      DEPLOYER_MAX_ACTION_USDC === undefined ||
+      DEPLOYER_MAX_BALANCE_USDC === undefined
+    ) {
+      throw new Error('Deployer safety caps are not configured');
+    }
+    if (spendMicroUsdc > DEPLOYER_MAX_ACTION_USDC) {
+      throw new Error('Requested action exceeds the deployer per-action cap');
+    }
+    const nativeBalance = (await this.publicClient.getBalance({
+      address: this.account.address,
+    })) as bigint;
+    const maxBalance18dec = DEPLOYER_MAX_BALANCE_USDC * 1_000_000_000_000n;
+    if (nativeBalance > maxBalance18dec) {
+      throw new Error(
+        'Deployer balance exceeds its configured hot-wallet ceiling; move excess funds to treasury',
+      );
+    }
   }
 
   /** Get the deployer wallet address. */
@@ -255,7 +354,7 @@ export class DeployerService {
     description: string,
   ): Promise<LaunchResult> {
     if (!this.isConfigured()) {
-      throw new Error('Deployer wallet not configured (DEPLOYER_PRIVATE_KEY missing)');
+      throw new Error('Deployer signer is not configured or funded actions are disabled');
     }
 
     this.logger.log(`Launching token "${name}" (${symbol}) via deployer wallet`);
@@ -265,6 +364,7 @@ export class DeployerService {
       abi: TOKEN_FACTORY_ABI,
       functionName: 'creationFee',
     })) as bigint;
+    await this.assertActionAllowed(creationFee);
     const allowance = (await this.publicClient.readContract({
       address: USDC_ADDRESS,
       abi: ERC20_ABI,
@@ -349,7 +449,7 @@ export class DeployerService {
    * Used to monitor if the wallet needs topping up.
    */
   async getBalance(): Promise<bigint> {
-    if (!this.isConfigured()) return 0n;
+    if (!this.account) return 0n;
     const balance = await this.publicClient.getBalance({
       address: this.account.address,
     });
@@ -365,6 +465,13 @@ export class DeployerService {
     if (!this.isConfigured()) {
       throw new Error('Deployer wallet not configured');
     }
+    await this.assertActionAllowed(0n);
+    const approvalCap = positiveBigIntEnv('TOKEN_FACTORY_APPROVAL_CAP_USDC');
+    if (!approvalCap || approvalCap > DEPLOYER_MAX_ACTION_USDC!) {
+      throw new Error(
+        'TOKEN_FACTORY_APPROVAL_CAP_USDC is required and cannot exceed the deployer per-action cap',
+      );
+    }
 
     const txHash = await this.walletClient.writeContract({
       address: USDC_ADDRESS,
@@ -372,7 +479,7 @@ export class DeployerService {
       functionName: 'approve',
       args: [
         this.tokenFactoryAddress,
-        BigInt(process.env.TOKEN_FACTORY_APPROVAL_CAP_USDC || '50000000'),
+        approvalCap,
       ],
       chain: ACTIVE_ARC_CHAIN,
       account: this.account,
@@ -471,6 +578,7 @@ export class DeployerService {
     if (!this.isConfigured()) {
       throw new Error('Deployer wallet not configured');
     }
+    await this.assertActionAllowed(usdcAmount);
 
     const curve = curveAddress.toLowerCase();
     this.logger.log(`Buying on curve ${curve} with ${usdcAmount} USDC (6-dec)`);
@@ -501,11 +609,14 @@ export class DeployerService {
         chain: ACTIVE_ARC_CHAIN,
         account: this.account,
       });
-      await this.publicClient.waitForTransactionReceipt({
+      const approvalReceipt = await this.publicClient.waitForTransactionReceipt({
         hash: approveTx,
         confirmations: 1,
         timeout: 30_000,
       });
+      if (approvalReceipt.status !== 'success') {
+        throw new Error(`Curve approval reverted (tx: ${approveTx})`);
+      }
       this.logger.log(`USDC approved for curve ${curve}`);
     }
 
@@ -560,6 +671,7 @@ export class DeployerService {
     if (!this.isConfigured()) {
       throw new Error('Deployer wallet not configured');
     }
+    await this.assertActionAllowed(0n);
 
     const token = tokenAddress.toLowerCase();
     const curve = curveAddress.toLowerCase();
@@ -605,11 +717,14 @@ export class DeployerService {
         chain: ACTIVE_ARC_CHAIN,
         account: this.account,
       });
-      await this.publicClient.waitForTransactionReceipt({
+      const approvalReceipt = await this.publicClient.waitForTransactionReceipt({
         hash: approveTx,
         confirmations: 1,
         timeout: 30_000,
       });
+      if (approvalReceipt.status !== 'success') {
+        throw new Error(`Token approval reverted (tx: ${approveTx})`);
+      }
       this.logger.log(`Token approved for curve ${curve}`);
     }
 
