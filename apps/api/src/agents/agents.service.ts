@@ -1,10 +1,11 @@
-import { Injectable, Logger, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ForbiddenException, NotFoundException, Optional } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 import { DeployerService, LaunchResult, TradeResult } from './deployer.service';
 import { MessagesService } from '../messages/messages.service';
 import { TokenMetadataService, TokenMetadataInput } from '../token-metadata/token-metadata.service';
 import { isValidEvmAddress } from '../common/utils';
+import { AlertService, safeAlertError } from '../monitoring/alert.service';
 
 /**
  * AgentsService — manages AI agent registration, API key issuance, and
@@ -64,6 +65,7 @@ export class AgentsService {
     private deployer: DeployerService,
     private messagesService: MessagesService,
     private metadataService: TokenMetadataService,
+    @Optional() private alerts?: AlertService,
   ) {}
 
   /**
@@ -208,6 +210,10 @@ export class AgentsService {
       );
     } catch (err) {
       await this.releaseReservation(reservationId);
+      await this.alerts?.send('agent-launch-failed', 'critical', 'Agent-funded launch failed', {
+        agentId: agent.agentId,
+        error: safeAlertError(err),
+      });
       throw err;
     }
 
@@ -693,6 +699,11 @@ export class AgentsService {
       );
     } catch (err) {
       await this.releaseReservation(reservationId);
+      await this.alerts?.send('agent-buy-failed', 'critical', 'Agent-funded buy failed', {
+        agentId: agent.agentId,
+        tokenAddress: tokenAddress.toLowerCase(),
+        error: safeAlertError(err),
+      });
       throw err;
     }
 
@@ -781,12 +792,22 @@ export class AgentsService {
     }
 
     // Execute the sell on-chain.
-    const result = await this.deployer.sellTokens(
-      tokenAddress,
-      token.curve_address,
-      tokenAmount,
-      slippageBps,
-    );
+    let result: TradeResult;
+    try {
+      result = await this.deployer.sellTokens(
+        tokenAddress,
+        token.curve_address,
+        tokenAmount,
+        slippageBps,
+      );
+    } catch (err) {
+      await this.alerts?.send('agent-sell-failed', 'critical', 'Agent-funded sell failed', {
+        agentId: agent.agentId,
+        tokenAddress: tokenAddress.toLowerCase(),
+        error: safeAlertError(err),
+      });
+      throw err;
+    }
 
     // Record the trade.
     await this.db.query(

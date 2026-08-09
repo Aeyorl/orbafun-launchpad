@@ -110,4 +110,13 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   async connect(): Promise<PoolClient> {
     return this.pool.connect();
   }
+
+  getPoolStats() {
+    return {
+      total: this.pool.totalCount,
+      idle: this.pool.idleCount,
+      waiting: this.pool.waitingCount,
+      max: parseInt(process.env.POSTGRES_POOL_MAX || '10', 10),
+    };
+  }
 }

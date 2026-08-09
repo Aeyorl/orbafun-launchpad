@@ -18,6 +18,7 @@ import { AgentsModule } from './agents/agents.module';
 import { ReferralModule } from './referrals/referral.module';
 import { RpcController } from './rpc/rpc.controller';
 import { HealthModule } from './health/health.module';
+import { MonitoringModule } from './monitoring/monitoring.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { HealthModule } from './health/health.module';
     AgentsModule,
     ReferralModule,
     HealthModule,
+    MonitoringModule,
   ],
   controllers: [RpcController],
   providers: [

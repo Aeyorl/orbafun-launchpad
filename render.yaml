@@ -52,6 +52,8 @@ services:
         value: "false"
       - key: DEPLOYER_ACTIONS_ENABLED
         value: "false"
+      - key: DEPLOYER_SIGNER_PROVIDER
+        value: local
       # Required before enabling platform-funded testnet actions. Values are
       # integer micro-USDC and deliberately have no permissive defaults.
       - key: DEPLOYER_MAX_ACTION_MICRO_USDC
@@ -61,6 +63,26 @@ services:
       - key: PLATFORM_DEPLOYER_DAILY_LIMIT_MICRO_USDC
         sync: false
       - key: PLATFORM_DEPLOYER_MONTHLY_LIMIT_MICRO_USDC
+        sync: false
+      - key: DEPLOYER_MIN_BALANCE_MICRO_USDC
+        sync: false
+      - key: DEPLOYER_MONITOR_ADDRESS
+        sync: false
+      - key: MONITORING_ENABLED
+        value: "true"
+      - key: RPC_MIN_HEALTHY_PROVIDERS
+        value: "2"
+      - key: RPC_MAX_DIVERGENCE_BLOCKS
+        value: "8"
+      - key: INDEXER_MAX_LAG_BLOCKS
+        value: "60"
+      - key: POSTGRES_POOL_WARN_PERCENT
+        value: "80"
+      - key: REDIS_KEY_WARN_COUNT
+        sync: false
+      - key: ALERT_WEBHOOK_URL
+        sync: false
+      - key: ALERT_WEBHOOK_BEARER_TOKEN
         sync: false
       # Free self-service agents spend from the shared platform deployer and
       # remain disabled until paid/staked creation and owner-wide caps exist.
@@ -102,6 +124,14 @@ services:
       - key: AUTH_SECRET
         sync: false
       - key: DEPLOYER_PRIVATE_KEY
+        sync: false
+      # Mainnet replaces DEPLOYER_PRIVATE_KEY with a non-exportable AWS KMS
+      # secp256k1 signer. These stay unset for the current testnet deployment.
+      - key: AWS_REGION
+        sync: false
+      - key: AWS_KMS_KEY_ID
+        sync: false
+      - key: AWS_KMS_EXPECTED_ADDRESS
         sync: false
       - key: ADMIN_WALLETS
         sync: false

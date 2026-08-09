@@ -55,7 +55,10 @@ function requireSecureUrl(name, value, protocol) {
 requireExact('ARC_CHAIN_ID', '5042');
 requireExact('AUTH_ALLOW_INSECURE', 'false');
 requireExact('DEPLOYER_ACTIONS_ENABLED', 'false');
+requireExact('DEPLOYER_SIGNER_PROVIDER', 'aws-kms');
 requireExact('AGENT_EXECUTOR_ENABLED', 'false');
+requireExact('MONITORING_ENABLED', 'true');
+requireExact('UPSTASH_ALERTS_CONFIGURED', 'true');
 requireExact('MAINNET_CONFIGURATION_APPROVED', 'true');
 requireExact('INCIDENT_CONTACTS_CONFIGURED', 'true');
 
@@ -63,6 +66,7 @@ const rpcUrls = requireValue('ARC_RPC_URLS');
 requireSecureUrl('ARC_RPC_URLS', rpcUrls, 'https:');
 requireSecureUrl('ARC_WS_URL', requireValue('ARC_WS_URL'), 'wss:');
 requireSecureUrl('REDIS_URL', requireValue('REDIS_URL'), 'rediss:');
+requireSecureUrl('ALERT_WEBHOOK_URL', requireValue('ALERT_WEBHOOK_URL'), 'https:');
 
 for (const name of [
   'ARC_USDC_ADDRESS',
@@ -73,6 +77,7 @@ for (const name of [
   'ARC_AMM_ROUTER_ADDRESS',
   'ARC_TIMELOCK_ADDRESS',
   'ADMIN_MULTISIG',
+  'AWS_KMS_EXPECTED_ADDRESS',
 ]) requireAddress(name);
 
 for (const name of [
@@ -88,6 +93,14 @@ for (const name of [
   'POSTGRES_SSL_CA_BASE64',
   'POSTGRES_RUNTIME_ROLE',
   'POSTGRES_RUNTIME_PASSWORD',
+  'AWS_REGION',
+  'AWS_KMS_KEY_ID',
+  'DEPLOYER_MAX_ACTION_MICRO_USDC',
+  'DEPLOYER_MAX_BALANCE_MICRO_USDC',
+  'DEPLOYER_MIN_BALANCE_MICRO_USDC',
+  'PLATFORM_DEPLOYER_DAILY_LIMIT_MICRO_USDC',
+  'PLATFORM_DEPLOYER_MONTHLY_LIMIT_MICRO_USDC',
+  'REDIS_KEY_WARN_COUNT',
 ]) requireValue(name);
 
 if (process.env.DEPLOYER_PRIVATE_KEY) {

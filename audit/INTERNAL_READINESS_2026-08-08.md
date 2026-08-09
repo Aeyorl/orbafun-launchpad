@@ -38,7 +38,8 @@ mainnet approval. Arc mainnet deployment remains blocked.
 3. Production Supabase backup/restore drill and PostgreSQL-version evidence.
    PostgreSQL 17 client tools are installed, but the project CA must be obtained
    from the authenticated dashboard before strict `verify-full` validation.
-4. Production Upstash alert configuration evidence. TLS ping and a temporary
-   write/read/TTL/delete drill pass; all configured Arc RPC providers pass.
-5. Reviewed managed signer integration before platform-funded agents can ever
-   be enabled on mainnet.
+4. Authenticate the Upstash Developer API and set the account-owner-approved
+   budget so native 70%/90% capacity emails complement the in-app Redis checks.
+5. Provision the implemented AWS KMS secp256k1 signer, pin its expected address,
+   and independently review its IAM policy and spending ceilings before
+   platform-funded agents can ever be enabled on mainnet.

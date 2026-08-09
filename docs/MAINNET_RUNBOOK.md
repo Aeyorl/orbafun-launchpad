@@ -51,10 +51,12 @@ databases, Redis databases, signing keys or API secrets.
 
 ## Platform-funded agents
 
-They remain disabled on mainnet. `DEPLOYER_PRIVATE_KEY` is forbidden in mainnet
-runtime. Re-enable only after a separately reviewed managed signer integration
-supports policy-enforced per-action, daily and monthly caps. The hot signer must
-hold no more than the configured operating ceiling; excess funds go to the Safe.
+They remain disabled on mainnet until review. `DEPLOYER_PRIVATE_KEY` is forbidden
+in mainnet runtime. The implemented signer uses an AWS KMS
+`ECC_SECG_P256K1`/`SIGN_VERIFY` key, verifies its derived address against
+`AWS_KMS_EXPECTED_ADDRESS`, and permits transaction signing only. Re-enable only
+after the KMS/IAM policy and per-action, daily, monthly, minimum-balance and
+maximum-balance limits are independently reviewed. Excess funds go to the Safe.
 
 ## Incident response
 
