@@ -38,12 +38,12 @@ jobs:
         run: |
           set -euo pipefail
           title='Production monitor alert'
-          existing="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
           body="Automated production probes failed at $(date -u +%FT%TZ). Check the Render API readiness endpoint, Vercel frontend, PostgreSQL, Redis, and Arc RPC providers. Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
+            gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
           else
-            gh issue create --title "$title" --body "$body"
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"
           fi
 
       - name: Close recovered incident issue
@@ -54,7 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           title='Production monitor alert'
-          existing="$(gh issue list --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+          existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
           if [ -n "$existing" ]; then
-            gh issue close "$existing" --comment "Production probes recovered at $(date -u +%FT%TZ)."
+            gh issue close "$existing" --repo "$GITHUB_REPOSITORY" --comment "Production probes recovered at $(date -u +%FT%TZ)."
           fi
