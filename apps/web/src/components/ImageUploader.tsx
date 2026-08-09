@@ -23,6 +23,7 @@ import { ipfsToGateway } from '@/lib/utils';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB — matches the backend limit
+const ALLOWED_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 
 export function ImageUploader({
   value,
@@ -89,8 +90,8 @@ export function ImageUploader({
         setError('File too large (max 5 MB)');
         return;
       }
-      if (!file.type.startsWith('image/')) {
-        setError('Please select an image file (PNG, JPEG, GIF, WebP, SVG)');
+      if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+        setError('Please select a PNG, JPEG, GIF, or WebP image');
         return;
       }
 
@@ -272,7 +273,7 @@ export function ImageUploader({
             {dragOver ? 'Drop image here' : 'Click or drag to upload'}
           </p>
           <p className="text-xs text-text-muted mt-1">
-            PNG, JPEG, GIF, WebP, SVG · max 5 MB
+            PNG, JPEG, GIF, WebP · max 5 MB
           </p>
         </button>
       )}

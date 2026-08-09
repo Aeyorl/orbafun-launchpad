@@ -2,6 +2,7 @@
 
 import { memo, useState } from 'react';
 import { CandleTimeframe } from '@/lib/api';
+import { ConnectionStatus } from '@/lib/useWebSocket';
 
 export type ChartType = 'candlestick' | 'line' | 'area';
 export type MetricMode = 'price' | 'mcap';
@@ -24,6 +25,7 @@ const TIMEFRAMES: { key: CandleTimeframe; label: string }[] = [
  */
 export const ChartToolbar = memo(function ChartToolbar({
   isConnected,
+  connectionStatus,
   timeframe,
   chartType,
   metricMode,
@@ -38,6 +40,7 @@ export const ChartToolbar = memo(function ChartToolbar({
   onResetChart,
 }: {
   isConnected?: boolean;
+  connectionStatus?: ConnectionStatus;
   timeframe: CandleTimeframe;
   chartType: ChartType;
   metricMode: MetricMode;
@@ -76,7 +79,9 @@ export const ChartToolbar = memo(function ChartToolbar({
         {/* Live / Reconnecting badge */}
         <div className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border border-bg-border bg-bg-card flex-shrink-0">
           <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
-          <span className="text-text-secondary">{isConnected ? 'Live' : 'Reconnecting'}</span>
+          <span className="text-text-secondary">
+            {isConnected ? 'Live' : connectionStatus === 'reconnecting' ? 'Reconnecting' : 'Connecting'}
+          </span>
         </div>
       </div>
 

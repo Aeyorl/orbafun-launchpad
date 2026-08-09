@@ -94,6 +94,16 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return this.connected;
   }
 
+  async ping(): Promise<boolean> {
+    if (!this.connected || !this.client) return false;
+    try {
+      return (await this.client.ping()) === 'PONG';
+    } catch {
+      this.connected = false;
+      return false;
+    }
+  }
+
   async setIfAbsent(key: string, value: string, ttlSeconds: number): Promise<boolean> {
     if (!this.connected) return false;
     const result = await this.client.set(key, value, 'EX', ttlSeconds, 'NX');

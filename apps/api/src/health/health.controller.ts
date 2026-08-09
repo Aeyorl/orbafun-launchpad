@@ -1,8 +1,4 @@
-import {
-  Controller,
-  Get,
-  ServiceUnavailableException,
-} from '@nestjs/common';
+import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
@@ -11,7 +7,7 @@ import { RedisService } from '../redis/redis.service';
 @SkipThrottle()
 export class HealthController {
   constructor(
-    private readonly db: DatabaseService,
+    private readonly database: DatabaseService,
     private readonly redis: RedisService,
   ) {}
 
@@ -23,10 +19,16 @@ export class HealthController {
   @Get('ready')
   async ready() {
     const expectedChainId = Number(process.env.ARC_CHAIN_ID || 5_042_002);
+    const checks = { postgres: false, redis: false, rpc: false };
     try {
-      await this.db.query('SELECT 1');
-      if (!this.redis.isAvailable()) throw new Error('Redis unavailable');
+      const result = await this.database.query('SELECT 1 AS ready');
+      checks.postgres = result.rows[0]?.ready === 1;
+    } catch {
+      checks.postgres = false;
+    }
+    checks.redis = await this.redis.ping();
 
+    try {
       const urls = (process.env.ARC_RPC_URLS || process.env.ARC_RPC_URL || '')
         .split(',')
         .map((url) => url.trim())
@@ -57,11 +59,14 @@ export class HealthController {
           // Try the next independent provider.
         }
       }
-      if (chainId !== expectedChainId) throw new Error('RPC wrong chain or unavailable');
-
-      return { status: 'ready', database: true, redis: true, chainId };
+      checks.rpc = chainId === expectedChainId;
     } catch {
-      throw new ServiceUnavailableException({ status: 'not-ready' });
+      checks.rpc = false;
     }
+
+    if (!checks.postgres || !checks.redis || !checks.rpc) {
+      throw new ServiceUnavailableException({ status: 'unavailable', checks });
+    }
+    return { status: 'ready', checks };
   }
 }

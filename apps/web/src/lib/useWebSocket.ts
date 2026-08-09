@@ -11,6 +11,8 @@ export interface TokenEvent {
   timestamp: number;
 }
 
+export type ConnectionStatus = 'connecting' | 'live' | 'reconnecting';
+
 /**
  * WebSocket hook for real-time token events.
  *
@@ -32,6 +34,7 @@ export function useTokenEvents(
   const socketRef = useRef<Socket | null>(null);
   const callbackRef = useRef(onEvent);
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
 
   // Keep callback ref updated without re-establishing connection
   useEffect(() => {
@@ -60,10 +63,12 @@ export function useTokenEvents(
 
     socket.on('connect', () => {
       setIsConnected(true);
+      setConnectionStatus('live');
       joinRoom(); // (re)join on every connect, including reconnects
     });
     socket.on('disconnect', (reason) => {
       setIsConnected(false);
+      setConnectionStatus('reconnecting');
       // 'io server disconnect' is the only reason that doesn't auto-reconnect.
       // In that case, force a manual reconnect.
       if (reason === 'io server disconnect') {
@@ -89,5 +94,5 @@ export function useTokenEvents(
     };
   }, [tokenAddress]);
 
-  return { isConnected };
+  return { isConnected, connectionStatus };
 }

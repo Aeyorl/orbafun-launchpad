@@ -4,6 +4,7 @@
  *
  * Run: node scripts/e2e-full-flow.js
  */
+require('dotenv').config();
 const { createWalletClient, http, fallback, parseUnits, formatUnits, createPublicClient } = require('viem');
 const { arcTestnet } = require('viem/chains');
 const { privateKeyToAccount } = require('viem/accounts');
@@ -14,11 +15,11 @@ const DEPLOYER_PK = process.env.DEPLOYER_PRIVATE_KEY;
 // We use viem's fallback transport to rotate between them automatically.
 // Override via ARC_RPC_URLS env var (comma-separated).
 const RPC_URLS = (process.env.ARC_RPC_URLS ||
-  'https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io'
+  'https://rpc.testnet.arc.network,https://rpc.drpc.testnet.arc.network,https://rpc.quicknode.testnet.arc.network,https://rpc.blockdaemon.testnet.arc.network'
 ).split(',').map(u => u.trim()).filter(Boolean);
 const USDC = '0x3600000000000000000000000000000000000000';
-const TOKEN_FACTORY = '0x26Ab49011AAf73c373e462CbD5445588Ff69b7A6';
-const API = 'http://localhost:4000';
+const TOKEN_FACTORY = process.env.ARC_TOKEN_FACTORY_ADDRESS;
+const API = (process.env.E2E_API_URL || 'https://orbafun-api.onrender.com').replace(/\/$/, '');
 
 const TOKEN_FACTORY_ABI = [
   {
