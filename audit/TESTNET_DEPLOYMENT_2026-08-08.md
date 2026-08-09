@@ -52,11 +52,28 @@ One of ten funding operations failed because the fallback RPC returned a stale
 deployer nonce. The buy phase used the nine successfully funded wallets and had
 no failure. The harness now pins sequential funding nonces to prevent recurrence.
 
+## Live graduation evidence
+
+A low-threshold TestBondingCurve ceremony was executed against the hardened
+deployment's AMMFactory on 2026-08-09:
+
+- TestTokenFactory: `0xd0874625a8384e250db3f25322d166b13279b3b9`
+- LiquidityMigration: `0x6e8c76ab9ce06d32fb9b9c63637a5df834d7431e`
+- Token: `0x25bddafe8b207ffb5bf5399dbc26a636b8ff3701`
+- Curve: `0x3763b72b1bf81609f75a4dc803e7cee4d99cbc21`
+- AMM pair: `0xf65F3A0B6134D4777485d48DCF42D93C46629053`
+- Launch transaction: `0xfbdddadc6752f600957bd8983428b98e620733ac1845ca2ebf529ad228207534`
+- 120 USDC buy transaction: `0x9327b05531c972dd0125f1f692c30db987f08c720d4a9f9b4d7ced1a79e01401`
+- Migration transaction: `0x15a662fa1d391ab6dab80904bf9a80c62a7a687bbfc0d3260ba63e3a0f6ca5d2`
+- Market cap: $4,000.000021 before, $4,163.640271 after; graduation threshold
+  was $4,150.
+- AMM liquidity: 120,000,000 tokens and 118.8 USDC.
+- LP burn: 0.119398492452793394 of 0.119398492452794394 LP, effectively 100%.
+- All seven anti-rug assertions passed: pair funded, LP burned, token owner
+  zeroed, token graduated, bonding curve zeroed, curve graduated, and factory
+  graduation flag set.
+
 ## Remaining limitations
 
-- A live low-threshold graduation test costs roughly 120 testnet USDC and was
-  not run with the remaining deployer balance. The deterministic Foundry full
-  lifecycle test passes, including graduation, migration, LP burn and ownership
-  renouncement, but it does not replace the live Arc testnet ceremony.
 - The parallel stack is not connected to the production indexer or frontend.
 - External audit and auditor fix review remain mandatory before mainnet.
