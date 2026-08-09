@@ -1,0 +1,83 @@
+name: Encrypted Supabase backup
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supabase-backup
+  cancel-in-progress: false
+
+jobs:
+  backup-and-restore-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+
+      - name: Install PostgreSQL 17
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo install -d -m 0755 /usr/share/postgresql-common/pgdg
+          curl --fail --show-error --silent --location \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+            --output /tmp/pgdg.asc
+          test "$(gpg --show-keys --with-colons /tmp/pgdg.asc | awk -F: '$1 == "fpr" { print $10; exit }')" = \
+            'B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8'
+          sudo gpg --dearmor --yes --output /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg /tmp/pgdg.asc
+          echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' |
+            sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            postgresql-17 postgresql-client-17 postgresql-contrib-17
+          sudo systemctl start postgresql
+          sudo -u postgres psql --set=ON_ERROR_STOP=1 \
+            --command="alter user postgres password 'orba-restore-ci-only';"
+
+      - name: Prepare pinned Supabase CA
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          curl --fail --show-error --silent --location \
+            https://supabase-downloads.s3-ap-southeast-1.amazonaws.com/prod/ssl/prod-ca-2021.crt \
+            --output "$RUNNER_TEMP/supabase-ca.crt"
+          echo '700723581420dd1ac98fd7e9ac529f0ef210eadcaf87fc868a3ad7d114c2f3b7  '"$RUNNER_TEMP/supabase-ca.crt" |
+            sha256sum --check
+
+      - name: Backup, encrypt, and validate restore
+        shell: bash
+        env:
+          POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+          POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          PGSSLROOTCERT: ${{ runner.temp }}/supabase-ca.crt
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          BACKUP_OUTPUT_DIR: ${{ runner.temp }}/orba-backups
+          VALIDATE_RESTORE: '1'
+          RESTORE_PGHOST: 127.0.0.1
+          RESTORE_PGPORT: '5432'
+          RESTORE_PGUSER: postgres
+          RESTORE_PGPASSWORD: orba-restore-ci-only
+          RESTORE_PGDATABASE: orba_restore_ci
+        run: bash scripts/backup-supabase.sh
+
+      - name: Upload encrypted off-site backup
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: orba-supabase-backup-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/orba-backups/*.gpg
+            ${{ runner.temp }}/orba-backups/*.sha256
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
