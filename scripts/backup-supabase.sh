@@ -101,7 +101,10 @@ mkdir -m 700 "$gpg_home"
 GNUPGHOME=$gpg_home gpg --batch --import "$public_key" >/dev/null 2>&1
 GNUPGHOME=$gpg_home gpg --batch --yes --trust-model always \
   --recipient "$recipient" --output "$encrypted" --encrypt "$archive"
-sha256sum "$encrypted" > "$encrypted.sha256"
+(
+  cd "$output_dir"
+  sha256sum "$(basename "$encrypted")" > "$(basename "$encrypted.sha256")"
+)
 
 echo "Encrypted backup: $encrypted"
 echo "Checksum: $encrypted.sha256"
