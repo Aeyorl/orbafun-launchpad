@@ -70,7 +70,6 @@ CREATE INDEX IF NOT EXISTS idx_tokens_market_cap ON tokens(market_cap DESC);
 CREATE INDEX IF NOT EXISTS idx_tokens_volume_24h ON tokens(volume_24h DESC);
 CREATE INDEX IF NOT EXISTS idx_tokens_created_at ON tokens(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tokens_creator ON tokens(creator_wallet);
-CREATE INDEX IF NOT EXISTS idx_tokens_factory ON tokens(factory_address);
 CREATE INDEX IF NOT EXISTS idx_tokens_symbol_trgm ON tokens USING gin (symbol gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_tokens_name_trgm ON tokens USING gin (name gin_trgm_ops);
 
@@ -78,6 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_tokens_name_trgm ON tokens USING gin (name gin_tr
 -- from explicitly configured uncapped factories receive the uncapped policy.
 ALTER TABLE tokens ADD COLUMN IF NOT EXISTS factory_address TEXT;
 ALTER TABLE tokens ADD COLUMN IF NOT EXISTS transfer_policy TEXT NOT NULL DEFAULT 'legacy_capped';
+CREATE INDEX IF NOT EXISTS idx_tokens_factory ON tokens(factory_address);
 DO $$ BEGIN
     ALTER TABLE tokens ADD CONSTRAINT chk_tokens_transfer_policy
         CHECK (transfer_policy IN ('legacy_capped', 'uncapped'));
