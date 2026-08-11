@@ -1,0 +1,13 @@
+<svg width="620" height="200" viewBox="0 0 620 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <title>Orba</title>
+  <g id="orba-wordmark-bloom-primary">
+    <g id="bloom-o" transform="translate(22 32)">
+      <circle cx="68" cy="68" r="42" fill="#FF5B3A"/>
+      <circle cx="68" cy="68" r="17" fill="#FFF8E8"/>
+      <path d="M68 3V23M68 113V133M3 68H23M113 68H133M21 21L36 36M100 100L115 115M115 21L100 36M36 100L21 115" stroke="#FF5B3A" stroke-width="9" stroke-linecap="round"/>
+    </g>
+    <text x="184" y="145" fill="#2348DF" font-family="Georgia, 'Times New Roman', serif" font-size="132" font-style="italic" letter-spacing="-9">rba</text>
+    <path d="M25 176C186 140 388 158 566 105" stroke="#2348DF" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="566" cy="105" r="10" fill="#FF5B3A"/>
+  </g>
+</svg>

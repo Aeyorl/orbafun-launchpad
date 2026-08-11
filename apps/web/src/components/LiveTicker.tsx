@@ -30,9 +30,9 @@ export function LiveTicker() {
   if (items.length === 0) return null;
 
   return (
-    <div className="border-b border-bg-border bg-bg-card/50 overflow-hidden" aria-label="Live token ticker" role="status">
-      <div className="max-w-7xl mx-auto px-4 py-1.5 flex items-center gap-2 overflow-x-auto scrollbar-none">
-        <span className="text-accent-green text-xs font-semibold whitespace-nowrap flex items-center gap-1" aria-hidden="true">
+    <div className="overflow-hidden border-b border-accent-blue/25 bg-accent-blue text-white" aria-label="Live token ticker" role="status">
+      <div className="mx-auto flex max-w-[1440px] items-center gap-4 overflow-x-auto px-4 py-2 font-mono scrollbar-none lg:px-6">
+        <span className="flex items-center gap-2 whitespace-nowrap text-[10px] font-bold tracking-[0.14em] text-[#f6dc55]" aria-hidden="true">
           <span className="inline-block w-2 h-2 rounded-full bg-accent-green animate-pulse" />
           LIVE
         </span>
@@ -50,14 +50,6 @@ function TickerEntry({ event }: { event: TokenEvent }) {
   const isToken = event.type === 'NEW_TOKEN';
   const isGrad = event.type === 'TOKEN_GRADUATED';
 
-  const color = isBuy
-    ? 'text-accent-green'
-    : isSell
-    ? 'text-accent-red'
-    : isGrad
-    ? 'text-accent-purple'
-    : 'text-accent-blue';
-
   const label = isBuy
     ? 'BUY'
     : isSell
@@ -74,7 +66,7 @@ function TickerEntry({ event }: { event: TokenEvent }) {
     : '';
 
   return (
-    <span className={`text-xs whitespace-nowrap ${color} flex items-center gap-1`}>
+    <span className={`flex whitespace-nowrap text-[10px] font-semibold tracking-[0.06em] text-white`}>
       <span className="font-semibold">{label}</span>
       <span className="text-text-muted">·</span>
       <span>{tokenEmoji(symbol)}</span>

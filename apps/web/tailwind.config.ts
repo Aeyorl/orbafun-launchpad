@@ -27,8 +27,8 @@ const config: Config = {
         accent: {
           green: 'rgb(var(--color-accent-primary) / <alpha-value>)',
           greenDim: 'rgb(var(--color-accent-primary-dim) / <alpha-value>)',
-          blue: 'rgb(var(--color-accent-primary) / <alpha-value>)',
-          blueDim: 'rgb(var(--color-accent-primary-dim) / <alpha-value>)',
+          blue: 'rgb(var(--color-accent-blue) / <alpha-value>)',
+          blueDim: 'rgb(var(--color-accent-blue-dim) / <alpha-value>)',
           purple: 'rgb(var(--color-accent-grad) / <alpha-value>)',
           red: 'rgb(var(--color-accent-red) / <alpha-value>)',
           orange: 'rgb(var(--color-accent-orange) / <alpha-value>)',
@@ -47,16 +47,16 @@ const config: Config = {
         serif: ['var(--font-signifier)', 'ui-serif', 'Georgia', 'Cambria', 'serif'],
         mono: ['var(--font-jetbrains)', 'ui-monospace', 'monospace'],
       },
-      // All border radii set to 0px (per design spec — sharp corners site-wide)
+      // Daybreak radii: warm and tactile, never hard 0px corners.
       borderRadius: {
-        none: '0',
-        sm: '4px',
-        DEFAULT: '6px',
-        md: '8px',
-        lg: '10px',
-        xl: '12px',
-        '2xl': '12px',
-        '3xl': '16px',
+        none: '4px',
+        sm: '8px',
+        DEFAULT: '12px',
+        md: '14px',
+        lg: '16px',
+        xl: '20px',
+        '2xl': '24px',
+        '3xl': '28px',
         full: '9999px',
       },
       boxShadow: {
