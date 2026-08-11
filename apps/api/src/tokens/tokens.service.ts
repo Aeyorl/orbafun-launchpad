@@ -7,6 +7,8 @@ export interface Token {
   id: number;
   contract_address: string;
   curve_address: string;
+  factory_address: string | null;
+  transfer_policy: 'legacy_capped' | 'uncapped';
   amm_pair_address: string | null;
   creator_wallet: string;
   name: string;
@@ -47,6 +49,9 @@ export interface Trade {
   block_number: string;
   log_index: number;
   timestamp: string;
+  wallet_tier: 'shrimp' | 'fish' | 'dolphin' | 'whale' | null;
+  wallet_tier_label: string | null;
+  wallet_tier_calculated_at: string | null;
 }
 
 export type SortOption = 'newest' | 'market_cap' | 'volume';
@@ -214,9 +219,13 @@ export class TokensService {
     const normalized = address.toLowerCase();
 
     const trades = await this.db.queryRows<Trade>(
-      `SELECT tr.*
+      `SELECT tr.*,
+              ws.tier AS wallet_tier,
+              CASE WHEN ws.suspicious_activity THEN 'Unranked' ELSE INITCAP(ws.tier) END AS wallet_tier_label,
+              ws.calculated_at::text AS wallet_tier_calculated_at
        FROM trades tr
        JOIN tokens t ON tr.token_id = t.id
+       LEFT JOIN wallet_stats ws ON ws.wallet = tr.wallet
        WHERE t.contract_address = $1
        ORDER BY tr.timestamp ${order === 'desc' ? 'DESC' : 'ASC'}
        LIMIT $2 OFFSET $3`,
@@ -235,6 +244,49 @@ export class TokensService {
       trades,
       total: parseInt(countResult?.total || '0', 10),
     };
+  }
+
+  async getRecentActivity(limit = 12): Promise<any[]> {
+    return this.db.queryRows<any>(
+      `WITH activity AS (
+         SELECT tr.type,
+                tr.wallet,
+                tr.usdc_amount::text AS usdc_amount,
+                tr.token_amount::text AS token_amount,
+                tr.tx_hash,
+                tr.block_number,
+                tr.log_index,
+                tr.timestamp,
+                t.contract_address AS token_address,
+                t.name AS token_name,
+                t.symbol AS token_symbol
+         FROM trades tr
+         JOIN tokens t ON t.id = tr.token_id
+         UNION ALL
+         SELECT CASE WHEN s.is_buy THEN 'buy' ELSE 'sell' END AS type,
+                CASE WHEN s.is_buy THEN s.to_address ELSE s.sender END AS wallet,
+                CASE WHEN s.is_buy THEN s.usdc_in ELSE s.usdc_out END::text AS usdc_amount,
+                CASE WHEN s.is_buy THEN s.token_out ELSE s.token_in END::text AS token_amount,
+                s.tx_hash,
+                s.block_number,
+                s.log_index,
+                s.timestamp,
+                t.contract_address AS token_address,
+                t.name AS token_name,
+                t.symbol AS token_symbol
+         FROM amm_swaps s
+         JOIN tokens t ON t.id = s.token_id
+       )
+       SELECT a.*,
+              ws.tier AS wallet_tier,
+              CASE WHEN ws.suspicious_activity THEN 'Unranked' ELSE INITCAP(ws.tier) END AS wallet_tier_label,
+              ws.calculated_at::text AS wallet_tier_calculated_at
+       FROM activity a
+       LEFT JOIN wallet_stats ws ON ws.wallet = a.wallet
+       ORDER BY a.block_number DESC, a.log_index DESC
+       LIMIT $1`,
+      [limit],
+    );
   }
 
   /**
@@ -286,7 +338,10 @@ export class TokensService {
     const holders = await this.db.queryRows<Holder>(
       `SELECT h.wallet,
               h.balance::text AS balance,
-              h.percentage::text AS percentage
+              h.percentage::text AS percentage,
+              ws.tier AS wallet_tier,
+              CASE WHEN ws.suspicious_activity THEN 'Unranked' ELSE INITCAP(ws.tier) END AS wallet_tier_label,
+              ws.calculated_at::text AS wallet_tier_calculated_at
        FROM (
          SELECT wallet,
                 SUM(balance) AS balance,
@@ -311,7 +366,8 @@ export class TokensService {
          ) x
          GROUP BY wallet
          HAVING SUM(balance) > 0
-       ) h
+        ) h
+        LEFT JOIN wallet_stats ws ON ws.wallet = h.wallet
        ORDER BY h.balance DESC
        LIMIT $2`,
       [normalized, limit],
@@ -397,4 +453,7 @@ export interface Holder {
   wallet: string;
   balance: string;       // 18-dec token amount (as string — BigInt-safe)
   percentage: string;    // 0-100, as string
+  wallet_tier: 'shrimp' | 'fish' | 'dolphin' | 'whale' | null;
+  wallet_tier_label: string | null;
+  wallet_tier_calculated_at: string | null;
 }

@@ -16,7 +16,7 @@ export class LeaderboardController {
     @Query('type') type?: string,
     @Query('limit') limit?: string,
   ) {
-    const validTypes = ['top_creators', 'top_gainers', 'top_volume'];
+    const validTypes = ['top_creators', 'top_gainers', 'top_volume', 'market_cap', 'new'];
     const typeOption = validTypes.includes(type || '') ? type! : 'top_gainers';
     const limitNum = limit ? parseInt(limit, 10) : 20;
 
