@@ -18,10 +18,27 @@ describe('IndexerService idempotency and accounting', () => {
           return { rows: [tokenRow], rowCount: 1 };
         }
         if (text.includes('INSERT INTO trades')) {
-          const key = `${params?.[8]}:${params?.[10]}`;
+          const key = `${params?.[10]}:${params?.[12]}`;
           if (insertedTrades.has(key)) return { rows: [], rowCount: 0 };
           insertedTrades.add(key);
-          return { rows: [{ id: insertedTrades.size, tx_hash: params?.[8], log_index: params?.[10] }], rowCount: 1 };
+          return { rows: [{ id: insertedTrades.size, tx_hash: params?.[10], log_index: params?.[12] }], rowCount: 1 };
+        }
+        if (text.includes('FROM wallet_token_positions') && text.includes('FOR UPDATE')) {
+          return {
+            rows: [{
+              quantity_base_units: '0',
+              remaining_cost_usdc: '0',
+              cost_of_tokens_sold_usdc: '0',
+              net_sale_proceeds_usdc: '0',
+              realized_pnl_usdc: '0',
+              total_bought_usdc: '0',
+              total_sold_usdc: '0',
+              buy_count: 0,
+              sell_count: 0,
+              basis_status: 'complete',
+            }],
+            rowCount: 1,
+          };
         }
         return { rows: [], rowCount: 1 };
       }),
@@ -30,6 +47,7 @@ describe('IndexerService idempotency and accounting', () => {
     const db = {
       connect: jest.fn(async () => client),
       queryOne: jest.fn(async (text: string) => {
+        if (text.includes('WITH wallet_activity')) return null;
         if (text.includes('FROM trades')) return { id: 7 };
         if (text.includes('FROM tokens')) return { contract_address: tokenRow.contract_address };
         return null;
@@ -96,7 +114,10 @@ describe('IndexerService idempotency and accounting', () => {
     await jest.runAllTimersAsync();
 
     expect(redis.publishTokenEvent).toHaveBeenCalledTimes(2);
-    expect(db.queryOne).not.toHaveBeenCalled();
+    expect(db.queryOne).not.toHaveBeenCalledWith(
+      expect.stringContaining('SELECT * FROM trades'),
+      expect.anything(),
+    );
     expect(redis.delPattern).toHaveBeenCalledTimes(2);
     expect(redis.delPattern).toHaveBeenCalledWith('tokens:list:*');
     expect(redis.delPattern).toHaveBeenCalledWith('leaderboard:*');
@@ -122,6 +143,8 @@ describe('IndexerService idempotency and accounting', () => {
 
     const tradeInsert = clientQueries.find(({ text }) => text.includes('INSERT INTO trades'));
     expect(tradeInsert?.params?.[2]).toBe('1000000');
+    expect(tradeInsert?.params?.[3]).toBe('10000');
+    expect(tradeInsert?.params?.[4]).toBe('990000');
     const tokenUpdate = clientQueries.find(({ text }) => text.includes('UPDATE tokens SET'));
     expect(tokenUpdate?.params?.[3]).toBe('1000000');
     expect(tokenUpdate?.params?.[5]).toBe('5000');

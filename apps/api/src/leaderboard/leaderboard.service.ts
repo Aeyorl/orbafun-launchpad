@@ -30,6 +30,9 @@ export class LeaderboardService {
            COALESCE(tv.vol, 0)::text as total_volume_usdc,
            COUNT(DISTINCT t.id) FILTER (WHERE t.status = 'active') as active_tokens,
            COALESCE(SUM(t.market_cap) FILTER (WHERE t.status = 'active'), 0) as total_market_cap
+           , ws.tier AS wallet_tier
+           , CASE WHEN ws.suspicious_activity THEN 'Unranked' ELSE INITCAP(ws.tier) END AS wallet_tier_label
+           , ws.calculated_at::text AS wallet_tier_calculated_at
          FROM users u
          LEFT JOIN (
            SELECT t.creator_wallet, (SUM(tr.usdc_amount) / 1000000.0) as vol
@@ -38,8 +41,10 @@ export class LeaderboardService {
            GROUP BY t.creator_wallet
          ) tv ON tv.creator_wallet = u.wallet
          LEFT JOIN tokens t ON t.creator_wallet = u.wallet
+         LEFT JOIN wallet_stats ws ON ws.wallet = u.wallet
          WHERE u.tokens_launched > 0 OR t.id IS NOT NULL
-         GROUP BY u.wallet, u.username, u.tokens_launched, tv.vol
+         GROUP BY u.wallet, u.username, u.tokens_launched, tv.vol,
+                  ws.tier, ws.calculated_at
          ORDER BY COALESCE(tv.vol, 0) DESC
          LIMIT $1`,
         [limit],
@@ -55,6 +60,7 @@ export class LeaderboardService {
            t.name,
            t.symbol,
            t.image,
+           t.creator_wallet,
            t.market_cap,
            t.price,
            t.volume_24h,
@@ -94,11 +100,23 @@ export class LeaderboardService {
            name,
            symbol,
            image,
+           creator_wallet,
+           price,
            market_cap,
            volume_24h,
-           status
+           status,
+           created_at
          FROM tokens
          ORDER BY volume_24h DESC
+         LIMIT $1`,
+        [limit],
+      );
+    } else if (type === 'market_cap' || type === 'new') {
+      result = await this.db.queryRows(
+        `SELECT contract_address, name, symbol, image, creator_wallet, price,
+                market_cap, volume_24h, status, created_at
+         FROM tokens
+         ORDER BY ${type === 'market_cap' ? 'market_cap DESC' : 'created_at DESC'}
          LIMIT $1`,
         [limit],
       );

@@ -104,14 +104,20 @@ export class ArcEventPollerService implements OnModuleInit {
     this.rpcUrl = this.rpcUrls[0]; // kept for backward-compat logging
   }
 
-  private getFactoryAddress(): string {
-    const configured = process.env.ARC_TOKEN_FACTORY_ADDRESS ||
-      process.env.NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS;
-    if (configured) return configured.toLowerCase();
+  private getFactoryAddresses(): string[] {
+    const configured = [
+      ...(process.env.TOKEN_FACTORY_ADDRESSES || '').split(','),
+      process.env.ARC_TOKEN_FACTORY_ADDRESS ||
+        process.env.NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS ||
+        '',
+    ]
+      .map((address) => address.trim().toLowerCase())
+      .filter(Boolean);
+    if (configured.length > 0) return Array.from(new Set(configured));
     if (Number(process.env.ARC_CHAIN_ID || 5_042_002) === 5_042) {
-      throw new Error('Arc mainnet requires ARC_TOKEN_FACTORY_ADDRESS');
+      throw new Error('Arc mainnet requires TOKEN_FACTORY_ADDRESSES');
     }
-    return '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b'.toLowerCase();
+    return ['0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b'.toLowerCase()];
   }
 
   async onModuleInit(): Promise<void> {
@@ -126,6 +132,25 @@ export class ArcEventPollerService implements OnModuleInit {
 
     // Load last synced block from indexer_sync_state.
     await this.loadLastBlock();
+
+    // A factory cutover may be configured after its deployment block has
+    // already passed. Replaying from that exact block is safe because event
+    // persistence is idempotent by transaction hash and log index. Remove the
+    // override after the first successful catch-up deployment.
+    const replayFrom = process.env.ARC_POLLER_REPLAY_FROM_BLOCK;
+    if (replayFrom) {
+      const replayBlock = BigInt(replayFrom);
+      if (replayBlock < 1n) {
+        throw new Error('ARC_POLLER_REPLAY_FROM_BLOCK must be at least 1');
+      }
+      const replayLastBlock = replayBlock - 1n;
+      if (this.lastBlock === 0n || replayLastBlock < this.lastBlock) {
+        this.logger.warn(
+          `Replaying indexed events from configured cutover block ${replayBlock}`,
+        );
+        this.lastBlock = replayLastBlock;
+      }
+    }
 
     // If no last block, start from a recent block (current - 1000) to avoid
     // re-indexing the entire chain history on first run.
@@ -204,11 +229,11 @@ export class ArcEventPollerService implements OnModuleInit {
     fromBlock: bigint,
     toBlock: bigint,
   ): Promise<void> {
-    const factoryAddress = this.getFactoryAddress();
+    const factoryAddresses = this.getFactoryAddresses();
 
     // 1. Fetch TokenFactory events (TokenCreated, TokenGraduated).
     const factoryLogs = await this.getLogsSafe(
-      [factoryAddress],
+      factoryAddresses,
       fromBlock,
       toBlock,
     );
@@ -272,7 +297,7 @@ export class ArcEventPollerService implements OnModuleInit {
 
     const isFactoryEvent =
       topic === TOPIC_TOKEN_CREATED || topic === TOPIC_TOKEN_GRADUATED;
-    if (isFactoryEvent && address !== this.getFactoryAddress()) {
+    if (isFactoryEvent && !this.getFactoryAddresses().includes(address)) {
       this.logger.warn(
         `Ignored factory event from untrusted emitter ${address} (tx ${txHash})`,
       );
@@ -319,6 +344,7 @@ export class ArcEventPollerService implements OnModuleInit {
           logIndex,
           token: tokenAddr,
           curve: curveAddr,
+          factoryAddress: address,
           creator,
           name,
           symbol,

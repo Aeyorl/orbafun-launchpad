@@ -74,6 +74,15 @@ export class TokensController {
     return this.tokensService.getPlatformStats();
   }
 
+  @Get('activity/recent')
+  async getRecentActivity(@Query('limit') limit?: string) {
+    const limitNum = limit ? parseInt(limit, 10) : 12;
+    if (isNaN(limitNum) || limitNum < 1 || limitNum > 50) {
+      throw new BadRequestException('limit must be between 1 and 50');
+    }
+    return { activity: await this.tokensService.getRecentActivity(limitNum) };
+  }
+
   /**
    * GET /tokens/:address/candles
    * Returns OHLCV candle data for the trading chart.

@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS tokens (
     id              BIGSERIAL PRIMARY KEY,
     contract_address TEXT NOT NULL UNIQUE,    -- MemeToken address (the "token")
     curve_address   TEXT NOT NULL UNIQUE,     -- BondingCurve address
+    factory_address TEXT,                     -- emitting TokenFactory address
+    transfer_policy TEXT NOT NULL DEFAULT 'legacy_capped',
     amm_pair_address TEXT,                    -- set on graduation (nullable)
     creator_wallet  TEXT NOT NULL,            -- lowercase address
 
@@ -68,8 +70,19 @@ CREATE INDEX IF NOT EXISTS idx_tokens_market_cap ON tokens(market_cap DESC);
 CREATE INDEX IF NOT EXISTS idx_tokens_volume_24h ON tokens(volume_24h DESC);
 CREATE INDEX IF NOT EXISTS idx_tokens_created_at ON tokens(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tokens_creator ON tokens(creator_wallet);
+CREATE INDEX IF NOT EXISTS idx_tokens_factory ON tokens(factory_address);
 CREATE INDEX IF NOT EXISTS idx_tokens_symbol_trgm ON tokens USING gin (symbol gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_tokens_name_trgm ON tokens USING gin (name gin_trgm_ops);
+
+-- Multi-factory migration. Existing tokens remain legacy-capped; only events
+-- from explicitly configured uncapped factories receive the uncapped policy.
+ALTER TABLE tokens ADD COLUMN IF NOT EXISTS factory_address TEXT;
+ALTER TABLE tokens ADD COLUMN IF NOT EXISTS transfer_policy TEXT NOT NULL DEFAULT 'legacy_capped';
+DO $$ BEGIN
+    ALTER TABLE tokens ADD CONSTRAINT chk_tokens_transfer_policy
+        CHECK (transfer_policy IN ('legacy_capped', 'uncapped'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
 -- ─── Trades ────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS trades (
@@ -80,6 +93,11 @@ CREATE TABLE IF NOT EXISTS trades (
 
     -- Amounts (6-dec USDC, 18-dec tokens)
     usdc_amount BIGINT NOT NULL,              -- 6-dec
+    gross_usdc_amount BIGINT NOT NULL DEFAULT 0,
+    fee_usdc_amount BIGINT NOT NULL DEFAULT 0,
+    net_usdc_amount BIGINT NOT NULL DEFAULT 0,
+    allocated_cost_usdc BIGINT NOT NULL DEFAULT 0,
+    realized_pnl_usdc BIGINT NOT NULL DEFAULT 0,
     token_amount NUMERIC(40, 0) NOT NULL,    -- 18-dec
     price       NUMERIC(38, 18) NOT NULL,     -- USDC per token at trade time
 
@@ -103,6 +121,20 @@ CREATE INDEX IF NOT EXISTS idx_trades_token_timestamp ON trades(token_id, timest
 CREATE INDEX IF NOT EXISTS idx_trades_wallet_timestamp ON trades(wallet, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_trades_block ON trades(block_number);
+
+-- Explicit accounting semantics for existing deployments. Historical rows only
+-- retained the gross amount, so their fee/net split is deterministically derived
+-- using the launchpad's 1% fee. New rows are populated from decoded V2 events.
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS gross_usdc_amount BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS fee_usdc_amount BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS net_usdc_amount BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS allocated_cost_usdc BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS realized_pnl_usdc BIGINT NOT NULL DEFAULT 0;
+UPDATE trades
+SET gross_usdc_amount = usdc_amount,
+    fee_usdc_amount = usdc_amount / 100,
+    net_usdc_amount = usdc_amount - (usdc_amount / 100)
+WHERE gross_usdc_amount = 0 AND usdc_amount > 0;
 
 -- ─── Graduations ───────────────────────────────────────────────────────────
 -- Separate table for graduation events (one per token, but kept separate for
@@ -136,6 +168,8 @@ CREATE TABLE IF NOT EXISTS amm_swaps (
     usdc_out        BIGINT NOT NULL DEFAULT 0,  -- 6-dec
     token_in        NUMERIC(40, 0) NOT NULL DEFAULT 0,  -- 18-dec
     token_out       NUMERIC(40, 0) NOT NULL DEFAULT 0,  -- 18-dec
+    allocated_cost_usdc BIGINT NOT NULL DEFAULT 0,
+    realized_pnl_usdc BIGINT NOT NULL DEFAULT 0,
 
     -- Price after swap
     price_after     NUMERIC(38, 18) NOT NULL, -- USDC per token
@@ -149,6 +183,8 @@ CREATE TABLE IF NOT EXISTS amm_swaps (
 );
 
 CREATE INDEX IF NOT EXISTS idx_amm_swaps_token_timestamp ON amm_swaps(token_id, timestamp DESC);
+ALTER TABLE amm_swaps ADD COLUMN IF NOT EXISTS allocated_cost_usdc BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE amm_swaps ADD COLUMN IF NOT EXISTS realized_pnl_usdc BIGINT NOT NULL DEFAULT 0;
 
 -- ─── Indexer State (for resumability / lag tracking) ───────────────────────
 -- Tracks the last block the indexer has processed. Envio/Goldsky handle this
@@ -547,6 +583,68 @@ CREATE TABLE IF NOT EXISTS referrals (
 
 CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_wallet);
 CREATE INDEX IF NOT EXISTS idx_referrals_referred ON referrals(referred_wallet);
+
+-- Derived weighted-average position ledger. Canonical trades/swaps remain the
+-- rebuild source; these rows make profile and feed reads bounded and consistent.
+CREATE TABLE IF NOT EXISTS wallet_token_positions (
+    wallet                       TEXT NOT NULL,
+    token_id                     BIGINT NOT NULL REFERENCES tokens(id) ON DELETE CASCADE,
+    quantity_base_units          NUMERIC(40, 0) NOT NULL DEFAULT 0 CHECK (quantity_base_units >= 0),
+    remaining_cost_usdc          BIGINT NOT NULL DEFAULT 0 CHECK (remaining_cost_usdc >= 0),
+    cost_of_tokens_sold_usdc     BIGINT NOT NULL DEFAULT 0 CHECK (cost_of_tokens_sold_usdc >= 0),
+    net_sale_proceeds_usdc       BIGINT NOT NULL DEFAULT 0 CHECK (net_sale_proceeds_usdc >= 0),
+    realized_pnl_usdc            BIGINT NOT NULL DEFAULT 0,
+    total_bought_usdc            BIGINT NOT NULL DEFAULT 0 CHECK (total_bought_usdc >= 0),
+    total_sold_usdc              BIGINT NOT NULL DEFAULT 0 CHECK (total_sold_usdc >= 0),
+    buy_count                    INTEGER NOT NULL DEFAULT 0 CHECK (buy_count >= 0),
+    sell_count                   INTEGER NOT NULL DEFAULT 0 CHECK (sell_count >= 0),
+    basis_status                 TEXT NOT NULL DEFAULT 'complete'
+                                     CHECK (basis_status IN ('complete', 'incomplete')),
+    opened_at                    TIMESTAMPTZ,
+    closed_at                    TIMESTAMPTZ,
+    last_activity_at             TIMESTAMPTZ NOT NULL,
+    calculated_through_trade_id  BIGINT REFERENCES trades(id) ON DELETE SET NULL,
+    calculated_through_swap_id   BIGINT REFERENCES amm_swaps(id) ON DELETE SET NULL,
+    updated_at                   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (wallet, token_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_positions_token
+    ON wallet_token_positions(token_id);
+CREATE INDEX IF NOT EXISTS idx_wallet_positions_open
+    ON wallet_token_positions(wallet, last_activity_at DESC)
+    WHERE quantity_base_units > 0;
+CREATE INDEX IF NOT EXISTS idx_wallet_positions_closed
+    ON wallet_token_positions(wallet, last_activity_at DESC)
+    WHERE quantity_base_units = 0 AND buy_count + sell_count > 0;
+
+-- Cached Orba-only wallet metrics. Values are integer micro-USDC; public copy
+-- must not imply that this represents a wallet's total assets across Arc.
+CREATE TABLE IF NOT EXISTS wallet_stats (
+    wallet                    TEXT PRIMARY KEY,
+    tier                      TEXT NOT NULL DEFAULT 'shrimp'
+                                  CHECK (tier IN ('shrimp', 'fish', 'dolphin', 'whale')),
+    portfolio_value_usdc      BIGINT NOT NULL DEFAULT 0,
+    realized_pnl_usdc         BIGINT NOT NULL DEFAULT 0,
+    unrealized_pnl_usdc       BIGINT NOT NULL DEFAULT 0,
+    volume_7d_usdc            BIGINT NOT NULL DEFAULT 0,
+    volume_30d_usdc           BIGINT NOT NULL DEFAULT 0,
+    lifetime_volume_usdc      BIGINT NOT NULL DEFAULT 0,
+    largest_trade_usdc        BIGINT NOT NULL DEFAULT 0,
+    buy_count                 INTEGER NOT NULL DEFAULT 0,
+    sell_count                INTEGER NOT NULL DEFAULT 0,
+    distinct_tokens_traded    INTEGER NOT NULL DEFAULT 0,
+    open_positions            INTEGER NOT NULL DEFAULT 0,
+    closed_positions          INTEGER NOT NULL DEFAULT 0,
+    profitable_positions      INTEGER NOT NULL DEFAULT 0,
+    suspicious_activity       BOOLEAN NOT NULL DEFAULT FALSE,
+    first_seen_at             TIMESTAMPTZ,
+    last_active_at            TIMESTAMPTZ,
+    calculated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_stats_tier_value
+    ON wallet_stats(tier, portfolio_value_usdc DESC);
 
 -- Apply RLS as part of the normal migration path, including every table added
 -- in future schema revisions. The API runtime role should have explicit direct

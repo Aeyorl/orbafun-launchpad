@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
+import { updateWalletPosition } from '../users/position-accounting';
+import { refreshWalletStats } from '../users/wallet-intelligence';
 
 const CURVE_SUPPLY = 880_000_000n * 10n ** 18n;
 const CURVE_VIRTUAL_USDC = 5_866_666_700n;
@@ -67,6 +69,17 @@ export class IndexerService {
 
   // ─── TokenCreated ────────────────────────────────────────────────────────
   private async handleTokenCreated(event: TokenCreatedEvent): Promise<void> {
+    const factoryAddress = event.factoryAddress?.toLowerCase() || null;
+    const uncappedFactories = new Set(
+      (process.env.UNCAPPED_TOKEN_FACTORY_ADDRESSES || '')
+        .split(',')
+        .map((address) => address.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const transferPolicy =
+      factoryAddress && uncappedFactories.has(factoryAddress)
+        ? 'uncapped'
+        : 'legacy_capped';
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
@@ -75,22 +88,24 @@ export class IndexerService {
       // indexer statistics are not incremented twice.
       const tokenInsert = await client.query(
         `INSERT INTO tokens (
-           contract_address, curve_address, creator_wallet,
+           contract_address, curve_address, factory_address, transfer_policy, creator_wallet,
            name, symbol, image, description,
            price, market_cap, volume_24h,
            real_usdc, tokens_sold, creator_fees_accrued, protocol_fees_accrued,
            status, created_block, created_tx_hash, created_at
          ) VALUES (
-           $1, $2, $3, $4, $5, $6, NULL,
+           $1, $2, $3, $4, $5, $6, $7, $8, NULL,
            '0.000004545454545', '4000', '0',
            0, 0, 0, 0,
-           'active', $7, $8, NOW()
+           'active', $9, $10, NOW()
          )
          ON CONFLICT (contract_address) DO NOTHING
          RETURNING id`,
         [
           event.token.toLowerCase(),
           event.curve.toLowerCase(),
+          factoryAddress,
+          transferPolicy,
           event.creator.toLowerCase(),
           event.name,
           event.symbol,
@@ -202,14 +217,15 @@ export class IndexerService {
       const tradeInsert = await client.query(
         `INSERT INTO trades (
            token_id, wallet, type,
-           usdc_amount, token_amount, price,
+           usdc_amount, gross_usdc_amount, fee_usdc_amount, net_usdc_amount,
+           token_amount, price,
            market_cap_after, real_usdc_after, tokens_sold_after,
            tx_hash, block_number, log_index, timestamp
          )
-         VALUES ($1, $2, 'buy', $3, $4, $5, $6,
-           (SELECT real_usdc + $7 FROM tokens WHERE id = $1),
-           (SELECT tokens_sold + $8 FROM tokens WHERE id = $1),
-           $9, $10, $11, NOW()
+         VALUES ($1, $2, 'buy', $3, $3, $4, $5, $6, $7, $8,
+           (SELECT real_usdc + $9 FROM tokens WHERE id = $1),
+           (SELECT tokens_sold + $10 FROM tokens WHERE id = $1),
+           $11, $12, $13, NOW()
          )
          ON CONFLICT (tx_hash, log_index) DO NOTHING
          RETURNING *`,
@@ -217,6 +233,8 @@ export class IndexerService {
           tokenId,
           event.buyer.toLowerCase(),
           usdcAmount.toString(),
+          fee.toString(),
+          netUsdc.toString(),
           tokenAmount.toString(),
           price,
           marketCap,
@@ -232,6 +250,19 @@ export class IndexerService {
         return;
       }
       indexedTrade = tradeInsert.rows[0];
+
+      await updateWalletPosition(client, {
+        wallet: event.buyer.toLowerCase(),
+        tokenId,
+        tradeId: tradeInsert.rows[0].id,
+        source: 'curve',
+        trade: {
+          type: 'buy',
+          tokenAmountBaseUnits: tokenAmount,
+          grossMicroUsdc: usdcAmount,
+          netMicroUsdc: netUsdc,
+        },
+      });
 
       // 2. Update token state (price, market cap, real usdc, tokens sold, fees, volume_24h in dollars)
       await client.query(
@@ -311,6 +342,7 @@ export class IndexerService {
 
     // Publish WebSocket event
     if (indexedTrade && tokenContractAddress) {
+      await this.refreshWalletDerivedData(event.buyer.toLowerCase());
       await this.redis.publishTokenEvent(
         tokenContractAddress.toLowerCase(),
         'NEW_BUY',
@@ -361,14 +393,15 @@ export class IndexerService {
       const tradeInsert = await client.query(
         `INSERT INTO trades (
            token_id, wallet, type,
-           usdc_amount, token_amount, price,
+           usdc_amount, gross_usdc_amount, fee_usdc_amount, net_usdc_amount,
+           token_amount, price,
            market_cap_after, real_usdc_after, tokens_sold_after,
            tx_hash, block_number, log_index, timestamp
          )
-         VALUES ($1, $2, 'sell', $3, $4, $5, $6,
-           (SELECT GREATEST(0, real_usdc - $7) FROM tokens WHERE id = $1),
-           (SELECT GREATEST(0, tokens_sold - $8) FROM tokens WHERE id = $1),
-           $9, $10, $11, NOW()
+         VALUES ($1, $2, 'sell', $3, $3, $4, $5, $6, $7, $8,
+           (SELECT GREATEST(0, real_usdc - $9) FROM tokens WHERE id = $1),
+           (SELECT GREATEST(0, tokens_sold - $10) FROM tokens WHERE id = $1),
+           $11, $12, $13, NOW()
          )
          ON CONFLICT (tx_hash, log_index) DO NOTHING
          RETURNING *`,
@@ -376,6 +409,8 @@ export class IndexerService {
           tokenId,
           event.seller.toLowerCase(),
           usdcAmount.toString(),
+          fee.toString(),
+          netUsdcOut.toString(),
           tokenAmount.toString(),
           price,
           marketCap,
@@ -391,6 +426,29 @@ export class IndexerService {
         return;
       }
       indexedTrade = tradeInsert.rows[0];
+
+      const positionUpdate = await updateWalletPosition(client, {
+        wallet: event.seller.toLowerCase(),
+        tokenId,
+        tradeId: tradeInsert.rows[0].id,
+        source: 'curve',
+        trade: {
+          type: 'sell',
+          tokenAmountBaseUnits: tokenAmount,
+          grossMicroUsdc: usdcAmount,
+          netMicroUsdc: netUsdcOut,
+        },
+      });
+      await client.query(
+        `UPDATE trades
+         SET allocated_cost_usdc = $2, realized_pnl_usdc = $3
+         WHERE id = $1`,
+        [
+          tradeInsert.rows[0].id,
+          positionUpdate.allocatedCostMicroUsdc.toString(),
+          positionUpdate.realizedPnlIncrementMicroUsdc.toString(),
+        ],
+      );
 
       // 2. Update token state (price, market cap, real usdc, tokens sold, fees, volume_24h in dollars)
       await client.query(
@@ -465,6 +523,7 @@ export class IndexerService {
     }
 
     if (indexedTrade && tokenContractAddress) {
+      await this.refreshWalletDerivedData(event.seller.toLowerCase());
       await this.redis.publishTokenEvent(
         tokenContractAddress.toLowerCase(),
         'NEW_SELL',
@@ -665,6 +724,9 @@ export class IndexerService {
         isBuy ? usdcIn : usdcOut,   // usdc amount (6-dec raw)
         isBuy ? tokenOut : tokenIn,  // token amount (18-dec raw)
       );
+      const positionWallet = isBuy
+        ? event.to.toLowerCase()
+        : event.sender.toLowerCase();
 
       // 1. Insert swap record and stop before side effects on replay.
       const swapInsert = await client.query(
@@ -696,6 +758,36 @@ export class IndexerService {
         await client.query('ROLLBACK');
         return;
       }
+
+      const positionUpdate = await updateWalletPosition(client, {
+        wallet: positionWallet,
+        tokenId,
+        tradeId: swapInsert.rows[0].id,
+        source: 'amm',
+        trade: {
+          type: isBuy ? 'buy' : 'sell',
+          tokenAmountBaseUnits: isBuy ? tokenOut : tokenIn,
+          grossMicroUsdc: isBuy ? usdcIn : usdcOut,
+          netMicroUsdc: isBuy ? usdcIn : usdcOut,
+        },
+      });
+      await client.query(
+        `UPDATE amm_swaps
+         SET allocated_cost_usdc = $2, realized_pnl_usdc = $3
+         WHERE id = $1`,
+        [
+          swapInsert.rows[0].id,
+          positionUpdate.allocatedCostMicroUsdc.toString(),
+          positionUpdate.realizedPnlIncrementMicroUsdc.toString(),
+        ],
+      );
+      await client.query(
+        `INSERT INTO users (wallet, total_volume_usdc, created_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (wallet) DO UPDATE
+         SET total_volume_usdc = users.total_volume_usdc + $2`,
+        [positionWallet, (isBuy ? usdcIn : usdcOut).toString()],
+      );
 
       // 2. Update token price and market cap (for AMM, use swap output as price).
       // Only update if price is non-zero.
@@ -745,6 +837,10 @@ export class IndexerService {
       [event.ammPairAddress.toLowerCase()],
     );
     if (tokenAddr2) {
+      const positionWallet = isBuy
+        ? event.to.toLowerCase()
+        : event.sender.toLowerCase();
+      await this.refreshWalletDerivedData(positionWallet);
       await this.redis.publishTokenEvent(
         tokenAddr2.contract_address.toLowerCase(),
         isBuy ? 'AMM_BUY' : 'AMM_SELL',
@@ -807,6 +903,24 @@ export class IndexerService {
     }
   }
 
+  private async refreshWalletDerivedData(wallet: string): Promise<void> {
+    try {
+      await refreshWalletStats(this.db, wallet);
+      await Promise.all([
+        this.redis.del(`user:${wallet}`),
+        this.redis.del(`user-holdings:${wallet}`),
+        this.redis.del(`user-stats:${wallet}`),
+        this.redis.del(`user-tier:${wallet}`),
+        this.redis.del(`user-pnl:${wallet}:7d`),
+        this.redis.del(`user-pnl:${wallet}:30d`),
+        this.redis.del(`user-pnl:${wallet}:all`),
+      ]);
+    } catch (err) {
+      // Derived intelligence must never make confirmed trade ingestion fail.
+      this.logger.warn(`Wallet stats refresh failed for ${wallet}: ${err.message}`);
+    }
+  }
+
   /**
    * Compute price (USDC per token) from 6-dec USDC and 18-dec token amounts.
    * Returns a string suitable for NUMERIC(38,18) columns.
@@ -865,6 +979,7 @@ interface TokenCreatedEvent extends IndexerEvent {
   name: string;
   symbol: string;
   image: string;
+  factoryAddress?: string;
 }
 
 interface BuyEvent extends IndexerEvent {

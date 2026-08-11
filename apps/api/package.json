@@ -9,6 +9,7 @@
     "start": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "db:migrate": "node dist/db/migrate.js",
+    "db:rebuild-wallet-accounting": "node dist/db/rebuild-wallet-accounting.js",
     "db:seed": "node dist/db/seed.js",
     "test": "jest",
     "test:watch": "jest --watch"
