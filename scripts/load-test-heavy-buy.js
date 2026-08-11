@@ -130,10 +130,25 @@ async function main() {
   const quote = await readRetry(publicClient, { address: curve, abi: BONDING_CURVE_ABI, functionName: 'quoteBuy', args: [usdcAmount] }, 'quote');
   console.log(`  Quote: ${formatUnits(quote, 18)} tokens for ${usdcAmountStr} USDC`);
 
-  // Check max wallet (4% of 1B = 40M tokens)
-  const MAX_WALLET = 40_000_000n * 10n ** 18n;
-  console.log(`  Max wallet: ${formatUnits(MAX_WALLET, 18)} tokens`);
-  if (quote > MAX_WALLET) {
+  // Legacy deployments expose maxWallet(); new factory versions are uncapped.
+  let maxWallet = null;
+  try {
+    maxWallet = await publicClient.readContract({
+      address: tokenAddress,
+      abi: [{
+        name: 'maxWallet',
+        type: 'function',
+        stateMutability: 'view',
+        inputs: [],
+        outputs: [{ type: 'uint256' }],
+      }],
+      functionName: 'maxWallet',
+    });
+    console.log(`  Legacy max wallet: ${formatUnits(maxWallet, 18)} tokens`);
+  } catch {
+    console.log('  Transfer policy: uncapped (maxWallet unavailable)');
+  }
+  if (maxWallet !== null && quote > maxWallet) {
     console.error(`  ✗ Quote exceeds max wallet limit — would revert`);
     process.exit(1);
   }

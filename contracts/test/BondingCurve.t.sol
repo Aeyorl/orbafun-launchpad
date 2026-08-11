@@ -221,21 +221,12 @@ contract BondingCurveTest is Test {
         vm.stopPrank();
     }
 
-    /// @notice Test: max wallet holding — buy that exceeds threshold reverts.
-    function test_MaxWallet() public {
+    /// @notice Test: one wallet may hold more than the legacy 4% threshold.
+    function test_BuyAboveLegacyMaxWalletSucceeds() public {
         launchToken();
-        // Max wallet = 4% of 1B = 40M tokens.
-        uint256 maxWallet = tokenContract.maxWallet();
-        assertEq(maxWallet, 40_000_000 * 10 ** 18, "max wallet 4%");
-
-        // Buy a large amount that would exceed max wallet.
-        // At ~$4000 market cap, 40M tokens costs ~$160 USDC.
-        // Buy 500 USDC worth — should exceed max wallet.
-        vm.startPrank(buyer1);
-        usdc.approve(curve, type(uint256).max);
-        vm.expectRevert(); // MaxWalletExceeded
-        curveContract.buy(500 * 10 ** 6, 0);
-        vm.stopPrank();
+        uint256 tokensOut = buy(buyer1, 500 * 10 ** 6);
+        assertGt(tokensOut, 40_000_000 * 10 ** 18, "buy exceeds legacy 4% threshold");
+        assertEq(tokenContract.balanceOf(buyer1), tokensOut, "buyer receives uncapped amount");
     }
 
     /// @notice Test: cooldown — rapid transfers revert.
