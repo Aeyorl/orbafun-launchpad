@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { UploadSimple } from '@phosphor-icons/react';
 import { ipfsToGateway } from '@/lib/utils';
 
 
@@ -268,7 +269,7 @@ export function ImageUploader({
           }`}
           aria-label="Upload token image — click or drag a file"
         >
-          <div className="text-3xl mb-2" aria-hidden="true">📁</div>
+          <UploadSimple size={28} className="mb-2" aria-hidden="true" />
           <p className="text-sm text-text-secondary">
             {dragOver ? 'Drop image here' : 'Click or drag to upload'}
           </p>
