@@ -50,14 +50,14 @@ const config: Config = {
       // All border radii set to 0px (per design spec — sharp corners site-wide)
       borderRadius: {
         none: '0',
-        sm: '0',
-        DEFAULT: '0',
-        md: '0',
-        lg: '0',
-        xl: '0',
-        '2xl': '0',
-        '3xl': '0',
-        full: '0',
+        sm: '4px',
+        DEFAULT: '6px',
+        md: '8px',
+        lg: '10px',
+        xl: '12px',
+        '2xl': '12px',
+        '3xl': '16px',
+        full: '9999px',
       },
       boxShadow: {
         subtle: 'var(--shadow-subtle)',

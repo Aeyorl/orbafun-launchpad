@@ -23,8 +23,8 @@ export function createMockWagmi(overrides: {
   tokenBalance?: bigint;
   usdcAllowance?: bigint;
   tokenAllowance?: bigint;
-  maxWallet?: bigint;
   quote?: bigint;
+  maxWallet?: bigint;
   isPending?: boolean;
   isConfirming?: boolean;
   isSuccess?: boolean;
@@ -41,8 +41,8 @@ export function createMockWagmi(overrides: {
     tokenBalance = 1_000_000_000_000_000_000_000n,
     usdcAllowance = 0n,
     tokenAllowance = 0n,
-    maxWallet = 40_000_000n * 10n ** 18n,
     quote = 500_000_000_000_000_000_000n,
+    maxWallet = 40_000_000n * 10n ** 18n,
     isPending = false,
     isConfirming = false,
     isSuccess = false,

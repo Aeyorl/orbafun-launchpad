@@ -7,6 +7,7 @@ import { Token } from '@/lib/api';
 import { ARC_EXPLORER_URL } from '@/lib/config';
 import { FavoriteButton } from '@/components/FavoriteButton';
 import { AgentBadge } from '@/components/AgentBadge';
+import { Copy, Flag, LinkSimple } from '@phosphor-icons/react';
 import {
   formatMarketCap,
   formatPrice,
@@ -273,7 +274,7 @@ export const TokenHeader = memo(function TokenHeader({
                         }}
                         className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2"
                       >
-                        <span>🔗</span> Copy link / Share
+                        <LinkSimple size={14} aria-hidden="true" /> Copy link / Share
                       </button>
                       <a
                         href={tweetUrl}
@@ -313,7 +314,7 @@ export const TokenHeader = memo(function TokenHeader({
                         }}
                         className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2"
                       >
-                        📋 Copy contract address
+                        <Copy size={14} aria-hidden="true" /> Copy contract address
                       </button>
                       <a
                         href={`${ARC_EXPLORER_URL}/address/${token.contract_address}`}
@@ -342,7 +343,7 @@ export const TokenHeader = memo(function TokenHeader({
                         }}
                         className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium text-rose-500 flex items-center gap-2"
                       >
-                        🚩 Report token
+                        <Flag size={14} aria-hidden="true" /> Report token
                       </button>
                     </div>
                   </>
@@ -465,7 +466,7 @@ export const TokenHeader = memo(function TokenHeader({
                 className="btn-secondary text-xs p-2 rounded-full"
                 title="Copy contract"
               >
-                📋
+                <Copy size={14} aria-hidden="true" />
               </button>
             </div>
           </div>
@@ -554,7 +555,7 @@ export const TokenHeader = memo(function TokenHeader({
               onClick={copyContract}
               className="btn-secondary text-xs px-2.5 py-1 rounded-full hidden sm:flex items-center gap-1"
             >
-              📋 Copy
+              <Copy size={14} aria-hidden="true" /> Copy
             </button>
             <button
               onClick={handleShare}

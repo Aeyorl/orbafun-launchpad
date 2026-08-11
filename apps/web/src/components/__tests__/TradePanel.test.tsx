@@ -62,6 +62,8 @@ function createMockToken(overrides: Partial<Token> = {}): Token {
     id: 1,
     contract_address: '0x1234567890abcdef1234567890abcdef12345678',
     curve_address: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+    factory_address: '0x1111111111111111111111111111111111111111',
+    transfer_policy: 'uncapped',
     amm_pair_address: null,
     creator_wallet: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
     name: 'Arc Doge',
@@ -187,6 +189,22 @@ describe('TradePanel', () => {
     it('shows balance display', () => {
       renderWithProviders(<TradePanel token={createMockToken()} />);
       expect(screen.getByText(/Balance/)).toBeInTheDocument();
+    });
+
+    it('blocks a legacy-token buy that exceeds its on-chain max wallet', () => {
+      updateWagmiMock({
+        tokenBalance: 900n * 10n ** 18n,
+        quote: 200n * 10n ** 18n,
+        maxWallet: 1_000n * 10n ** 18n,
+      });
+      renderWithProviders(
+        <TradePanel token={createMockToken({ transfer_policy: 'legacy_capped' })} />,
+      );
+      fireEvent.change(screen.getByPlaceholderText('0.00'), {
+        target: { value: '10' },
+      });
+      expect(screen.getByText('Reduce buy — legacy wallet limit')).toBeInTheDocument();
+      expect(screen.getByRole('alert')).toHaveTextContent('limits a wallet to 4%');
     });
   });
 
@@ -387,25 +405,6 @@ describe('TradePanel', () => {
       expect(
         screen.getByText('Insufficient ADOGE balance'),
       ).toBeInTheDocument();
-    });
-  });
-
-  describe('On-chain trade preflight', () => {
-    it('blocks a buy that would exceed the token max-wallet limit', () => {
-      updateWagmiMock({
-        isConnected: true,
-        usdcAllowance: 47_384_539n,
-        tokenBalance: 34_168_246n * 10n ** 18n,
-        quote: 11_063_258n * 10n ** 18n,
-        maxWallet: 40_000_000n * 10n ** 18n,
-      });
-      renderWithProviders(<TradePanel token={createMockToken()} />);
-      fireEvent.change(screen.getByPlaceholderText('0.00'), {
-        target: { value: '47.384539' },
-      });
-
-      expect(screen.getByRole('alert')).toHaveTextContent('4% wallet limit');
-      expect(screen.getByText('Reduce buy — 4% wallet limit')).toBeDisabled();
     });
   });
 

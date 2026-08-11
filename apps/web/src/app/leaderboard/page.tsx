@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { api, Token } from '@/lib/api';
+import { GraduationCap, MagnifyingGlass, WarningCircle, X } from '@phosphor-icons/react';
+import { WalletBadge } from '@/components/WalletBadge';
 import {
   formatMarketCap,
   formatUsdc,
@@ -30,7 +32,7 @@ export default function LeaderboardPage() {
   const limit = 50;
 
   // Fetch base leaderboard data based on query type
-  const queryType = activeTab === 'top_creators' ? 'top_creators' : activeTab === 'top_volume' ? 'top_volume' : 'top_gainers';
+  const queryType = activeTab;
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['leaderboard', queryType],
@@ -101,15 +103,13 @@ export default function LeaderboardPage() {
             placeholder="Search tokens or creators..."
             className="input text-xs pl-8 py-2 rounded-full border border-bg-border focus:border-accent-blue"
           />
-          <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-text-muted">
-            🔍
-          </span>
+          <MagnifyingGlass size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true" />
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-text-muted hover:text-text-primary"
             >
-              ✕
+              <X size={13} aria-hidden="true" />
             </button>
           )}
         </div>
@@ -138,7 +138,7 @@ export default function LeaderboardPage() {
         <LeaderboardSkeleton />
       ) : isError ? (
         <div className="card text-center py-12 space-y-3 bg-bg-card border border-bg-border">
-          <div className="text-3xl">⚠️</div>
+          <WarningCircle size={32} className="mx-auto text-accent-orange" aria-hidden="true" />
           <div className="font-bold text-sm text-text-primary">Unable to load market leaderboard</div>
           <p className="text-xs text-text-muted">Failed to connect to Orba indexer node.</p>
           <button onClick={() => refetch()} className="btn-primary text-xs px-4 py-2 rounded-full font-bold">
@@ -147,7 +147,7 @@ export default function LeaderboardPage() {
         </div>
       ) : filteredRows.length === 0 ? (
         <div className="card text-center py-12 space-y-3 bg-bg-card border border-bg-border text-text-muted">
-          <div className="text-3xl">🔍</div>
+          <MagnifyingGlass size={32} className="mx-auto" aria-hidden="true" />
           <div className="font-bold text-sm text-text-primary">No matching records found</div>
           <p className="text-xs text-text-muted">Try clearing your search query or switching tabs.</p>
           <Link href="/launch" className="btn-primary text-xs px-4 py-2 rounded-full font-bold inline-block">
@@ -198,6 +198,14 @@ function CreatorsLeaderboard({ rows }: { rows: any[] }) {
                       <div className="font-bold text-text-primary">
                         {row.username || shortenAddress(row.wallet)}
                       </div>
+                      {row.wallet_tier && row.wallet_tier_label && row.wallet_tier_calculated_at && (
+                        <WalletBadge tier={{
+                          key: row.wallet_tier,
+                          label: row.wallet_tier_label,
+                          basis: 'orba_activity',
+                          calculated_at: row.wallet_tier_calculated_at,
+                        }} />
+                      )}
                       <div className="text-[11px] font-mono text-text-muted">
                         {shortenAddress(row.wallet)}
                       </div>
@@ -241,6 +249,14 @@ function CreatorsLeaderboard({ rows }: { rows: any[] }) {
                 <div className="font-bold text-sm text-text-primary">
                   {row.username || shortenAddress(row.wallet)}
                 </div>
+                {row.wallet_tier && row.wallet_tier_label && row.wallet_tier_calculated_at && (
+                  <WalletBadge tier={{
+                    key: row.wallet_tier,
+                    label: row.wallet_tier_label,
+                    basis: 'orba_activity',
+                    calculated_at: row.wallet_tier_calculated_at,
+                  }} />
+                )}
                 <div className="text-[11px] text-text-muted font-mono">
                   {row.tokens_launched || 0} launched · {formatUsdc(row.total_volume_usdc || 0)}
                 </div>
@@ -283,8 +299,9 @@ function TokensLeaderboard({ rows, activeTab }: { rows: Token[]; activeTab: Lead
             {rows.map((token, i) => {
               const progress = bondingCurveProgress(token.market_cap);
               const isGraduated = token.status === 'graduated';
-              const pct24h = Math.random() * 30 * (i % 2 === 0 ? 1 : -0.3); // mock change indicator if not in state
-              const isPositive = pct24h >= 0;
+              const rawGain = (token as Token & { gain_pct?: string }).gain_pct;
+              const pct24h = rawGain === undefined ? null : Number(rawGain);
+              const isPositive = pct24h !== null && pct24h >= 0;
 
               return (
                 <tr key={token.contract_address} className="hover:bg-bg-hover/50 transition-colors">
@@ -331,9 +348,13 @@ function TokensLeaderboard({ rows, activeTab }: { rows: Token[]; activeTab: Lead
 
                   {/* 24h Change */}
                   <td className="py-3.5 px-4 text-right font-mono font-bold tabular-nums">
-                    <span className={isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                      {isPositive ? '+' : ''}{pct24h.toFixed(2)}%
-                    </span>
+                    {pct24h === null ? (
+                      <span className="text-text-muted">—</span>
+                    ) : (
+                      <span className={isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                        {isPositive ? '+' : ''}{pct24h.toFixed(2)}%
+                      </span>
+                    )}
                   </td>
 
                   {/* 24h Volume */}
@@ -345,7 +366,7 @@ function TokensLeaderboard({ rows, activeTab }: { rows: Token[]; activeTab: Lead
                   <td className="py-3.5 px-4 text-right">
                     {isGraduated ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-                        Graduated 🎓
+                        Graduated <GraduationCap size={12} weight="fill" aria-hidden="true" />
                       </span>
                     ) : (
                       <div className="space-y-1">

@@ -39,6 +39,8 @@ export interface Token {
   id: number;
   contract_address: string;
   curve_address: string;
+  factory_address: string | null;
+  transfer_policy: 'legacy_capped' | 'uncapped';
   amm_pair_address: string | null;
   creator_wallet: string;
   name: string;
@@ -79,6 +81,9 @@ export interface Trade {
   block_number: string;
   log_index: number;
   timestamp: string;
+  wallet_tier: WalletTierSnapshot['key'] | null;
+  wallet_tier_label: string | null;
+  wallet_tier_calculated_at: string | null;
 }
 
 export interface TokenListResponse {
@@ -95,11 +100,31 @@ export interface Holder {
   wallet: string;
   balance: string;       // 18-dec token amount (as string)
   percentage: string;    // 0-100
+  wallet_tier: WalletTierSnapshot['key'] | null;
+  wallet_tier_label: string | null;
+  wallet_tier_calculated_at: string | null;
 }
 
 export interface HolderListResponse {
   holders: Holder[];
   total: number;
+}
+
+export interface RecentActivity {
+  type: 'buy' | 'sell';
+  wallet: string;
+  usdc_amount: string;
+  token_amount: string;
+  tx_hash: string;
+  block_number: string;
+  log_index: number;
+  timestamp: string;
+  token_address: string;
+  token_name: string;
+  token_symbol: string;
+  wallet_tier: WalletTierSnapshot['key'] | null;
+  wallet_tier_label: string | null;
+  wallet_tier_calculated_at: string | null;
 }
 
 export interface OhlcvCandle {
@@ -146,6 +171,12 @@ export interface UserHolding {
   value_usdc: string;
   total_bought_usdc: string;
   total_sold_usdc: string;
+  remaining_cost_usdc: string;
+  realized_pnl_usdc: string;
+  unrealized_pnl_usdc: string;
+  total_pnl_usdc: string;
+  roi_pct: string | null;
+  basis_status: 'complete' | 'incomplete';
 }
 
 export interface UserHoldingsResponse {
@@ -169,6 +200,39 @@ export interface UserProfile {
   };
 }
 
+export interface UserPnlResponse {
+  wallet: string;
+  period: '7d' | '30d' | 'all';
+  period_semantics: 'realized_events_in_period' | 'all_time_position_accounting';
+  currency: 'USDC';
+  amount_unit: 'micro_usdc';
+  realized_pnl: string;
+  unrealized_pnl: string | null;
+  total_pnl: string | null;
+  realized_roi_pct: string | null;
+  unrealized_roi_pct: string | null;
+  total_roi_pct: string | null;
+  portfolio_value: string;
+  remaining_cost_basis: string;
+  total_bought: string;
+  total_sold: string;
+  buy_count: number;
+  sell_count: number;
+  open_positions: number;
+  closed_positions: number;
+  profitable_closed_positions: number;
+  basis_status: 'complete' | 'incomplete';
+  basis_scope: 'indexed_orba_trades';
+  calculated_at: string;
+}
+
+export interface WalletTierSnapshot {
+  key: 'shrimp' | 'fish' | 'dolphin' | 'whale';
+  label: string;
+  basis: 'orba_activity';
+  calculated_at: string;
+}
+
 export type SortOption = 'newest' | 'market_cap' | 'volume';
 export type StatusFilter = 'active' | 'graduated' | 'all';
 
@@ -184,6 +248,9 @@ export const api = {
     if (!res.ok) throw new Error(`getStats failed: ${res.status}`);
     return res.json();
   },
+
+  getRecentActivity: (limit = 12) =>
+    fetchApi<{ activity: RecentActivity[] }>(`/tokens/activity/recent?limit=${limit}`),
 
   listTokens: (params: {
     sort?: SortOption;
@@ -326,20 +393,16 @@ export const api = {
     fetchApi<UserProfile>(`/users/${wallet.toLowerCase()}`),
 
   getUserPnl: (wallet: string, period: '7d' | '30d' | 'all' = 'all') =>
-    fetchApi<{
-      period: string;
-      realized_pnl: string;
-      total_bought: string;
-      total_sold: string;
-      buy_count: number;
-      sell_count: number;
-    }>(`/users/${wallet.toLowerCase()}/pnl?period=${period}`),
+    fetchApi<UserPnlResponse>(`/users/${wallet.toLowerCase()}/pnl?period=${period}`),
 
   getUserHoldings: (wallet: string) =>
     fetchApi<UserHoldingsResponse>(`/users/${wallet.toLowerCase()}/holdings`),
 
+  getWalletTier: (wallet: string) =>
+    fetchApi<WalletTierSnapshot>(`/users/${wallet.toLowerCase()}/tier`),
+
   // Leaderboard
-  getLeaderboard: (type: 'top_creators' | 'top_gainers' | 'top_volume', limit = 20) =>
+  getLeaderboard: (type: 'top_creators' | 'top_gainers' | 'top_volume' | 'market_cap' | 'new', limit = 20) =>
     fetchApi<any[]>(`/leaderboard?type=${type}&limit=${limit}`),
 
   // Agents
@@ -606,12 +669,24 @@ async function fetchTokenOnChainFallback(address: string): Promise<Token | null>
       'function name() view returns (string)',
       'function symbol() view returns (string)',
       'function bondingCurve() view returns (address)',
+      'function maxWallet() view returns (uint256)',
     ]);
     const [name, symbol, curveAddress] = await Promise.all([
       fallbackClient.readContract({ address: tokenAddr, abi: tokenAbi, functionName: 'name' }),
       fallbackClient.readContract({ address: tokenAddr, abi: tokenAbi, functionName: 'symbol' }),
       fallbackClient.readContract({ address: tokenAddr, abi: tokenAbi, functionName: 'bondingCurve' }),
     ]);
+    let transferPolicy: Token['transfer_policy'] = 'uncapped';
+    try {
+      await fallbackClient.readContract({
+        address: tokenAddr,
+        abi: tokenAbi,
+        functionName: 'maxWallet',
+      });
+      transferPolicy = 'legacy_capped';
+    } catch {
+      // New token bytecode intentionally omits maxWallet().
+    }
 
     let price = '0.000004';
     let marketCap = '4000.000000';
@@ -649,6 +724,8 @@ async function fetchTokenOnChainFallback(address: string): Promise<Token | null>
       id: Date.now(),
       contract_address: tokenAddr,
       curve_address: (curveAddress || tokenAddr).toLowerCase(),
+      factory_address: null,
+      transfer_policy: transferPolicy,
       amm_pair_address: null,
       creator_wallet: '0x0000000000000000000000000000000000000000',
       name,

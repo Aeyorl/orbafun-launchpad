@@ -8,6 +8,17 @@ import toast from 'react-hot-toast';
 import { api, UserHolding, Token } from '@/lib/api';
 import { TokenCard } from '@/components/TokenCard';
 import { ReferralPanel } from '@/components/ReferralPanel';
+import { WalletBadge } from '@/components/WalletBadge';
+import {
+  ArrowSquareOut,
+  Briefcase,
+  Copy,
+  Flag,
+  LinkSimple,
+  RocketLaunch,
+  Scroll,
+  UserCircle,
+} from '@phosphor-icons/react';
 import { ARC_EXPLORER_URL } from '@/lib/config';
 import {
   formatUsdc,
@@ -53,6 +64,14 @@ export default function ProfilePage() {
     queryFn: () => api.getUserHoldings(wallet),
     enabled: !!wallet,
     staleTime: 15_000,
+  });
+
+  const { data: walletTier } = useQuery({
+    queryKey: ['user-tier', wallet],
+    queryFn: () => api.getWalletTier(wallet),
+    enabled: !!wallet,
+    staleTime: 30_000,
+    retry: false,
   });
 
   const copyWalletAddress = async () => {
@@ -145,7 +164,7 @@ export default function ProfilePage() {
   if (!profile) {
     return (
       <div className="card text-center py-16 max-w-md mx-auto my-12 space-y-4">
-        <div className="text-4xl">👤</div>
+        <UserCircle size={40} className="mx-auto" aria-hidden="true" />
         <div>
           <h1 className="text-2xl font-serif mb-1">User not found</h1>
           <p className="text-sm text-text-muted">
@@ -159,10 +178,9 @@ export default function ProfilePage() {
     );
   }
 
-  const pnlValue = pnlData ? Number(pnlData.realized_pnl) : 0;
-  const isPositivePnl = pnlValue >= 0;
-  const totalBought = pnlData ? Number(pnlData.total_bought) : 0;
-  const totalSold = pnlData ? Number(pnlData.total_sold) : 0;
+  const realizedPnl = pnlData?.realized_pnl || '0';
+  const unrealizedPnl = pnlData?.unrealized_pnl;
+  const totalPnl = pnlData?.total_pnl;
   const holdingsList = holdingsData?.holdings || [];
   const totalPortfolioValue = holdingsData?.total_value_usdc || '0';
 
@@ -202,6 +220,7 @@ export default function ProfilePage() {
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   Active · Arc
                 </span>
+                {walletTier && <WalletBadge tier={walletTier} />}
               </div>
 
               <div className="flex items-center gap-3 text-xs text-text-muted pt-0.5">
@@ -253,7 +272,7 @@ export default function ProfilePage() {
                       }}
                       className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2"
                     >
-                      🔗 Copy link / Share
+                      <LinkSimple size={14} aria-hidden="true" /> Copy link / Share
                     </button>
                     <a
                       href={tweetUrl}
@@ -290,7 +309,7 @@ export default function ProfilePage() {
                       }}
                       className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2"
                     >
-                      📋 Copy wallet address
+                      <Copy size={14} aria-hidden="true" /> Copy wallet address
                     </button>
                     <a
                       href={`${ARC_EXPLORER_URL}/address/${wallet}`}
@@ -299,7 +318,7 @@ export default function ProfilePage() {
                       onClick={() => setMoreOpen(false)}
                       className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2 block"
                     >
-                      ↗ View on ArcScan
+                      <ArrowSquareOut size={14} aria-hidden="true" /> View on ArcScan
                     </a>
                     <button
                       onClick={() => {
@@ -308,7 +327,7 @@ export default function ProfilePage() {
                       }}
                       className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium text-rose-500 flex items-center gap-2"
                     >
-                      🚩 Report profile
+                      <Flag size={14} aria-hidden="true" /> Report profile
                     </button>
                   </div>
                 </>
@@ -361,8 +380,8 @@ export default function ProfilePage() {
           <div className="card space-y-4">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div>
-                <h2 className="text-base font-bold text-text-primary">Performance & Realized PnL</h2>
-                <p className="text-xs text-text-muted">Objective trading gains and buy vs sell summary</p>
+                <h2 className="text-base font-bold text-text-primary">Canonical position performance</h2>
+                <p className="text-xs text-text-muted">Weighted-average cost basis from indexed Orba trades; gas excluded</p>
               </div>
 
               {/* Period selector */}
@@ -387,36 +406,28 @@ export default function ProfilePage() {
               <div className="h-20 bg-bg-input rounded-xl animate-pulse" />
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="bg-bg-input p-3.5 rounded-xl border border-bg-border/60 space-y-1">
-                  <div className="text-[11px] font-semibold text-text-muted uppercase">Realized PnL ({pnlPeriod.toUpperCase()})</div>
-                  <div
-                    className={`text-2xl font-bold font-mono tabular-nums ${
-                      pnlValue === 0
-                        ? 'text-text-primary'
-                        : isPositivePnl
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-rose-600 dark:text-rose-400'
-                    }`}
-                  >
-                    {isPositivePnl && pnlValue > 0 ? '+' : ''}
-                    {formatUsdc(pnlValue)}
-                  </div>
-                </div>
-
-                <div className="bg-bg-input p-3.5 rounded-xl border border-bg-border/60 space-y-1">
-                  <div className="text-[11px] font-semibold text-text-muted uppercase">Total Bought ({pnlData?.buy_count ?? 0} trades)</div>
-                  <div className="text-xl font-bold font-mono tabular-nums text-text-primary">
-                    {formatUsdc(totalBought)}
-                  </div>
-                </div>
-
-                <div className="bg-bg-input p-3.5 rounded-xl border border-bg-border/60 space-y-1">
-                  <div className="text-[11px] font-semibold text-text-muted uppercase">Total Sold ({pnlData?.sell_count ?? 0} trades)</div>
-                  <div className="text-xl font-bold font-mono tabular-nums text-text-primary">
-                    {formatUsdc(totalSold)}
-                  </div>
-                </div>
+                <PnlMetric
+                  label={pnlPeriod === 'all' ? 'Realized P&L' : `Realized in ${pnlPeriod}`}
+                  amount={realizedPnl}
+                  roi={pnlData?.realized_roi_pct || null}
+                />
+                {pnlPeriod === 'all' ? (
+                  <>
+                    <PnlMetric label="Unrealized P&L" amount={unrealizedPnl || '0'} roi={pnlData?.unrealized_roi_pct || null} />
+                    <PnlMetric label="Total P&L" amount={totalPnl || '0'} roi={pnlData?.total_roi_pct || null} emphasis />
+                  </>
+                ) : (
+                  <>
+                    <ValueMetric label={`Bought (${pnlData?.buy_count ?? 0} trades)`} amount={pnlData?.total_bought || '0'} />
+                    <ValueMetric label={`Sold (${pnlData?.sell_count ?? 0} trades)`} amount={pnlData?.total_sold || '0'} />
+                  </>
+                )}
               </div>
+            )}
+            {pnlData?.basis_status === 'incomplete' && (
+              <p className="text-xs text-accent-orange">
+                ROI is withheld because indexed trades do not fully explain this wallet&apos;s token balance.
+              </p>
             )}
           </div>
 
@@ -468,7 +479,7 @@ export default function ProfilePage() {
             </div>
           ) : (
             <div className="card text-center py-12 text-text-muted space-y-3">
-              <div className="text-3xl">🚀</div>
+              <RocketLaunch size={32} className="mx-auto" aria-hidden="true" />
               <p className="text-sm">No tokens launched yet.</p>
               <Link href="/launch" className="btn-primary inline-block text-xs px-4 py-2 rounded-full font-bold">
                 Launch your token →
@@ -510,11 +521,8 @@ export default function ProfilePage() {
                   </thead>
                   <tbody className="divide-y divide-bg-border/60">
                     {holdingsList.map((holding) => {
-                      const { token, balance, value_usdc, total_bought_usdc, total_sold_usdc } = holding;
-                      const bought = Number(total_bought_usdc);
-                      const sold = Number(total_sold_usdc);
-                      const val = Number(value_usdc);
-                      const netPnl = val + sold - bought;
+                      const { token, balance, value_usdc, total_pnl_usdc, basis_status } = holding;
+                      const isPositive = isNonNegativeMicroUsdc(total_pnl_usdc);
 
                       return (
                         <tr key={token.contract_address} className="hover:bg-bg-hover/50 transition-colors">
@@ -541,9 +549,10 @@ export default function ProfilePage() {
                             {formatUsdc(value_usdc)}
                           </td>
                           <td className="py-3 px-4 text-right font-mono font-bold tabular-nums">
-                            <span className={netPnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
-                              {netPnl >= 0 ? '+' : ''}{formatUsdc(netPnl)}
+                            <span className={isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}>
+                              {formatSignedUsdc(total_pnl_usdc)}
                             </span>
+                            {basis_status === 'incomplete' && <span className="ml-1 text-accent-orange" title="ROI withheld: incomplete indexed cost basis">*</span>}
                           </td>
                           <td className="py-3 px-4 text-right">
                             <Link
@@ -563,11 +572,8 @@ export default function ProfilePage() {
               {/* MOBILE STACKED CARDS */}
               <div className="md:hidden divide-y divide-bg-border/60">
                 {holdingsList.map((holding) => {
-                  const { token, balance, value_usdc, total_bought_usdc, total_sold_usdc } = holding;
-                  const bought = Number(total_bought_usdc);
-                  const sold = Number(total_sold_usdc);
-                  const val = Number(value_usdc);
-                  const netPnl = val + sold - bought;
+                  const { token, balance, value_usdc, total_pnl_usdc, basis_status } = holding;
+                  const isPositive = isNonNegativeMicroUsdc(total_pnl_usdc);
 
                   return (
                     <div key={token.contract_address} className="p-3.5 space-y-2.5">
@@ -605,8 +611,8 @@ export default function ProfilePage() {
                         </div>
                         <div className="text-right">
                           <div className="text-[10px] text-text-muted">PnL</div>
-                          <div className={`font-bold ${netPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {netPnl >= 0 ? '+' : ''}{formatUsdc(netPnl)}
+                          <div className={`font-bold ${isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {formatSignedUsdc(total_pnl_usdc)}{basis_status === 'incomplete' ? '*' : ''}
                           </div>
                         </div>
                       </div>
@@ -617,7 +623,7 @@ export default function ProfilePage() {
             </div>
           ) : (
             <div className="card text-center py-12 text-text-muted space-y-3">
-              <div className="text-3xl">💼</div>
+              <Briefcase size={32} className="mx-auto" aria-hidden="true" />
               <p className="text-sm">No token positions held in wallet.</p>
               <Link href="/explore" className="btn-secondary text-xs px-4 py-2 rounded-full font-bold inline-block">
                 Explore Tokens →
@@ -677,7 +683,7 @@ export default function ProfilePage() {
             </div>
           ) : (
             <div className="card text-center py-12 text-text-muted space-y-2">
-              <div className="text-3xl">📜</div>
+              <Scroll size={32} className="mx-auto" aria-hidden="true" />
               <p className="text-sm">No activity recorded for this wallet yet.</p>
             </div>
           )}
@@ -685,6 +691,57 @@ export default function ProfilePage() {
       )}
     </div>
   );
+}
+
+function PnlMetric({
+  label,
+  amount,
+  roi,
+  emphasis = false,
+}: {
+  label: string;
+  amount: string;
+  roi: string | null;
+  emphasis?: boolean;
+}) {
+  const positive = isNonNegativeMicroUsdc(amount);
+  return (
+    <div className={`rounded-xl border p-3.5 space-y-1 ${emphasis ? 'border-accent-blue/30 bg-accent-blue/10' : 'border-bg-border/60 bg-bg-input'}`}>
+      <div className="text-[11px] font-semibold uppercase text-text-muted">{label}</div>
+      <div className={`font-mono text-2xl font-bold tabular-nums ${positive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+        {formatSignedUsdc(amount)}
+      </div>
+      <div className="text-xs text-text-muted">{roi === null ? 'ROI unavailable' : `${roi}% ROI`}</div>
+    </div>
+  );
+}
+
+function ValueMetric({ label, amount }: { label: string; amount: string }) {
+  return (
+    <div className="rounded-xl border border-bg-border/60 bg-bg-input p-3.5 space-y-1">
+      <div className="text-[11px] font-semibold uppercase text-text-muted">{label}</div>
+      <div className="font-mono text-xl font-bold tabular-nums text-text-primary">{formatUsdc(amount)}</div>
+    </div>
+  );
+}
+
+function isNonNegativeMicroUsdc(amount: string): boolean {
+  try {
+    return BigInt(amount) >= 0n;
+  } catch {
+    return true;
+  }
+}
+
+function formatSignedUsdc(amount: string): string {
+  try {
+    const value = BigInt(amount);
+    if (value > 0n) return `+${formatUsdc(value)}`;
+    if (value < 0n) return `-${formatUsdc(-value)}`;
+    return formatUsdc(0n);
+  } catch {
+    return formatUsdc(0n);
+  }
 }
 
 function StatCard({ label, value, detail }: { label: string; value: string; detail?: string }) {

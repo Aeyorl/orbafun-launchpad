@@ -3,10 +3,22 @@
 import { useQuery } from '@tanstack/react-query';
 import { Suspense, useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { api, SortOption, StatusFilter, Token } from '@/lib/api';
 import { TokenCard } from '@/components/TokenCard';
 import { AgentBadge } from '@/components/AgentBadge';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Fire,
+  GraduationCap,
+  MagnifyingGlass,
+  Robot,
+  RocketLaunch,
+  Sparkle,
+  WarningCircle,
+  X,
+} from '@phosphor-icons/react';
 import {
   formatMarketCap,
   formatUsdDirect,
@@ -25,20 +37,35 @@ export default function ExplorePage() {
 
 function ExplorePageContent() {
   const searchParams = useSearchParams();
-  const [sort, setSort] = useState<SortOption>('newest');
-  const [status, setStatus] = useState<StatusFilter>('active');
-  const [search, setSearch] = useState('');
-  const [agentFilter, setAgentFilter] = useState<string>(''); // '' | 'true' | 'false'
-  const [offset, setOffset] = useState(0);
+  const router = useRouter();
+  const [sort, setSort] = useState<SortOption>(() => parseSort(searchParams.get('sort')));
+  const [status, setStatus] = useState<StatusFilter>(() => parseStatus(searchParams.get('status')));
+  const [search, setSearch] = useState(() => searchParams.get('q') || '');
+  const [agentFilter, setAgentFilter] = useState(() => searchParams.get('is_agent') === 'true' ? 'true' : '');
+  const [offset, setOffset] = useState(() => parseOffset(searchParams.get('offset')));
 
   // Auto-activate/deactivate the AI Agent filter based on ?is_agent URL param
   useEffect(() => {
+    setSort(parseSort(searchParams.get('sort')));
+    setStatus(parseStatus(searchParams.get('status')));
+    setSearch(searchParams.get('q') || '');
     setAgentFilter(searchParams.get('is_agent') === 'true' ? 'true' : '');
+    setOffset(parseOffset(searchParams.get('offset')));
   }, [searchParams]);
   const limit = 24;
 
+  const updateUrl = (changes: Record<string, string | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
+    const query = params.toString();
+    router.replace(query ? `/explore?${query}` : '/explore', { scroll: false });
+  };
+
   const { data, isLoading, isError, refetch } = useQuery({
-    queryKey: ['explore', sort, status, search, offset],
+    queryKey: ['explore', sort, status, search, agentFilter, offset],
     queryFn: () =>
       api.listTokens({ sort, status, is_agent: agentFilter || undefined, limit, offset, search: search || undefined }),
     refetchInterval: 15_000,
@@ -75,7 +102,7 @@ function ExplorePageContent() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-bg-border pb-6">
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-accent-blue/10 text-accent-blue border border-accent-blue/20 mb-2">
-            🚀 Arc Memecoin Launchpad
+            <RocketLaunch size={14} weight="fill" /> Arc Memecoin Launchpad
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-text-primary">
             Explore
@@ -91,21 +118,26 @@ function ExplorePageContent() {
             type="text"
             value={search}
             onChange={(e) => {
-              setSearch(e.target.value);
+              const next = e.target.value;
+              setSearch(next);
               setOffset(0);
+              updateUrl({ q: next || null, offset: null });
             }}
-            placeholder="Search tokens, symbols or creators..."
-            className="input text-xs pl-9 pr-8 py-2.5 rounded-full border border-bg-border focus:border-accent-blue shadow-xs"
+            placeholder="Filter these results by token or symbol"
+            className="input text-xs pl-9 pr-8 py-2.5 border border-bg-border focus:border-accent-blue shadow-xs"
+            aria-label="Filter current token results"
           />
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-text-muted">
-            🔍
-          </span>
+          <MagnifyingGlass size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" aria-hidden="true" />
           {search && (
             <button
-              onClick={() => setSearch('')}
+              onClick={() => {
+                setSearch('');
+                setOffset(0);
+                updateUrl({ q: null, offset: null });
+              }}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-muted hover:text-text-primary"
             >
-              ✕
+              <X size={13} aria-hidden="true" />
             </button>
           )}
         </div>
@@ -116,7 +148,7 @@ function ExplorePageContent() {
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-bold text-text-primary flex items-center gap-2">
-              <span>🔥 Trending Now</span>
+              <Fire size={17} weight="fill" aria-hidden="true" /> Trending Now
             </h2>
             <span className="text-xs text-text-muted">Highest 24h market activity</span>
           </div>
@@ -137,7 +169,7 @@ function ExplorePageContent() {
             <div className="card space-y-3 bg-bg-card border border-bg-border p-4 rounded-2xl shadow-subtle-1">
               <div className="flex items-center justify-between border-b border-bg-border pb-2.5">
                 <h3 className="font-bold text-sm text-text-primary flex items-center gap-1.5">
-                  <span>🎓 Approaching DEX Graduation</span>
+                  <GraduationCap size={16} weight="fill" aria-hidden="true" /> Approaching DEX Graduation
                 </h3>
                 <span className="text-[11px] font-mono text-accent-blue font-semibold">$30,000 Target</span>
               </div>
@@ -186,7 +218,7 @@ function ExplorePageContent() {
             <div className="card space-y-3 bg-bg-card border border-bg-border p-4 rounded-2xl shadow-subtle-1">
               <div className="flex items-center justify-between border-b border-bg-border pb-2.5">
                 <h3 className="font-bold text-sm text-text-primary flex items-center gap-1.5">
-                  <span>✨ Just Launched</span>
+                  <Sparkle size={16} weight="fill" aria-hidden="true" /> Just Launched
                 </h3>
                 <span className="text-[11px] font-mono text-emerald-500 font-semibold">Arc Testnet</span>
               </div>
@@ -246,6 +278,7 @@ function ExplorePageContent() {
                   onClick={() => {
                     setSort(s);
                     setOffset(0);
+                    updateUrl({ sort: s === 'newest' ? null : s, offset: null });
                   }}
                   className={`px-3 py-1.5 rounded-lg transition-all capitalize ${
                     sort === s
@@ -268,6 +301,7 @@ function ExplorePageContent() {
                   onClick={() => {
                     setStatus(s);
                     setOffset(0);
+                    updateUrl({ status: s === 'active' ? null : s, offset: null });
                   }}
                   className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all capitalize ${
                     status === s
@@ -285,8 +319,10 @@ function ExplorePageContent() {
             {/* AI Agent filter */}
             <button
               onClick={() => {
-                setAgentFilter(agentFilter === 'true' ? '' : 'true');
+                const next = agentFilter === 'true' ? '' : 'true';
+                setAgentFilter(next);
                 setOffset(0);
+                updateUrl({ is_agent: next || null, offset: null });
               }}
               className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
                 agentFilter === 'true'
@@ -294,7 +330,7 @@ function ExplorePageContent() {
                   : 'text-text-muted hover:text-text-primary hover:bg-bg-hover border border-transparent'
               }`}
             >
-              <span>🤖</span>
+              <Robot size={14} weight="fill" aria-hidden="true" />
               <span>AI Agents</span>
               {agentFilter === 'true' && (
                 <span className="ml-0.5 text-[10px]">✕</span>
@@ -312,7 +348,7 @@ function ExplorePageContent() {
           </div>
         ) : isError ? (
           <div className="card text-center py-12 space-y-3 bg-bg-card border border-bg-border">
-            <div className="text-3xl">⚠️</div>
+            <WarningCircle size={32} className="mx-auto text-accent-orange" aria-hidden="true" />
             <div className="font-bold text-sm text-text-primary">Unable to load tokens</div>
             <p className="text-xs text-text-muted">Network error fetching token list from Arc indexer.</p>
             <button onClick={() => refetch()} className="btn-primary text-xs px-4 py-2 rounded-full font-bold">
@@ -321,7 +357,7 @@ function ExplorePageContent() {
           </div>
         ) : tokens.length === 0 ? (
           <div className="card text-center py-12 space-y-3 bg-bg-card border border-bg-border text-text-muted">
-            <div className="text-3xl">🔍</div>
+            <MagnifyingGlass size={32} className="mx-auto" aria-hidden="true" />
             <div className="font-bold text-sm text-text-primary">No tokens found</div>
             <p className="text-xs text-text-muted">Try clearing your search query or adjusting your filters.</p>
             <Link href="/launch" className="btn-primary text-xs px-4 py-2 rounded-full font-bold inline-block">
@@ -340,21 +376,29 @@ function ExplorePageContent() {
         {total > limit && (
           <div className="flex items-center justify-between pt-4 border-t border-bg-border text-xs">
             <button
-              onClick={() => setOffset(Math.max(0, offset - limit))}
+              onClick={() => {
+                const next = Math.max(0, offset - limit);
+                setOffset(next);
+                updateUrl({ offset: next ? String(next) : null });
+              }}
               disabled={!hasPrev}
-              className="btn-secondary px-4 py-2 rounded-full disabled:opacity-40"
+              className="btn-secondary inline-flex items-center gap-1.5 px-4 py-2 rounded-full disabled:opacity-40"
             >
-              ← Previous
+              <ArrowLeft size={14} aria-hidden="true" /> Previous
             </button>
             <span className="text-text-muted font-mono">
               Showing {offset + 1}–{Math.min(offset + limit, total)} of {total}
             </span>
             <button
-              onClick={() => setOffset(offset + limit)}
+              onClick={() => {
+                const next = offset + limit;
+                setOffset(next);
+                updateUrl({ offset: String(next) });
+              }}
               disabled={!hasMore}
-              className="btn-secondary px-4 py-2 rounded-full disabled:opacity-40"
+              className="btn-secondary inline-flex items-center gap-1.5 px-4 py-2 rounded-full disabled:opacity-40"
             >
-              Next →
+              Next <ArrowRight size={14} aria-hidden="true" />
             </button>
           </div>
         )}
@@ -420,4 +464,17 @@ function TrendingHeroCard({ token }: { token: Token }) {
       </div>
     </Link>
   );
+}
+
+function parseSort(value: string | null): SortOption {
+  return value === 'market_cap' || value === 'volume' ? value : 'newest';
+}
+
+function parseStatus(value: string | null): StatusFilter {
+  return value === 'graduated' || value === 'all' ? value : 'active';
+}
+
+function parseOffset(value: string | null): number {
+  const parsed = Number.parseInt(value || '0', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }

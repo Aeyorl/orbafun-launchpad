@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import toast from 'react-hot-toast';
+import { LinkSimple } from '@phosphor-icons/react';
 
 /**
  * ShareButton — copies the current coin page URL to clipboard and offers
@@ -52,7 +53,7 @@ export function ShareButton({ tokenName, tokenSymbol }: { tokenName: string; tok
         aria-label="Share this token"
         aria-expanded={open}
       >
-        🔗
+        <LinkSimple size={16} aria-hidden="true" />
       </button>
       {open && (
         <>

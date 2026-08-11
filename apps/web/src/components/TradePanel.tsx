@@ -31,6 +31,7 @@ import {
 } from '@/lib/utils';
 import { Token } from '@/lib/api';
 import { useArcReceiptFallback } from '@/lib/use-arc-receipt';
+import { GraduationCap } from '@phosphor-icons/react';
 
 // BondingCurve ABI (minimal view & trade functions)
 const BONDING_CURVE_ABI = [
@@ -70,7 +71,7 @@ const BONDING_CURVE_ABI = [
   },
 ] as const;
 
-const MEME_TOKEN_ABI = [
+const LEGACY_MEME_TOKEN_ABI = [
   {
     name: 'maxWallet',
     type: 'function',
@@ -101,6 +102,8 @@ export function TradePanel({ token }: { token: Token }) {
   const { connect } = useConnect();
 
   const wrongNetwork = isConnected && chainId !== ARC_CHAIN_ID;
+  // Treat pre-versioning API responses as legacy-capped for safety.
+  const isLegacyCapped = token.transfer_policy !== 'uncapped';
 
   // Track active tx hash locally to separate approval vs trade states cleanly
   const [currentTxHash, setCurrentTxHash] = useState<`0x${string}` | undefined>(undefined);
@@ -154,10 +157,12 @@ export function TradePanel({ token }: { token: Token }) {
 
   const { data: maxWallet } = useReadContract({
     address: token.contract_address as `0x${string}`,
-    abi: MEME_TOKEN_ABI,
+    abi: LEGACY_MEME_TOKEN_ABI,
     functionName: 'maxWallet',
     chainId: ARC_CHAIN_ID,
-    query: { enabled: !!address && token.status === 'active' },
+    query: {
+      enabled: !!address && token.status === 'active' && isLegacyCapped,
+    },
   });
 
   // Allowances
@@ -298,6 +303,7 @@ export function TradePanel({ token }: { token: Token }) {
       : (!tokenAllowanceLoaded || tokenAllowance !== parsedAmount));
 
   const buyWouldExceedMaxWallet =
+    isLegacyCapped &&
     mode === 'buy' &&
     quote !== undefined &&
     tokenBalance !== undefined &&
@@ -431,7 +437,7 @@ export function TradePanel({ token }: { token: Token }) {
     if ((!fallback.failed && !isReceiptError) || !txAction) return;
 
     const message = buyWouldExceedMaxWallet
-      ? `This buy exceeds the 4% wallet limit. You can receive at most ${formatTokens(remainingWalletCapacity)} ${token.symbol}.`
+      ? `This buy exceeds the legacy 4% wallet limit. You can receive at most ${formatTokens(remainingWalletCapacity)} ${token.symbol}.`
       : 'Transaction reverted on Arc. Refresh the quote and try a smaller amount.';
     setTradeError(message);
     setCurrentTxHash(undefined);
@@ -469,7 +475,7 @@ export function TradePanel({ token }: { token: Token }) {
   if (token.status === 'graduated') {
     return (
       <div className="card text-center py-6 space-y-3">
-        <div className="text-3xl">🎓</div>
+        <GraduationCap size={32} weight="fill" className="mx-auto text-accent-purple" aria-hidden="true" />
         <h3 className="font-bold text-base text-text-primary">Token Graduated to DEX</h3>
         <p className="text-xs text-text-muted max-w-xs mx-auto">
           This token reached the $30,000 graduation threshold and now trades freely on the Orba AMM pair with liquidity permanently burned.
@@ -710,12 +716,12 @@ export function TradePanel({ token }: { token: Token }) {
 
       {/* 6. PRIMARY ACTION CTA BUTTON WITH POLISHED STATES */}
       {buyWouldExceedMaxWallet && (
-        <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-300">
-          This wallet can receive at most{' '}
+        <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200">
+          This legacy token limits a wallet to 4% of supply. You can receive at most{' '}
           <span className="font-mono font-bold">
             {formatTokens(remainingWalletCapacity)} {token.symbol}
-          </span>{' '}
-          before reaching the token&apos;s 4% wallet limit. Reduce the buy amount.
+          </span>
+          . Reduce the buy amount.
         </div>
       )}
       {!isConnected ? (
@@ -746,8 +752,8 @@ export function TradePanel({ token }: { token: Token }) {
           ✓ {mode === 'buy' ? 'Bought' : 'Sold'} ${token.symbol}
         </button>
       ) : buyWouldExceedMaxWallet ? (
-        <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-60">
-          Reduce buy — 4% wallet limit
+        <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-lg opacity-60">
+          Reduce buy — legacy wallet limit
         </button>
       ) : hasInsufficientBalance ? (
         <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-60">

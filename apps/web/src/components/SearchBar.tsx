@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, Token } from '@/lib/api';
 import { formatUsdDirect, shortenAddress, ipfsToGateway } from '@/lib/utils';
+import { MagnifyingGlass } from '@phosphor-icons/react';
 
 /**
  * SearchBar — debounced fuzzy search over tokens by name/symbol.
@@ -97,6 +98,11 @@ export function SearchBar({ compact = false }: { compact?: boolean }) {
   return (
     <div ref={containerRef} className="relative w-full">
       <div className="relative">
+        <MagnifyingGlass
+          size={16}
+          aria-hidden="true"
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
+        />
         <input
           type="text"
           value={query}
@@ -107,7 +113,7 @@ export function SearchBar({ compact = false }: { compact?: boolean }) {
           onFocus={() => query && setOpen(true)}
           onKeyDown={onKeyDown}
           placeholder="Search by name, symbol, or CA (0x…)"
-          className={`input-field ${compact ? 'h-9 text-sm' : ''}`}
+          className={`input-field pl-9 pr-9 ${compact ? 'h-9 text-sm' : ''}`}
           aria-label="Search tokens by name, symbol, or contract address"
         />
         {loading && (
@@ -118,7 +124,7 @@ export function SearchBar({ compact = false }: { compact?: boolean }) {
       </div>
 
       {open && (query.trim().length > 0) && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-bg-card border border-bg-border rounded-lg shadow-xl overflow-hidden z-50 max-h-96 overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-bg-card border border-bg-border rounded-lg shadow-subtle-2 overflow-hidden z-50 max-h-96 overflow-y-auto">
           {results.length === 0 && !loading ? (
             <div className="px-4 py-6 text-center text-sm text-text-muted">
               No tokens found for &quot;{query}&quot;
