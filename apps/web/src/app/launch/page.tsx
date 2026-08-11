@@ -25,6 +25,7 @@ import { useAuth } from '@/lib/use-auth';
 import { api } from '@/lib/api';
 import { ImageUploader } from '@/components/ImageUploader';
 import toast from 'react-hot-toast';
+import { ChartBar, Globe, LinkSimple, NotePencil, Palette, WarningCircle } from '@phosphor-icons/react';
 
 const TOKEN_FACTORY_ABI = [
   {
@@ -283,6 +284,16 @@ export default function LaunchPage() {
           id: Date.now(),
           contract_address: tokenAddress.toLowerCase(),
           curve_address: tokenAddress.toLowerCase(),
+          factory_address: CONTRACTS.TOKEN_FACTORY.toLowerCase(),
+          transfer_policy: (
+            process.env.NEXT_PUBLIC_UNCAPPED_TOKEN_FACTORY_ADDRESSES || ''
+          )
+            .toLowerCase()
+            .split(',')
+            .map((factory) => factory.trim())
+            .includes(CONTRACTS.TOKEN_FACTORY.toLowerCase())
+              ? 'uncapped'
+              : 'legacy_capped',
           amm_pair_address: null,
           creator_wallet: (address || '').toLowerCase(),
           name: name.trim(),
@@ -358,12 +369,12 @@ export default function LaunchPage() {
       {/* WALLET & GAS WARNINGS */}
       {!isConnected && (
         <div className="card bg-accent-blue/5 border border-accent-blue/30 text-xs text-accent-blue flex items-center justify-between">
-          <span>🔗 Connect your wallet to deploy a token on Arc</span>
+          <span className="inline-flex items-center gap-1.5"><LinkSimple size={15} aria-hidden="true" /> Connect your wallet to deploy a token on Arc</span>
         </div>
       )}
       {noGasMoney && (
-        <div className="card bg-rose-500/10 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-400">
-          ⚠️ No USDC for gas. Get testnet USDC from the{' '}
+        <div className="card bg-rose-500/10 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
+          <WarningCircle size={15} weight="fill" aria-hidden="true" /> No USDC for gas. Get testnet USDC from the{' '}
           <a href="https://faucet.circle.com" target="_blank" rel="noopener noreferrer" className="underline font-bold">
             Circle Faucet
           </a>
@@ -371,8 +382,8 @@ export default function LaunchPage() {
         </div>
       )}
       {insufficientForFee && !noGasMoney && (
-        <div className="card bg-amber-500/10 border border-amber-500/30 text-xs text-amber-600 dark:text-amber-400">
-          ⚠️ Insufficient USDC for creation fee ({CREATION_FEE} USDC required). Balance: {balance ? formatNativeUsdc(balance.value) : '$0'}
+        <div className="card bg-amber-500/10 border border-amber-500/30 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+          <WarningCircle size={15} weight="fill" aria-hidden="true" /> Insufficient USDC for creation fee ({CREATION_FEE} USDC required). Balance: {balance ? formatNativeUsdc(balance.value) : '$0'}
         </div>
       )}
 
@@ -383,7 +394,7 @@ export default function LaunchPage() {
           {/* TOKEN DETAILS CARD */}
           <div className="card space-y-4 bg-bg-card border border-bg-border shadow-subtle-1">
             <h2 className="text-base font-bold text-text-primary flex items-center gap-2 border-b border-bg-border pb-2.5">
-              <span>📝 Token Details</span>
+              <NotePencil size={18} aria-hidden="true" /> Token Details
             </h2>
 
             {/* Token Name */}
@@ -446,7 +457,7 @@ export default function LaunchPage() {
           {/* MEDIA UPLOADS CARD */}
           <div className="card space-y-4 bg-bg-card border border-bg-border shadow-subtle-1">
             <h2 className="text-base font-bold text-text-primary flex items-center gap-2 border-b border-bg-border pb-2.5">
-              <span>🎨 Media & Branding</span>
+              <Palette size={18} aria-hidden="true" /> Media & Branding
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -483,7 +494,7 @@ export default function LaunchPage() {
           {/* SOCIAL LINKS CARD */}
           <div className="card space-y-3 bg-bg-card border border-bg-border shadow-subtle-1">
             <div className="flex items-center justify-between border-b border-bg-border pb-2.5">
-              <h2 className="text-base font-bold text-text-primary">🌐 Social Links</h2>
+              <h2 className="text-base font-bold text-text-primary inline-flex items-center gap-2"><Globe size={18} aria-hidden="true" /> Social Links</h2>
               <span className="text-xs text-text-muted">(Optional)</span>
             </div>
 
@@ -593,8 +604,8 @@ export default function LaunchPage() {
 
           {/* LAUNCH ECONOMICS CARD */}
           <div className="card space-y-3 bg-bg-card border border-bg-border shadow-subtle-1">
-            <h2 className="text-base font-bold text-text-primary border-b border-bg-border pb-2.5">
-              📊 Launch Economics
+            <h2 className="text-base font-bold text-text-primary border-b border-bg-border pb-2.5 flex items-center gap-2">
+              <ChartBar size={18} aria-hidden="true" /> Launch Economics
             </h2>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">

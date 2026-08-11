@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { api, Holder } from '@/lib/api';
 import { formatTokens, shortenAddress } from '@/lib/utils';
 import { ARC_EXPLORER_URL } from '@/lib/config';
+import { WalletBadge } from '@/components/WalletBadge';
+import { Waves } from '@phosphor-icons/react';
 
 const ARCSCAN_BASE = ARC_EXPLORER_URL;
 
@@ -138,8 +140,18 @@ function HolderRow({
         >
           {shortenAddress(holder.wallet)}
         </Link>
+        {holder.wallet_tier && holder.wallet_tier_label && holder.wallet_tier_calculated_at && (
+          <WalletBadge tier={{
+            key: holder.wallet_tier,
+            label: holder.wallet_tier_label,
+            basis: 'orba_activity',
+            calculated_at: holder.wallet_tier_calculated_at,
+          }} />
+        )}
         {isWhale && (
-          <span className="badge-orange text-[10px] px-1.5 py-0.5">🐋</span>
+          <span className="badge-orange px-1.5 py-0.5" title="Owns more than 5% of tracked holdings">
+            <Waves size={12} weight="fill" aria-hidden="true" />
+          </span>
         )}
         {/* ArcScan link — visible on hover */}
         <a

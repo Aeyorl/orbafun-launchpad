@@ -27,6 +27,8 @@ function createMockToken(overrides: Partial<Token> = {}): Token {
     id: 1,
     contract_address: '0x1234567890abcdef1234567890abcdef12345678',
     curve_address: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+    factory_address: '0x1111111111111111111111111111111111111111',
+    transfer_policy: 'uncapped',
     amm_pair_address: null,
     creator_wallet: '0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
     name: 'Test Token',

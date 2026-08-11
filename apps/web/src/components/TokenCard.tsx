@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Token } from '@/lib/api';
 import { AgentBadge } from '@/components/AgentBadge';
+import { Fire, GraduationCap } from '@phosphor-icons/react';
 import {
   formatUsdDirect,
   formatMarketCap,
@@ -57,11 +58,11 @@ export function TokenCard({ token }: { token: Token }) {
 
           {isGraduated ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-              Graduated 🎓
+              Graduated <GraduationCap size={12} weight="fill" aria-hidden="true" />
             </span>
           ) : progress > 75 ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-              🔥 Near Grad
+              <Fire size={12} weight="fill" aria-hidden="true" /> Near Grad
             </span>
           ) : progress <= 0 ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">

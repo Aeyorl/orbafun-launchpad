@@ -6,8 +6,10 @@ import Link from 'next/link';
 import { api, Token, SortOption } from '@/lib/api';
 import { TokenGrid } from '@/components/TokenGrid';
 import { AgentBadge } from '@/components/AgentBadge';
+import { LiveActivityRail } from '@/components/LiveActivityRail';
 import { useTokenEvents } from '@/lib/useWebSocket';
 import { formatUsdDirect, formatMarketCap, tokenEmoji, ipfsToGateway } from '@/lib/utils';
+import { Robot } from '@phosphor-icons/react';
 
 type Tab = 'newest' | 'market_cap' | 'volume' | 'graduated';
 
@@ -80,7 +82,7 @@ export default function LandingPage() {
   return (
     <div className="space-y-10">
       {/* Hero */}
-      <section className="text-center py-12 lg:py-16 animate-fade-in">
+      <section className="text-center py-6 lg:py-8 animate-fade-in">
         {/* Arc positioning badge */}
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent-blue/10 text-accent-blue text-xs font-mono font-semibold mb-4 tracking-wider">
           <span>USDC-NATIVE</span>
@@ -88,11 +90,11 @@ export default function LandingPage() {
           <span>POWERED BY ARC</span>
         </div>
 
-        <h1 className="text-4xl md:text-6xl lg:text-7xl font-serif font-normal tracking-tight mb-5 leading-tight">
+        <h1 className="text-3xl md:text-5xl font-semibold tracking-tight mb-3 leading-tight">
           Launch a token on{' '}
           <em className="not-italic text-accent-blue">Orba</em>
         </h1>
-        <p className="text-lg text-text-secondary max-w-2xl mx-auto mb-8 leading-relaxed">
+        <p className="text-base text-text-secondary max-w-2xl mx-auto mb-5 leading-relaxed">
           The stablecoin-native launchpad. Fair bonding curves priced in USDC,
           automatic DEX graduation, sub-second finality. No presale, no team
           allocation.
@@ -108,7 +110,7 @@ export default function LandingPage() {
 
         {/* Live Market Activity Ticker */}
         {tickerTokens.length > 0 && (
-          <div className="mt-8 inline-flex items-center gap-3 px-4 py-2 rounded-full bg-bg-card border border-bg-border text-xs max-w-full overflow-x-auto">
+          <div className="mt-5 inline-flex items-center gap-3 px-4 py-2 rounded-full bg-bg-card border border-bg-border text-xs max-w-full overflow-x-auto">
             <div className="flex items-center gap-1.5 font-mono text-accent-blue flex-shrink-0">
               <span className="w-2 h-2 rounded-full bg-accent-blue animate-pulse" />
               <span className="font-semibold tracking-wider">LIVE ON ARC</span>
@@ -132,31 +134,77 @@ export default function LandingPage() {
         )}
       </section>
 
-      {/* Stats bar — data-terminal metric cards */}
-      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Compact platform pulse. */}
+      <section className="grid grid-cols-3 gap-2 sm:gap-3">
         <StatCard
-          label="TOKENS LAUNCHED"
+          label="TOKENS"
           value={stats ? String(stats.total_tokens) : '—'}
-          helper="USDC-Native bonding"
+          helper="Launched"
         />
         <StatCard
           label="24H VOLUME"
           value={stats ? formatUsdDirect(stats.volume_24h) : '—'}
-          helper="Settled in USDC"
+          helper="USDC"
         />
         <StatCard
-          label="GRADUATED TO DEX"
+          label="GRADUATED"
           value={stats ? String(stats.graduated_tokens) : '—'}
-          helper="$30K MC DEX threshold"
+          helper="To DEX"
         />
       </section>
+
+      {/* Live market state comes immediately after the shallow hero. */}
+      <section>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
+          <div>
+            <h2 className="text-xl font-semibold">Token Board</h2>
+            <p className="text-xs text-text-muted mt-0.5">Live launches and market activity on Arc</p>
+          </div>
+          <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Token board sorting">
+            {(['newest', 'market_cap', 'volume', 'graduated'] as Tab[]).map((t) => (
+              <button
+                key={t}
+                role="tab"
+                aria-selected={tab === t}
+                onClick={() => {
+                  setTab(t);
+                  setLiveTokens([]);
+                }}
+                className={`tab flex-shrink-0 ${tab === t ? 'tab-active' : ''}`}
+              >
+                {t === 'market_cap' ? 'Market Cap' : t.charAt(0).toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3" aria-busy="true" aria-label="Loading tokens">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="card animate-pulse h-48" />
+            ))}
+          </div>
+        ) : (
+          <TokenGrid tokens={deduped} />
+        )}
+
+        {data && data.total > 24 && (
+          <div className="text-center mt-6">
+            <Link href="/explore" className="btn-secondary">
+              View all {data.total} tokens →
+            </Link>
+          </div>
+        )}
+      </section>
+
+      <LiveActivityRail />
 
       {/* AI Agent Tokens */}
       {agentTokensData && agentTokensData.tokens.length > 0 && (
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-serif font-normal flex items-center gap-2">
-              <span className="text-indigo-500">🤖</span>
+              <Robot size={20} weight="fill" className="text-indigo-500" aria-hidden="true" />
               <span>AI Agent Tokens</span>
               <span className="text-xs font-mono text-indigo-500/60 font-semibold tracking-wider">LIVE</span>
             </h2>
@@ -230,46 +278,6 @@ export default function LandingPage() {
         />
       </section>
 
-      {/* Token board */}
-      <section>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-serif font-normal">Token Board</h2>
-          <div className="flex gap-1" role="tablist" aria-label="Token board sorting">
-            {(['newest', 'market_cap', 'volume', 'graduated'] as Tab[]).map((t) => (
-              <button
-                key={t}
-                role="tab"
-                aria-selected={tab === t}
-                onClick={() => {
-                  setTab(t);
-                  setLiveTokens([]);
-                }}
-                className={`tab ${tab === t ? 'tab-active' : ''}`}
-              >
-                {t === 'market_cap' ? 'Market Cap' : t.charAt(0).toUpperCase() + t.slice(1)}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3" aria-busy="true" aria-label="Loading tokens">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="card animate-pulse h-48" />
-            ))}
-          </div>
-        ) : (
-          <TokenGrid tokens={deduped} />
-        )}
-
-        {data && data.total > 24 && (
-          <div className="text-center mt-6">
-            <Link href="/explore" className="btn-secondary">
-              View all {data.total} tokens →
-            </Link>
-          </div>
-        )}
-      </section>
     </div>
   );
 }
