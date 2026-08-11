@@ -9,7 +9,7 @@ import { AgentBadge } from '@/components/AgentBadge';
 import { LiveActivityRail } from '@/components/LiveActivityRail';
 import { useTokenEvents } from '@/lib/useWebSocket';
 import { formatUsdDirect, formatMarketCap, tokenEmoji, ipfsToGateway } from '@/lib/utils';
-import { Robot } from '@phosphor-icons/react';
+import { ArrowRight, ArrowUpRight, Robot, Sparkle, UsersThree } from '@phosphor-icons/react';
 
 type Tab = 'newest' | 'market_cap' | 'volume' | 'graduated';
 
@@ -80,58 +80,47 @@ export default function LandingPage() {
   const tickerTokens = tickerData?.tokens || deduped.slice(0, 4);
 
   return (
-    <div className="space-y-10">
-      {/* Hero */}
-      <section className="text-center py-6 lg:py-8 animate-fade-in">
-        {/* Arc positioning badge */}
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent-blue/10 text-accent-blue text-xs font-mono font-semibold mb-4 tracking-wider">
-          <span>USDC-NATIVE</span>
-          <span className="opacity-40">·</span>
-          <span>POWERED BY ARC</span>
-        </div>
-
-        <h1 className="text-3xl md:text-5xl font-semibold tracking-tight mb-3 leading-tight">
-          Launch a token on{' '}
-          <em className="not-italic text-accent-blue">Orba</em>
-        </h1>
-        <p className="text-base text-text-secondary max-w-2xl mx-auto mb-5 leading-relaxed">
-          The stablecoin-native launchpad. Fair bonding curves priced in USDC,
-          automatic DEX graduation, sub-second finality. No presale, no team
-          allocation.
-        </p>
-        <div className="flex gap-3 justify-center">
-          <Link href="/launch" className="btn-primary text-base px-6 py-3">
-            Launch a token
-          </Link>
-          <Link href="/explore" className="btn-secondary text-base px-6 py-3">
-            Explore the board
-          </Link>
-        </div>
-
-        {/* Live Market Activity Ticker */}
-        {tickerTokens.length > 0 && (
-          <div className="mt-5 inline-flex items-center gap-3 px-4 py-2 rounded-full bg-bg-card border border-bg-border text-xs max-w-full overflow-x-auto">
-            <div className="flex items-center gap-1.5 font-mono text-accent-blue flex-shrink-0">
-              <span className="w-2 h-2 rounded-full bg-accent-blue animate-pulse" />
-              <span className="font-semibold tracking-wider">LIVE ON ARC</span>
-            </div>
-            <span className="text-text-muted opacity-40">|</span>
-            <div className="flex items-center gap-4 text-text-secondary whitespace-nowrap overflow-x-auto scrollbar-none">
+    <div className="space-y-14">
+      <section className="grid min-h-[680px] gap-10 border-b border-bg-border py-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-20 animate-fade-in">
+        <div>
+          <div className="mb-6 flex items-center gap-2 text-[11px] font-extrabold tracking-[0.14em] text-accent-green">
+            <Sparkle size={17} weight="fill" />
+            <span>A BRIGHTER KIND OF LAUNCHPAD</span>
+          </div>
+          <h1 className="max-w-3xl text-[clamp(3.7rem,7vw,7rem)] leading-[0.86] tracking-[-0.065em] text-accent-blue">
+            Make a coin<br />people want to<br /><em className="font-normal text-accent-green">pass around.</em>
+          </h1>
+          <p className="mt-8 max-w-xl text-base leading-relaxed text-text-secondary">
+            Launch an idea, find its first believers, and grow it into a real market.
+            Fast, transparent, and delightfully simple on Arc.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link href="/launch" className="btn-primary inline-flex items-center gap-6 px-6 py-3.5 text-base font-semibold shadow-[5px_5px_0_rgb(var(--color-text-primary))]">Bring an idea to life <ArrowUpRight size={18} /></Link>
+            <Link href="/explore" className="inline-flex items-center gap-2 px-4 py-3 text-sm font-bold text-accent-blue">See what is growing <ArrowRight size={18} /></Link>
+          </div>
+          {tickerTokens.length > 0 && (
+            <div className="mt-10 flex max-w-xl items-center gap-3 overflow-x-auto border-t border-bg-border px-1 pt-5 font-mono text-[10px] scrollbar-none">
+              <span className="flex shrink-0 items-center gap-2 font-semibold tracking-[0.12em] text-accent-green"><i className="h-1.5 w-1.5 rounded-full bg-accent-green" /> GROWING NOW</span>
               {tickerTokens.map((t) => (
-                <Link
-                  key={t.contract_address}
-                  href={`/trade/${t.contract_address}`}
-                  className="flex items-center gap-1.5 hover:text-text-primary transition-colors"
-                >
-                  <span className="font-bold text-text-primary">${t.symbol}</span>
-                  <span className="font-mono text-text-muted tabular-nums">
-                    {formatMarketCap(t.market_cap)} MC
-                  </span>
-                </Link>
+                <Link key={t.contract_address} href={`/trade/${t.contract_address}`} className="shrink-0 text-text-secondary hover:text-accent-blue"><b className="text-text-primary">${t.symbol}</b> {formatMarketCap(t.market_cap)}</Link>
               ))}
             </div>
+          )}
+        </div>
+        <div className="relative min-h-[500px] rotate-[1deg] overflow-hidden rounded-3xl border border-text-primary bg-accent-peach p-6 shadow-[14px_14px_0_rgb(var(--color-accent-blue))]">
+          <div className="flex items-center justify-between font-mono text-[9px] font-bold tracking-[0.14em] text-accent-sienna"><span>TODAY&apos;S SUNNY ONE</span><span>68% GROWN</span></div>
+          <div className="absolute left-1/2 top-[43%] h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-text-primary bg-accent-green shadow-[10px_10px_0_rgba(23,33,60,.18)]" />
+          <div className="absolute left-1/2 top-[43%] grid h-44 w-44 -translate-x-1/2 -translate-y-1/2 place-content-center text-6xl">☀</div>
+          <svg viewBox="0 0 620 380" className="absolute inset-x-[5%] bottom-[7%] h-[76%] w-[90%]" fill="none" aria-hidden="true">
+            <path d="M18 340 C175 336 226 304 294 228 C369 145 452 92 602 28" stroke="rgb(var(--color-accent-blue))" strokeWidth="4" />
+          </svg>
+          <span className="absolute left-[8%] top-[25%] -rotate-3 rounded-md border border-text-primary bg-[#9fe2c2] px-3 py-2 font-mono text-[9px] font-bold text-[#17213c] shadow-[4px_4px_0_#17213c]">184 BELIEVERS</span>
+          <span className="absolute bottom-[20%] right-[8%] rotate-3 rounded-md border border-text-primary bg-accent-blue px-3 py-2 font-mono text-[9px] font-bold text-white shadow-[4px_4px_0_#17213c]">+38% TODAY</span>
+          <div className="absolute inset-x-6 bottom-5 flex items-center justify-between rounded-xl border border-text-primary bg-bg-card px-5 py-4 text-text-primary">
+            <div><strong className="block font-serif text-2xl font-normal text-accent-blue">Sundae Club</strong><span className="font-mono text-[9px] text-text-muted">$SUN · ARC</span></div>
+            <span className="flex items-center gap-2 text-sm font-bold">Meet the community <UsersThree size={19} /></span>
           </div>
-        )}
+        </div>
       </section>
 
       {/* Compact platform pulse. */}
@@ -157,8 +146,9 @@ export default function LandingPage() {
       <section>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
           <div>
-            <h2 className="text-xl font-semibold">Token Board</h2>
-            <p className="text-xs text-text-muted mt-0.5">Live launches and market activity on Arc</p>
+            <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-accent-green">Fresh from the bazaar</p>
+            <h2 className="text-3xl text-accent-blue">Ideas with good energy.</h2>
+            <p className="text-xs text-text-muted mt-1">Live launches finding their people on Arc</p>
           </div>
           <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Token board sorting">
             {(['newest', 'market_cap', 'volume', 'graduated'] as Tab[]).map((t) => (

@@ -91,15 +91,22 @@ export default async function RootLayout({
 
   // ── Live application ─────────────────────────────────────
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <head>
+        {process.env.NEXT_PUBLIC_FIGMA_CAPTURE === 'true' && (
+          <script
+            nonce={nonce}
+            src="https://mcp.figma.com/mcp/html-to-design/capture.js"
+            async
+          />
+        )}
         {/* No-flash theme script — runs before hydration to set the correct
             theme class on <html> from localStorage (or default to dark).
             Must be inline + in <head> so it executes before the body renders. */}
         <script
           nonce={nonce}
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('orba-theme');if(t==='light'){document.documentElement.classList.remove('dark');}else{document.documentElement.classList.add('dark');}}catch(e){document.documentElement.classList.add('dark');}})();`,
+            __html: `(function(){var t=null;try{t=localStorage.getItem('orba-theme');}catch(e){}if(!t){var m=document.cookie.match(/(?:^|; )orba-theme=(light|dark)/);t=m&&m[1];}var d=t==='dark';document.documentElement.classList.toggle('dark',d);document.documentElement.style.colorScheme=d?'dark':'light';})();`,
           }}
         />
         <link
@@ -166,7 +173,7 @@ export default async function RootLayout({
                 background: 'var(--color-bg-card)',
                 color: 'var(--color-text-primary)',
                 border: '1px solid var(--color-bg-border)',
-                borderRadius: '0px',
+                borderRadius: '8px',
                 fontSize: '14px',
                 boxShadow: 'var(--shadow-subtle-2)',
               },

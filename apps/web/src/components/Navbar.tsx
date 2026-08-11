@@ -17,8 +17,8 @@ import { SearchBar } from './SearchBar';
 import { ThemeToggle } from './ThemeToggle';
 
 const PRIMARY_LINKS = [
-  { href: '/', label: 'Board' },
-  { href: '/explore', label: 'Explore' },
+  { href: '/', label: 'Discover' },
+  { href: '/explore', label: 'Market' },
   { href: '/launch', label: 'Launch' },
   { href: '/agents', label: 'Agents' },
 ] as const;
@@ -59,13 +59,14 @@ export function Navbar() {
   const isWrongChain = mounted && isConnected && chain?.id !== ARC_CHAIN_ID;
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-bg-border bg-bg-base/90 backdrop-blur-xl">
-      <div className="mx-auto flex h-16 max-w-[1440px] items-center gap-3 px-4 lg:px-6">
-        <Link href="/" className="shrink-0" aria-label="Orba home">
+    <nav className="sticky top-0 z-50 border-b border-bg-border bg-bg-base/95 backdrop-blur-xl">
+      <div className="mx-auto flex h-[72px] max-w-[1440px] items-center gap-4 px-4 lg:px-6">
+        <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="Orba home">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/orba-logo-light.svg" alt="Orba" className="h-7 w-auto dark:hidden" />
+          <img src="/orba-wordmark-bloom.svg" alt="Orba" className="h-9 w-auto dark:hidden" />
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/orba-logo-dark.svg" alt="Orba" className="hidden h-7 w-auto dark:block" />
+          <img src="/orba-wordmark-bloom-dark.svg" alt="Orba" className="hidden h-9 w-auto dark:block" />
+          <span className="hidden font-mono text-[8px] font-bold tracking-[0.16em] text-text-muted sm:inline">DAYBREAK / 02</span>
         </Link>
 
         <div className="hidden min-w-0 flex-1 sm:block xl:max-w-[280px] 2xl:max-w-md">
@@ -91,7 +92,10 @@ export function Navbar() {
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          <ThemeToggle />
+          <span className="hidden items-center gap-2 font-mono text-[9px] tracking-[0.14em] text-text-muted lg:flex">
+            <i className="h-1.5 w-1.5 rounded-full bg-accent-green shadow-[0_0_10px_rgba(200,255,90,0.7)]" />
+            ARC TESTNET
+          </span>
           <button
             onClick={() => {
               setMobileSearchOpen((value) => !value);
@@ -104,6 +108,8 @@ export function Navbar() {
           >
             <MagnifyingGlass size={18} aria-hidden="true" />
           </button>
+
+          <ThemeToggle />
 
           {mounted && isConnected && (
             <>

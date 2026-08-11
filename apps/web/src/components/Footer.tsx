@@ -6,28 +6,26 @@ import { AddArcNetworkButton } from './AddArcNetworkButton';
  */
 export function Footer() {
   return (
-    <footer className="border-t border-bg-border mt-12 py-8">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-sm">
+    <footer className="mt-20 border-t border-bg-border bg-bg-card py-12">
+      <div className="mx-auto max-w-[1440px] px-4 lg:px-6">
+        <div className="mb-8 flex items-center justify-between border-b border-bg-border pb-4 font-mono text-[9px] tracking-[0.18em] text-text-muted">
+          <span>ORBA / DAYBREAK BAZAAR</span>
+          <span className="flex items-center gap-2 text-accent-green"><i className="h-1.5 w-1.5 rounded-full bg-accent-green" /> MARKET OPEN</span>
+        </div>
+        <div className="grid grid-cols-2 gap-8 text-sm md:grid-cols-4">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
             <div className="mb-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/orba-logo-light.svg"
-                alt="Orba"
-                className="h-8 w-auto dark:hidden"
-              />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/orba-logo-dark.svg"
-                alt="Orba"
-                className="hidden h-8 w-auto dark:block"
-              />
+              <div className="flex items-center gap-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/orba-wordmark-bloom.svg" alt="Orba" className="h-12 w-auto dark:hidden" />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/orba-wordmark-bloom-dark.svg" alt="Orba" className="hidden h-12 w-auto dark:block" />
+              </div>
             </div>
             <p className="text-text-muted text-xs leading-relaxed">
-              The stablecoin-native launchpad on Arc. Built on Circle&apos;s
-              USDC-native L1. Not affiliated with Circle.
+              Make a little market. See where people take it. Built on Arc&apos;s
+              USDC-native network.
             </p>
             {/* Add Arc network to wallet — one-click via EIP-3085 instead of
                 manual configuration in wallet settings */}
@@ -36,7 +34,7 @@ export function Footer() {
 
           {/* Resources */}
           <div>
-            <h4 className="font-semibold mb-3 text-text-secondary">Resources</h4>
+            <h4 className="mb-3 font-mono text-[10px] font-semibold tracking-[0.16em] text-accent-blue">RESOURCES</h4>
             <ul className="space-y-2 text-text-muted">
               <li>
                 <Link href="/docs" className="hover:text-text-primary transition-colors">
@@ -58,7 +56,7 @@ export function Footer() {
 
           {/* Legal */}
           <div>
-            <h4 className="font-semibold mb-3 text-text-secondary">Legal</h4>
+            <h4 className="mb-3 font-mono text-[10px] font-semibold tracking-[0.16em] text-accent-blue">LEGAL</h4>
             <ul className="space-y-2 text-text-muted">
               <li>
                 <Link href="/legal/privacy-policy" className="hover:text-text-primary transition-colors">
@@ -90,7 +88,7 @@ export function Footer() {
 
           {/* Community / Social */}
           <div>
-            <h4 className="font-semibold mb-3 text-text-secondary">Community</h4>
+            <h4 className="mb-3 font-mono text-[10px] font-semibold tracking-[0.16em] text-accent-blue">NETWORK</h4>
             <ul className="space-y-2 text-text-muted">
               <li>
                 <a
@@ -107,7 +105,7 @@ export function Footer() {
           </div>
         </div>
 
-        <div className="border-t border-bg-border mt-8 pt-6 text-center text-text-muted text-xs">
+        <div className="mt-8 flex flex-col gap-2 border-t border-bg-border pt-6 text-left font-mono text-[9px] tracking-[0.06em] text-text-muted md:flex-row md:items-end md:justify-between">
           <p>
             &copy; {new Date().getFullYear()} Orba. All rights reserved. Built on{' '}
             <a
@@ -121,7 +119,7 @@ export function Footer() {
             </a>
             .
           </p>
-          <p className="mt-1">
+          <p className="max-w-2xl md:text-right">
             Orba is an independent project and is not affiliated with or endorsed by
             Circle Internet Financial. USDC is a registered trademark of Circle.
           </p>
