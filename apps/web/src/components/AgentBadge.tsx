@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { Robot } from '@phosphor-icons/react';
 
 interface AgentBadgeProps {
   /** The agent's UUID (agent_id from the agents table) — used as the link target */
@@ -28,7 +29,7 @@ export function AgentBadge({ agentUuid, agentName, linkToAgent = true }: AgentBa
     transition-colors leading-none`;
   const badge = (
     <>
-      <span className="text-[11px] leading-none">🤖</span>
+      <Robot size={12} weight="fill" aria-hidden="true" />
       <span>AI</span>
     </>
   );

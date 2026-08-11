@@ -107,8 +107,8 @@
 
   /* Serif headlines — Signifier (Source Serif 4 fallback) at weight 400 */
   h1, h2 {
-    @apply font-serif font-normal;
-    letter-spacing: -0.015em;
+    @apply font-sans font-semibold;
+    letter-spacing: -0.025em;
   }
 
   /* Visible focus ring for keyboard users only */
@@ -163,7 +163,7 @@
 @layer components {
   /* Card component — surface, sharp corners (0px radius per spec) */
   .card {
-    @apply bg-bg-card p-5 transition-colors;
+    @apply rounded-xl border border-bg-border bg-bg-card p-5 transition-colors;
   }
   .card-hover {
     @apply hover:bg-bg-hover cursor-pointer;
@@ -171,17 +171,17 @@
 
   /* Floating product artifact — elevated surface with subtle shadow */
   .card-elevated {
-    @apply bg-bg-base p-5 shadow-subtle-3 border border-bg-border;
+    @apply rounded-xl bg-bg-base p-5 shadow-subtle-2 border border-bg-border;
   }
 
   /* Accent card — editorial highlight (light/dark blue surface) */
   .card-peach {
-    @apply bg-accent-peach text-accent-sienna p-5;
+    @apply rounded-xl bg-accent-peach text-accent-sienna p-5;
   }
 
   /* Button variants — sharp corners (0px radius per spec) */
   .btn {
-    @apply px-5 py-2 font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed;
+    @apply rounded px-4 py-2 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
   }
   .btn-primary {
     @apply btn text-white;
@@ -214,10 +214,16 @@
     opacity: 0.9;
   }
 
+  .icon-button {
+    @apply inline-flex h-9 w-9 items-center justify-center rounded border border-bg-border
+           bg-bg-card text-text-secondary transition-colors hover:bg-bg-hover
+           hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
   /* Input fields — surface fill, hairline border, sharp corners */
   .input,
   .input-field {
-    @apply bg-bg-input border border-bg-border px-4 py-2.5 text-text-primary
+    @apply rounded bg-bg-input border border-bg-border px-3 py-2.5 text-text-primary
            placeholder:text-text-muted focus:outline-none
            transition-colors w-full;
   }
@@ -228,7 +234,7 @@
 
   /* Badge */
   .badge {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
   }
   .badge-green {
     @apply badge;
@@ -260,7 +266,7 @@
 
   /* Progress bar (bonding curve) */
   .progress-bar {
-    @apply w-full h-2 bg-bg-card overflow-hidden;
+    @apply w-full h-2 rounded-full bg-bg-card overflow-hidden;
   }
   .progress-fill {
     @apply h-full transition-all duration-500;
@@ -269,8 +275,8 @@
 
   /* Tab navigation — whisper-quiet */
   .tab {
-    @apply px-3 py-1.5 text-sm font-medium text-text-secondary
-           hover:text-text-primary hover:bg-bg-card transition-colors cursor-pointer;
+    @apply rounded px-2.5 py-1.5 text-sm font-medium text-text-secondary
+           hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer;
   }
   .tab-active {
     @apply bg-bg-card;

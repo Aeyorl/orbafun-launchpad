@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api, Trade } from '@/lib/api';
 import { formatUsdc, formatTokens, shortenAddress, timeAgo } from '@/lib/utils';
 import { ARC_EXPLORER_URL } from '@/lib/config';
+import { WalletBadge } from '@/components/WalletBadge';
 
 const PAGE_SIZE = 50;
 const ARCSCAN_BASE = ARC_EXPLORER_URL;
@@ -162,6 +163,14 @@ export function TradeHistory({
                   >
                     {shortenAddress(trade.wallet)}
                   </Link>
+                  {trade.wallet_tier && trade.wallet_tier_label && trade.wallet_tier_calculated_at && (
+                    <WalletBadge tier={{
+                      key: trade.wallet_tier,
+                      label: trade.wallet_tier_label,
+                      basis: 'orba_activity',
+                      calculated_at: trade.wallet_tier_calculated_at,
+                    }} />
+                  )}
                   <span>·</span>
                   <span>{timeAgo(trade.timestamp)}</span>
                   {/* ArcScan tx link */}
