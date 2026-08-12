@@ -1,154 +1,149 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { ArrowUpRight, ChartDonut, X } from '@phosphor-icons/react';
 import { Token } from '@/lib/api';
-import { AgentBadge } from '@/components/AgentBadge';
-import { Fire, GraduationCap } from '@phosphor-icons/react';
 import {
-  formatUsdDirect,
-  formatMarketCap,
   bondingCurveProgress,
-  shortenAddress,
-  tokenEmoji,
-  timeAgo,
+  formatMarketCap,
+  formatUsdDirect,
   ipfsToGateway,
+  shortenAddress,
+  timeAgo,
 } from '@/lib/utils';
+import styles from './TokenCard.module.css';
 
-export function TokenCard({ token }: { token: Token }) {
+const fallbackArtwork = [
+  '/token-board-lab/sunroom.webp',
+  '/token-board-lab/cloud-choir.webp',
+  '/token-board-lab/noodle-oracle.webp',
+  '/token-board-lab/moon-moth.webp',
+  '/token-board-lab/peach-engine.webp',
+  '/token-board-lab/relay-garden.webp',
+];
+
+function fallbackFor(symbol: string) {
+  const score = Array.from(symbol).reduce((sum, character) => sum + character.charCodeAt(0), 0);
+  return fallbackArtwork[score % fallbackArtwork.length];
+}
+
+function getSignal(token: Token, progress: number) {
+  if (token.status === 'graduated') return 'Graduated';
+  if (progress > 75) return 'Nearly there';
+  if (progress <= 0) return 'New signal';
+  return 'Blooming';
+}
+
+export function TokenCard({ token, featured = false }: { token: Token; featured?: boolean }) {
+  const [quickLookOpen, setQuickLookOpen] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
   const progress = bondingCurveProgress(token.market_cap);
-  const isGraduated = token.status === 'graduated';
-  const remainingForGraduation = Math.max(0, 30000 - parseFloat(token.market_cap || '4000'));
-  
-  // Real percentage gain calculated from starting $4,000 market cap
-  const mcapNum = parseFloat(token.market_cap || '4000');
-  const pctChange = mcapNum > 4000 ? ((mcapNum - 4000) / 4000) * 100 : 0;
-  const isPositive = pctChange >= 0;
+  const signal = getSignal(token, progress);
+  const age = timeAgo(token.created_at).replace(/\s+ago$/, '');
+  const mcap = parseFloat(token.market_cap || '4000');
+  const pctChange = mcap > 4000 ? ((mcap - 4000) / 4000) * 100 : 0;
+  const creatorLabel = token.is_agent === 'true' && token.agent_name
+    ? token.agent_name
+    : shortenAddress(token.creator_wallet);
+  const tokenArtwork = useMemo(
+    () => token.image && !imageFailed ? ipfsToGateway(token.image) : fallbackFor(token.symbol),
+    [imageFailed, token.image, token.symbol],
+  );
+
+  useEffect(() => {
+    if (!quickLookOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setQuickLookOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [quickLookOpen]);
 
   return (
-    <article className="card bg-bg-card border border-bg-border shadow-subtle-1 hover:border-accent-blue/50 hover:shadow-subtle-2 transition-all p-4 rounded-2xl flex flex-col justify-between group">
-      <Link href={`/trade/${token.contract_address}`} className="block flex-1">
-        {/* Header: avatar + symbol + status badge */}
-        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-bg-base border border-bg-border flex items-center justify-center text-xl overflow-hidden flex-shrink-0 shadow-xs">
-              {token.image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={ipfsToGateway(token.image)}
-                  alt={token.symbol}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              ) : (
-                tokenEmoji(token.symbol)
-              )}
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <div className="font-bold text-sm text-text-primary group-hover:text-accent-blue transition-colors truncate">
-                  {token.name}
-                </div>
-                <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} linkToAgent={false} />
-              </div>
-              <div className="text-xs text-text-muted font-medium">${token.symbol}</div>
-            </div>
-          </div>
-
-          {isGraduated ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-              Graduated <GraduationCap size={12} weight="fill" aria-hidden="true" />
+    <>
+      <article className={`${styles.tokenCard} ${featured ? styles.featuredCard : ''}`}>
+        <button
+          className={styles.cardButton}
+          type="button"
+          onClick={() => setQuickLookOpen(true)}
+          aria-label={`Open ${token.name}, ${formatMarketCap(token.market_cap)} market cap`}
+        >
+          <span className={styles.artwork}>
+            {/* Dynamic IPFS URLs cannot use next/image without enumerating every gateway host. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={tokenArtwork}
+              alt={`${token.name} token artwork`}
+              onError={() => setImageFailed(true)}
+            />
+            <span className={styles.imageShade} aria-hidden="true" />
+            <span className={styles.signalBadge}>
+              <ChartDonut size={14} weight="fill" aria-hidden="true" />
+              {signal}
             </span>
-          ) : progress > 75 ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-              <Fire size={12} weight="fill" aria-hidden="true" /> Near Grad
+            <span className={styles.ageBadge}>{age}</span>
+            <span className={styles.artworkAction}>
+              Quick look <ArrowUpRight size={15} weight="bold" aria-hidden="true" />
             </span>
-          ) : progress <= 0 ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-              <span className="w-1 h-1 rounded-full bg-blue-500" />
-              New
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-              <span className="w-1 h-1 rounded-full bg-emerald-500" />
-              Bonding
-            </span>
-          )}
-        </div>
-
-        {/* Price & Market Cap Grid */}
-        <div className="grid grid-cols-2 gap-2 mb-3 bg-bg-input p-2.5 rounded-xl border border-bg-border/60 text-xs font-mono">
-          <div>
-            <div className="text-[10px] text-text-muted">Market Cap</div>
-            <div className="font-bold text-text-primary">{formatMarketCap(token.market_cap)}</div>
-          </div>
-          <div className="text-right">
-            <div className="text-[10px] text-text-muted">24h Vol</div>
-            <div className="font-bold text-text-primary">{formatUsdDirect(token.volume_24h)}</div>
-          </div>
-        </div>
-
-        {/* Real Gain Trend SVG */}
-        <div className="flex items-center justify-between mb-3 text-[11px]">
-          <span className={`font-mono font-bold ${isPositive ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-            {isPositive ? '+' : ''}{pctChange.toFixed(2)}%
           </span>
-          <svg className="w-16 h-5" viewBox="0 0 60 20" fill="none">
-            <path
-              d={isPositive ? "M2 16 L18 12 L34 14 L50 4 L58 6" : "M2 4 L18 10 L34 8 L50 16 L58 14"}
-              stroke={isPositive ? "#10B981" : "#EF4444"}
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </div>
 
-        {/* Bonding Curve Progress */}
-        <div className="space-y-1 mb-3">
-          <div className="flex justify-between items-center text-[11px] font-mono">
-            <span className="text-text-muted">Bonding Progress</span>
-            <span className="font-bold text-accent-blue">{isGraduated ? '100%' : `${progress.toFixed(0)}%`}</span>
-          </div>
-          <div className="w-full h-1.5 bg-bg-border rounded-full overflow-hidden">
-            <div
-              className={`h-full transition-all duration-300 rounded-full ${
-                isGraduated ? 'bg-purple-500' : 'bg-accent-blue'
-              }`}
-              style={{ width: `${isGraduated ? 100 : Math.min(100, progress)}%` }}
-            />
-          </div>
-          {!isGraduated && (
-            <div className="text-[10px] text-text-muted text-right font-mono">
-              ${(remainingForGraduation / 1000).toFixed(1)}K to $30K DEX
+          <span className={styles.cardCopy}>
+            <span className={styles.identityRow}>
+              <span>
+                <strong>{token.name}</strong>
+                <small>${token.symbol}</small>
+              </span>
+              <span className={styles.marketMove}>+{pctChange.toFixed(1)}%</span>
+            </span>
+            <span className={styles.marketRow}>
+              <span><strong>{formatMarketCap(token.market_cap)}</strong><small>MC</small></span>
+              <span className={styles.creator}>by {creatorLabel}</span>
+            </span>
+            <span className={styles.signalTrack} aria-label={`${Math.min(100, progress).toFixed(0)}% bonded`}>
+              <span style={{ width: `${token.status === 'graduated' ? 100 : Math.min(100, progress)}%` }} />
+            </span>
+          </span>
+        </button>
+      </article>
+
+      {quickLookOpen && (
+        <div className={styles.quickLookBackdrop} role="presentation" onClick={() => setQuickLookOpen(false)}>
+          <aside
+            className={styles.quickLook}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${token.name} quick look`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button className={styles.closeButton} type="button" onClick={() => setQuickLookOpen(false)} aria-label="Close quick look">
+              <X size={18} />
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={tokenArtwork} alt="" width={132} height={132} />
+            <div className={styles.quickLookCopy}>
+              <span className={styles.quickLabel}>{signal} · {age}</span>
+              <h3>{token.name} <small>${token.symbol}</small></h3>
+              <div className={styles.quickStats}>
+                <span><small>Market cap</small><strong>{formatMarketCap(token.market_cap)}</strong></span>
+                <span><small>24H volume</small><strong>{formatUsdDirect(token.volume_24h)}</strong></span>
+                <span><small>Bonded</small><strong>{token.status === 'graduated' ? '100' : progress.toFixed(0)}%</strong></span>
+              </div>
+              <div className={styles.quickActions}>
+                <Link
+                  href={token.is_agent === 'true' && token.agent_uuid ? `/agents/${token.agent_uuid}` : `/profile/${token.creator_wallet}`}
+                  className={styles.creatorLink}
+                >
+                  by {creatorLabel}
+                </Link>
+                <Link href={`/trade/${token.contract_address}`} className={styles.tradeButton}>
+                  Open market <ArrowUpRight size={16} weight="bold" />
+                </Link>
+              </div>
             </div>
-          )}
+          </aside>
         </div>
-      </Link>
-
-      {/* Footer info */}
-      <div className="pt-2 border-t border-bg-border/60 flex items-center justify-between text-[11px] text-text-muted font-mono">
-        <span>
-          by{' '}
-          {token.is_agent === 'true' && token.agent_uuid ? (
-            <Link
-              href={`/agents/${token.agent_uuid}`}
-              className="text-indigo-500 hover:text-indigo-400 transition-colors"
-            >
-              {token.agent_name || 'AI Agent'}
-            </Link>
-          ) : (
-            <Link
-              href={`/profile/${token.creator_wallet}`}
-              className="hover:text-text-primary transition-colors"
-            >
-              {shortenAddress(token.creator_wallet)}
-            </Link>
-          )}
-        </span>
-        <span>{timeAgo(token.created_at)}</span>
-      </div>
-    </article>
+      )}
+    </>
   );
 }

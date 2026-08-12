@@ -5,7 +5,7 @@ import { Suspense, useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api, SortOption, StatusFilter, Token } from '@/lib/api';
-import { TokenCard } from '@/components/TokenCard';
+import { TokenGrid } from '@/components/TokenGrid';
 import { AgentBadge } from '@/components/AgentBadge';
 import {
   ArrowLeft,
@@ -365,11 +365,7 @@ function ExplorePageContent() {
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {tokens.map((token) => (
-              <TokenCard key={token.contract_address} token={token} />
-            ))}
-          </div>
+          <TokenGrid tokens={tokens} />
         )}
 
         {/* PAGINATION */}

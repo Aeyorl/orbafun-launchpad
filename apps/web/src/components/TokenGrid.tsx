@@ -2,6 +2,7 @@
 
 import { TokenCard } from './TokenCard';
 import { Token } from '@/lib/api';
+import styles from './TokenGrid.module.css';
 
 /**
  * TokenGrid — responsive grid of TokenCards.
@@ -18,9 +19,9 @@ export function TokenGrid({ tokens }: { tokens: Token[] }) {
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-      {tokens.map((token) => (
-        <TokenCard key={token.contract_address} token={token} />
+    <div className={styles.tokenGrid}>
+      {tokens.map((token, index) => (
+        <TokenCard key={token.contract_address} token={token} featured={index === 0} />
       ))}
     </div>
   );
