@@ -14,6 +14,9 @@ export class TokenMetadataController {
     if (!isValidEvmAddress(address)) {
       throw new BadRequestException('Invalid token address');
     }
+    if (!(await this.metadataService.isVisibleToken(address))) {
+      throw new NotFoundException('Token not found');
+    }
     const meta = await this.metadataService.getMetadata(address);
     if (!meta) {
       return {

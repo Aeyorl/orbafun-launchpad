@@ -111,6 +111,14 @@ function requiredMainnetAddress(value: string | undefined, fallbackAddress: stri
   return fallbackAddress;
 }
 
+function requiredAddress(value: string | undefined, name: string) {
+  if (!value && process.env.NODE_ENV === 'test') {
+    return '0xF09FC443D4f0F217F1B65d112b5fB8928a4ff09E';
+  }
+  if (!value) throw new Error(`Orba requires ${name}`);
+  return value;
+}
+
 const TOKEN_FACTORY_ABI = [
   {
     name: 'createToken',
@@ -271,9 +279,8 @@ export class DeployerService implements OnModuleInit {
   private tokenFactoryAddress: string;
 
   constructor(private readonly db: DatabaseService) {
-    this.tokenFactoryAddress = requiredMainnetAddress(
+    this.tokenFactoryAddress = requiredAddress(
       process.env.ARC_TOKEN_FACTORY_ADDRESS,
-      '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b',
       'ARC_TOKEN_FACTORY_ADDRESS',
     ).toLowerCase();
     const transport = fallback(RPC_URLS.map((url: string) => http(url)));

@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
+import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 export interface Message {
   id: number;
@@ -48,10 +49,14 @@ export class MessagesService {
        JOIN tokens t ON t.id = m.token_id
        LEFT JOIN agent_launches al ON al.token_address = t.contract_address
        LEFT JOIN agents a ON a.id = al.agent_id
-       WHERE m.token_id = $1 ${before ? 'AND m.id < $2' : ''}
+       WHERE m.token_id = $1
+         AND ${publicFactoryClause('t', before ? 3 : 2)}
+         ${before ? 'AND m.id < $2' : ''}
        ORDER BY m.id DESC
-       LIMIT $${before ? 3 : 2}`,
-      before ? [tokenId, before, limit + 1] : [tokenId, limit + 1],
+       LIMIT $${before ? 4 : 3}`,
+      before
+        ? [tokenId, before, getPublicFactoryAddresses(), limit + 1]
+        : [tokenId, getPublicFactoryAddresses(), limit + 1],
     );
 
     const hasMore = rows.length > limit;
@@ -116,8 +121,9 @@ export class MessagesService {
 
   private async getTokenAddress(tokenId: number): Promise<string> {
     const row = await this.db.queryOne<{ contract_address: string }>(
-      `SELECT contract_address FROM tokens WHERE id = $1`,
-      [tokenId],
+      `SELECT t.contract_address FROM tokens t
+       WHERE t.id = $1 AND ${publicFactoryClause('t', 2)}`,
+      [tokenId, getPublicFactoryAddresses()],
     );
     return row?.contract_address || '';
   }
@@ -125,8 +131,9 @@ export class MessagesService {
   /** Resolve a token address to its DB id. */
   async resolveTokenId(address: string): Promise<number | null> {
     const row = await this.db.queryOne<{ id: number }>(
-      `SELECT id FROM tokens WHERE contract_address = $1`,
-      [address.toLowerCase()],
+      `SELECT t.id FROM tokens t
+       WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 2)}`,
+      [address.toLowerCase(), getPublicFactoryAddresses()],
     );
     return row?.id || null;
   }

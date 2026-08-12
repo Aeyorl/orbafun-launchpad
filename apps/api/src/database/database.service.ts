@@ -1,6 +1,8 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
 import { Pool, PoolClient } from 'pg';
 
+export type QueryParam = string | number | boolean | null | string[];
+
 /**
  * DatabaseService — thin wrapper around node-postgres Pool.
  *
@@ -90,18 +92,18 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Run a parameterized query. Returns the full result. */
-  async query(text: string, params?: (string | number | boolean | null)[]) {
+  async query(text: string, params?: QueryParam[]) {
     return this.pool.query(text, params);
   }
 
   /** Run a query and return only the rows. */
-  async queryRows<T = any>(text: string, params?: (string | number | boolean | null)[]): Promise<T[]> {
+  async queryRows<T = any>(text: string, params?: QueryParam[]): Promise<T[]> {
     const result = await this.pool.query(text, params);
     return result.rows as T[];
   }
 
   /** Run a query and return the first row, or null. */
-  async queryOne<T = any>(text: string, params?: (string | number | boolean | null)[]): Promise<T | null> {
+  async queryOne<T = any>(text: string, params?: QueryParam[]): Promise<T | null> {
     const result = await this.pool.query(text, params);
     return (result.rows[0] as T) || null;
   }

@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 export interface TokenMetadata {
   token_address: string;
@@ -95,14 +96,27 @@ export class TokenMetadataService {
 
   constructor(private db: DatabaseService) {}
 
+  async isVisibleToken(tokenAddress: string): Promise<boolean> {
+    const row = await this.db.queryOne<{ visible: boolean }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM tokens t
+         WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 2)}
+       ) AS visible`,
+      [tokenAddress.toLowerCase(), getPublicFactoryAddresses()],
+    );
+    return row?.visible ?? false;
+  }
+
   /** Get metadata for a token. Returns empty object if none exists. */
   async getMetadata(tokenAddress: string): Promise<TokenMetadata | null> {
     const addr = tokenAddress.toLowerCase();
     const row = await this.db.queryOne<TokenMetadata>(
-      `SELECT token_address, website, twitter, telegram, discord, description, banner, updated_at
-       FROM token_metadata
-       WHERE token_address = $1`,
-      [addr],
+      `SELECT tm.token_address, tm.website, tm.twitter, tm.telegram, tm.discord,
+              tm.description, tm.banner, tm.updated_at
+       FROM token_metadata tm
+       JOIN tokens t ON t.contract_address = tm.token_address
+       WHERE tm.token_address = $1 AND ${publicFactoryClause('t', 2)}`,
+      [addr, getPublicFactoryAddresses()],
     );
     return row || null;
   }
@@ -118,8 +132,9 @@ export class TokenMetadataService {
 
     // Verify the caller is the token creator.
     const token = await this.db.queryOne<{ creator_wallet: string }>(
-      `SELECT creator_wallet FROM tokens WHERE contract_address = $1`,
-      [addr],
+      `SELECT t.creator_wallet FROM tokens t
+       WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 2)}`,
+      [addr, getPublicFactoryAddresses()],
     );
     if (!token) {
       throw new NotFoundException('Token not found');

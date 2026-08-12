@@ -118,9 +118,11 @@ describe('IndexerService idempotency and accounting', () => {
       expect.stringContaining('SELECT * FROM trades'),
       expect.anything(),
     );
-    expect(redis.delPattern).toHaveBeenCalledTimes(2);
     expect(redis.delPattern).toHaveBeenCalledWith('tokens:list:*');
     expect(redis.delPattern).toHaveBeenCalledWith('leaderboard:*');
+    expect(redis.delPattern).toHaveBeenCalledWith(expect.stringMatching(/^token:\*:/));
+    expect(redis.delPattern).toHaveBeenCalledWith(expect.stringMatching(/^candles:\*:/));
+    expect(redis.delPattern).toHaveBeenCalledWith('stats:platform:*');
     jest.useRealTimers();
   });
 
@@ -149,5 +151,26 @@ describe('IndexerService idempotency and accounting', () => {
     expect(tokenUpdate?.params?.[3]).toBe('1000000');
     expect(tokenUpdate?.params?.[5]).toBe('5000');
     expect(tokenUpdate?.params?.[6]).toBe('5000');
+  });
+
+  it('ignores TokenCreated events from factories outside the indexed scope', async () => {
+    const { service, db, redis } = harness();
+
+    await service.processEvent({
+      type: 'TokenCreated',
+      txHash: `0x${'5'.repeat(64)}`,
+      blockNumber: 103,
+      logIndex: 0,
+      token: '0x0000000000000000000000000000000000000010',
+      curve: '0x0000000000000000000000000000000000000011',
+      creator: '0x0000000000000000000000000000000000000012',
+      name: 'Legacy',
+      symbol: 'OLD',
+      image: '',
+      factoryAddress: '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b',
+    } as any);
+
+    expect(db.connect).not.toHaveBeenCalled();
+    expect(redis.publishTokenEvent).not.toHaveBeenCalled();
   });
 });

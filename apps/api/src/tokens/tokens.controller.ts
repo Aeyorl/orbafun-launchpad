@@ -13,6 +13,12 @@ export class TokensController {
     private candlesService: CandlesService,
   ) {}
 
+  private async requireVisibleToken(address: string) {
+    const token = await this.tokensService.getTokenByAddress(address);
+    if (!token) throw new NotFoundException('Token not found');
+    return token;
+  }
+
   /**
    * GET /tokens
    * Query params:
@@ -101,6 +107,7 @@ export class TokensController {
     if (!isValidEvmAddress(address)) {
       throw new BadRequestException('Invalid token address');
     }
+    await this.requireVisibleToken(address);
     const tf = VALID_TIMEFRAMES.includes(timeframe as CandleTimeframe)
       ? (timeframe as CandleTimeframe)
       : '5m';
@@ -119,9 +126,7 @@ export class TokensController {
     if (!isValidEvmAddress(address)) {
       throw new BadRequestException('Invalid token address');
     }
-    const token = await this.tokensService.getTokenByAddress(address);
-    if (!token) throw new NotFoundException('Token not found');
-    return token;
+    return this.requireVisibleToken(address);
   }
 
   /**
@@ -142,6 +147,7 @@ export class TokensController {
     if (!isValidEvmAddress(address)) {
       throw new BadRequestException('Invalid token address');
     }
+    await this.requireVisibleToken(address);
     const limitNum = limit ? parseInt(limit, 10) : 50;
     const offsetNum = offset ? parseInt(offset, 10) : 0;
     const orderOption = order === 'asc' ? 'asc' : 'desc';
@@ -170,6 +176,7 @@ export class TokensController {
     if (!isValidEvmAddress(address)) {
       throw new BadRequestException('Invalid token address');
     }
+    await this.requireVisibleToken(address);
     const limitNum = limit ? parseInt(limit, 10) : 20;
     if (isNaN(limitNum) || limitNum < 1) throw new BadRequestException('Invalid limit');
     return this.tokensService.getTokenHolders(address, { limit: limitNum });

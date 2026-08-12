@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { DatabaseService } from '../database/database.service';
+import { DatabaseService, QueryParam } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
+import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 export interface Token {
   id: number;
@@ -67,6 +68,14 @@ export class TokensService {
     private redis: RedisService,
   ) {}
 
+  private publicFactories(): string[] {
+    return getPublicFactoryAddresses();
+  }
+
+  private scopeCacheKey(): string {
+    return this.publicFactories().join(',');
+  }
+
   /**
    * Cron task running every 60s to refresh 24h rolling volume window
    * across all active tokens and clear cached token lists.
@@ -74,7 +83,17 @@ export class TokensService {
   @Cron('*/60 * * * * *')
   async refreshVolume24h(): Promise<void> {
     try {
-      await this.db.query(`SELECT refresh_volume_24h()`);
+      await this.db.query(
+        `UPDATE tokens t
+         SET volume_24h = COALESCE((
+           SELECT (SUM(tr.usdc_amount)::numeric / 1000000.0)::numeric(20,6)
+           FROM trades tr
+           WHERE tr.token_id = t.id
+             AND tr.timestamp > NOW() - INTERVAL '24 hours'
+         ), 0)
+         WHERE t.status = 'active' AND ${publicFactoryClause('t', 1)}`,
+        [this.publicFactories()],
+      );
       await this.redis.delPattern('tokens:list:*');
     } catch (err) {
       this.logger.error(`Failed to refresh 24h volume: ${err.message}`);
@@ -101,7 +120,7 @@ export class TokensService {
     const search = opts.search;
 
     // Build cache key
-    const cacheKey = `tokens:list:${sort}:${status}:${isAgent || ''}:${limit}:${offset}:${search || ''}`;
+    const cacheKey = `tokens:list:${this.scopeCacheKey()}:${sort}:${status}:${isAgent || ''}:${limit}:${offset}:${search || ''}`;
     const cached = await this.redis.getJson<{ tokens: Token[]; total: number }>(cacheKey);
     if (cached) return cached;
 
@@ -113,8 +132,8 @@ export class TokensService {
     }[sort];
 
     // Build WHERE clauses and params with correct $N indexing
-    const filterParams: (string | number)[] = [];
-    let paramIdx = 1;
+    const filterParams: QueryParam[] = [this.publicFactories()];
+    let paramIdx = 2;
 
     let statusClause = '';
     if (status !== 'all') {
@@ -149,7 +168,7 @@ export class TokensService {
       LEFT JOIN users u ON t.creator_wallet = u.wallet
       LEFT JOIN agent_launches al ON al.token_address = t.contract_address
       LEFT JOIN agents a ON a.id = al.agent_id
-      WHERE 1=1 ${statusClause} ${searchClause} ${agentClause}
+      WHERE ${publicFactoryClause('t', 1)} ${statusClause} ${searchClause} ${agentClause}
       ${orderClause}
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
     `;
@@ -158,7 +177,7 @@ export class TokensService {
       SELECT COUNT(*) as total
       FROM tokens t
       LEFT JOIN agent_launches al ON al.token_address = t.contract_address
-      WHERE 1=1 ${statusClause} ${searchClause} ${agentClause}
+      WHERE ${publicFactoryClause('t', 1)} ${statusClause} ${searchClause} ${agentClause}
     `;
 
     const queryParams = [...filterParams, limit, offset];
@@ -183,7 +202,7 @@ export class TokensService {
    */
   async getTokenByAddress(address: string): Promise<Token | null> {
     const normalized = address.toLowerCase();
-    const cacheKey = `token:${normalized}`;
+    const cacheKey = `token:${this.scopeCacheKey()}:${normalized}`;
     const cached = await this.redis.getJson<Token>(cacheKey);
     if (cached) return cached;
 
@@ -195,8 +214,9 @@ export class TokensService {
        FROM tokens t
        LEFT JOIN agent_launches al ON al.token_address = t.contract_address
        LEFT JOIN agents a ON a.id = al.agent_id
-       WHERE t.contract_address = $1`,
-      [normalized],
+       WHERE t.contract_address = $1
+         AND ${publicFactoryClause('t', 2)}`,
+      [normalized, this.publicFactories()],
     );
 
     if (token) {
@@ -227,17 +247,19 @@ export class TokensService {
        JOIN tokens t ON tr.token_id = t.id
        LEFT JOIN wallet_stats ws ON ws.wallet = tr.wallet
        WHERE t.contract_address = $1
+         AND ${publicFactoryClause('t', 2)}
        ORDER BY tr.timestamp ${order === 'desc' ? 'DESC' : 'ASC'}
-       LIMIT $2 OFFSET $3`,
-      [normalized, limit, offset],
+       LIMIT $3 OFFSET $4`,
+      [normalized, this.publicFactories(), limit, offset],
     );
 
     const countResult = await this.db.queryOne<{ total: string }>(
       `SELECT COUNT(*) as total
        FROM trades tr
        JOIN tokens t ON tr.token_id = t.id
-       WHERE t.contract_address = $1`,
-      [normalized],
+       WHERE t.contract_address = $1
+         AND ${publicFactoryClause('t', 2)}`,
+      [normalized, this.publicFactories()],
     );
 
     return {
@@ -262,6 +284,7 @@ export class TokensService {
                 t.symbol AS token_symbol
          FROM trades tr
          JOIN tokens t ON t.id = tr.token_id
+         WHERE ${publicFactoryClause('t', 2)}
          UNION ALL
          SELECT CASE WHEN s.is_buy THEN 'buy' ELSE 'sell' END AS type,
                 CASE WHEN s.is_buy THEN s.to_address ELSE s.sender END AS wallet,
@@ -276,6 +299,7 @@ export class TokensService {
                 t.symbol AS token_symbol
          FROM amm_swaps s
          JOIN tokens t ON t.id = s.token_id
+         WHERE ${publicFactoryClause('t', 2)}
        )
        SELECT a.*,
               ws.tier AS wallet_tier,
@@ -285,7 +309,7 @@ export class TokensService {
        LEFT JOIN wallet_stats ws ON ws.wallet = a.wallet
        ORDER BY a.block_number DESC, a.log_index DESC
        LIMIT $1`,
-      [limit],
+      [limit, this.publicFactories()],
     );
   }
 
@@ -309,13 +333,15 @@ export class TokensService {
        LEFT JOIN agent_launches al ON al.token_address = t.contract_address
        LEFT JOIN agents a ON a.id = al.agent_id
        WHERE t.creator_wallet = $1
-       ORDER BY t.created_at DESC LIMIT $2 OFFSET $3`,
-      [normalized, limit, offset],
+         AND ${publicFactoryClause('t', 2)}
+       ORDER BY t.created_at DESC LIMIT $3 OFFSET $4`,
+      [normalized, this.publicFactories(), limit, offset],
     );
 
     const countResult = await this.db.queryOne<{ total: string }>(
-      `SELECT COUNT(*) as total FROM tokens WHERE creator_wallet = $1`,
-      [normalized],
+      `SELECT COUNT(*) as total FROM tokens t
+       WHERE t.creator_wallet = $1 AND ${publicFactoryClause('t', 2)}`,
+      [normalized, this.publicFactories()],
     );
 
     return {
@@ -352,25 +378,25 @@ export class TokensService {
                        ELSE -tr.token_amount END AS balance
            FROM trades tr
            JOIN tokens t ON tr.token_id = t.id
-           WHERE t.contract_address = $1
+           WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 2)}
            UNION ALL
            SELECT s.to_address AS wallet, s.token_out AS balance
            FROM amm_swaps s
            JOIN tokens t ON s.token_id = t.id
-           WHERE t.contract_address = $1 AND s.is_buy = true
+           WHERE t.contract_address = $1 AND s.is_buy = true AND ${publicFactoryClause('t', 2)}
            UNION ALL
            SELECT s.sender AS wallet, -s.token_in AS balance
            FROM amm_swaps s
            JOIN tokens t ON s.token_id = t.id
-           WHERE t.contract_address = $1 AND s.is_buy = false
+           WHERE t.contract_address = $1 AND s.is_buy = false AND ${publicFactoryClause('t', 2)}
          ) x
          GROUP BY wallet
          HAVING SUM(balance) > 0
         ) h
         LEFT JOIN wallet_stats ws ON ws.wallet = h.wallet
        ORDER BY h.balance DESC
-       LIMIT $2`,
-      [normalized, limit],
+       LIMIT $3`,
+      [normalized, this.publicFactories(), limit],
     );
 
     const countResult = await this.db.queryOne<{ total: string }>(
@@ -382,20 +408,20 @@ export class TokensService {
                        ELSE -tr.token_amount END AS balance
            FROM trades tr
            JOIN tokens t ON tr.token_id = t.id
-           WHERE t.contract_address = $1
+           WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 2)}
            UNION ALL
            SELECT s.to_address, s.token_out FROM amm_swaps s
            JOIN tokens t ON s.token_id = t.id
-           WHERE t.contract_address = $1 AND s.is_buy = true
+           WHERE t.contract_address = $1 AND s.is_buy = true AND ${publicFactoryClause('t', 2)}
            UNION ALL
            SELECT s.sender, -s.token_in FROM amm_swaps s
            JOIN tokens t ON s.token_id = t.id
-           WHERE t.contract_address = $1 AND s.is_buy = false
+           WHERE t.contract_address = $1 AND s.is_buy = false AND ${publicFactoryClause('t', 2)}
          ) x
          GROUP BY wallet
          HAVING SUM(balance) > 0
        ) h`,
-      [normalized],
+      [normalized, this.publicFactories()],
     );
 
     return {
@@ -416,7 +442,7 @@ export class TokensService {
     graduated_tokens: number;
     volume_24h: string;
   }> {
-    const cacheKey = 'stats:platform';
+    const cacheKey = `stats:platform:${this.scopeCacheKey()}`;
     const cached = await this.redis.get(cacheKey);
     if (cached) {
       try {
@@ -428,11 +454,14 @@ export class TokensService {
 
     const result = await this.db.query(`
       SELECT
-        (SELECT COUNT(*)::int FROM tokens) AS total_tokens,
-        (SELECT COUNT(*)::int FROM tokens WHERE status = 'active') AS active_tokens,
-        (SELECT COUNT(*)::int FROM tokens WHERE status = 'graduated') AS graduated_tokens,
-        (SELECT COALESCE(SUM(usdc_amount::bigint), 0)::text FROM trades WHERE timestamp >= NOW() - INTERVAL '24 hours') AS volume_24h_micro
-    `);
+        (SELECT COUNT(*)::int FROM tokens t WHERE ${publicFactoryClause('t', 1)}) AS total_tokens,
+        (SELECT COUNT(*)::int FROM tokens t WHERE status = 'active' AND ${publicFactoryClause('t', 1)}) AS active_tokens,
+        (SELECT COUNT(*)::int FROM tokens t WHERE status = 'graduated' AND ${publicFactoryClause('t', 1)}) AS graduated_tokens,
+        (SELECT COALESCE(SUM(tr.usdc_amount::bigint), 0)::text
+         FROM trades tr JOIN tokens t ON t.id = tr.token_id
+         WHERE tr.timestamp >= NOW() - INTERVAL '24 hours'
+           AND ${publicFactoryClause('t', 1)}) AS volume_24h_micro
+    `, [this.publicFactories()]);
 
     const micro = BigInt(result.rows[0]?.volume_24h_micro || '0');
     const volumeDollars = (Number(micro) / 1e6).toFixed(6);

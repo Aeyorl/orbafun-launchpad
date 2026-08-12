@@ -687,8 +687,11 @@ CREATE TABLE IF NOT EXISTS wallet_stats (
     suspicious_activity       BOOLEAN NOT NULL DEFAULT FALSE,
     first_seen_at             TIMESTAMPTZ,
     last_active_at            TIMESTAMPTZ,
+    factory_scope             TEXT NOT NULL DEFAULT '',
     calculated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE wallet_stats ADD COLUMN IF NOT EXISTS factory_scope TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_wallet_stats_tier_value
     ON wallet_stats(tier, portfolio_value_usdc DESC);

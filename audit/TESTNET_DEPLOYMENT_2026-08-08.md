@@ -14,10 +14,23 @@ used by the public Orba site and is not an external audit or mainnet approval.
 |---|---|---|---|
 | ProtocolTimelock | `0x0DD8666e2819d36f01Dae53923b8A42ac5DA87ca` | `0x93fdeecf037aab67587653cad91064ce164fd63b86ca39eb827731fc4c96d22f` | `0x02dc21dcf1fb59c25f0224846cf623a7f1d70f6128fe1f318c6fd8494c7b8134` |
 | Treasury | `0xDC9471561269845249614cfB4e42cFdd73F2E828` | `0xab241fc4adff16a0e2bc6b4241896e3423ab8f125ecb9aebf8c1180a9ce5328f` | `0x415a3206bc77b66a6c41e786814728250b626c2807443ab59563a130fa1f48e8` |
-| AMMFactory | `0xf2FDf9ea4efEFb49910A96e959642112d1A00B8b` | `0x13ed55a0b167a96ea7788a52d4d99e0653ceefde9f7bd00cb3bc5bc98be21c08` | `0x65387bb39db0d989d038bd50206bea8109170a448603e512f7cefbb31d193818` |
-| AMMRouter | `0x3F762785CC165eFa28108649A15a70dc19D448Cd` | `0x7209d6ff7995645ad421bfd5397c379909aed0c4c1cd569abc9a32ab8d7224d1` | `0x3a7774390db6c8b8340d75aa5448c71457e45d7b24ca2c20617d5a2a39be4587` |
-| TokenFactory | `0xF09FC443D4f0F217F1B65d112b5fB8928a4ff09E` | `0xc49fac08263986804c462dd8ca804a7a5dba28700f4c80afa98a1201c7db61cf` | `0x7fdd6a51bdd85083c71c6896e67725543c7fba63e50b46f27db19452e28eb411` |
-| LiquidityMigration | `0x0667b432ac7beB7C4039b01C8bC979e34474313f` | `0x2f26016d4ff7ca43514b21e079285fb0dd32c5ed1b660baacb781dc3176ba866` | `0xd57ed90442635ae34f6237352d474f64f349242a7d3d6061d5b664954e97e15b` |
+| AMMFactory | `0xf2FDf9ea4efEFb49910A96e959642112d1A00B8b` | `0x7209d6ff7995645ad421bfd5397c379909aed0c4c1cd569abc9a32ab8d7224d1` | `0x65387bb39db0d989d038bd50206bea8109170a448603e512f7cefbb31d193818` |
+| AMMRouter | `0x3F762785CC165eFa28108649A15a70dc19D448Cd` | `0x13ed55a0b167a96ea7788a52d4d99e0653ceefde9f7bd00cb3bc5bc98be21c08` | `0x3a7774390db6c8b8340d75aa5448c71457e45d7b24ca2c20617d5a2a39be4587` |
+| TokenFactory | `0xF09FC443D4f0F217F1B65d112b5fB8928a4ff09E` | `0x4736e887fff46a9574c10f5e66cec1a04c6782b2917f4450606772a8cef4dd8e` | `0x7fdd6a51bdd85083c71c6896e67725543c7fba63e50b46f27db19452e28eb411` |
+| LiquidityMigration | `0x0667b432ac7beB7C4039b01C8bC979e34474313f` | `0x19dcf2fea6fece457da1eac73e370f73f6d7f793779cabcfa46d35731efed40f` | `0xd57ed90442635ae34f6237352d474f64f349242a7d3d6061d5b664954e97e15b` |
+
+The transaction-to-contract labels above were revalidated from Arc Testnet
+receipts on 2026-08-12. Earlier revisions had the AMMFactory/AMMRouter labels
+swapped and attributed unrelated creation transactions to TokenFactory and
+LiquidityMigration.
+
+## Application cutover compatibility
+
+Current `origin/master` at `a77f4b9231115a77dabaeb245e3bfcbdf1536b1a`
+already supports `TOKEN_FACTORY_ADDRESSES` and
+`ARC_POLLER_REPLAY_FROM_BLOCK`. The fresh-start release intentionally narrows
+both indexed and publicly visible factory scopes to the hardened TokenFactory
+only; legacy rows remain stored but are not returned or polled.
 
 ## State verification
 

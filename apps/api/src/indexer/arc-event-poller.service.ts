@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DatabaseService } from '../database/database.service';
 import { IndexerService } from './indexer.service';
+import { getIndexedFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 /**
  * ArcEventPollerService — polls Arc RPC directly for contract events.
@@ -105,19 +106,7 @@ export class ArcEventPollerService implements OnModuleInit {
   }
 
   private getFactoryAddresses(): string[] {
-    const configured = [
-      ...(process.env.TOKEN_FACTORY_ADDRESSES || '').split(','),
-      process.env.ARC_TOKEN_FACTORY_ADDRESS ||
-        process.env.NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS ||
-        '',
-    ]
-      .map((address) => address.trim().toLowerCase())
-      .filter(Boolean);
-    if (configured.length > 0) return Array.from(new Set(configured));
-    if (Number(process.env.ARC_CHAIN_ID || 5_042_002) === 5_042) {
-      throw new Error('Arc mainnet requires TOKEN_FACTORY_ADDRESSES');
-    }
-    return ['0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b'.toLowerCase()];
+    return getIndexedFactoryAddresses();
   }
 
   async onModuleInit(): Promise<void> {
@@ -628,7 +617,10 @@ export class ArcEventPollerService implements OnModuleInit {
 
   private async loadCurveAddresses(): Promise<void> {
     const rows = await this.db.queryRows<{ curve_address: string }>(
-      `SELECT curve_address FROM tokens WHERE curve_address IS NOT NULL`,
+      `SELECT t.curve_address FROM tokens t
+       WHERE t.curve_address IS NOT NULL
+         AND ${publicFactoryClause('t', 1)}`,
+      [this.getFactoryAddresses()],
     );
     for (const row of rows) {
       this.curveAddresses.add(row.curve_address.toLowerCase());

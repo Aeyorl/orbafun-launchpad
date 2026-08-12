@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
+import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 export interface Favorite {
   id: number;
@@ -27,15 +28,17 @@ export class FavoritesService {
       `SELECT t.*, f.created_at AS favorited_at
        FROM favorites f
        JOIN tokens t ON f.token_id = t.id
-       WHERE f.wallet = $1
+       WHERE f.wallet = $1 AND ${publicFactoryClause('t', 2)}
        ORDER BY f.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [w, limit, offset],
+       LIMIT $3 OFFSET $4`,
+      [w, getPublicFactoryAddresses(), limit, offset],
     );
 
     const countResult = await this.db.queryOne<{ total: string }>(
-      `SELECT COUNT(*) as total FROM favorites WHERE wallet = $1`,
-      [w],
+      `SELECT COUNT(*) as total
+       FROM favorites f JOIN tokens t ON t.id = f.token_id
+       WHERE f.wallet = $1 AND ${publicFactoryClause('t', 2)}`,
+      [w, getPublicFactoryAddresses()],
     );
 
     return {
@@ -50,8 +53,9 @@ export class FavoritesService {
     const a = tokenAddress.toLowerCase();
 
     const token = await this.db.queryOne<{ id: number }>(
-      `SELECT id FROM tokens WHERE contract_address = $1`,
-      [a],
+      `SELECT t.id FROM tokens t
+       WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 2)}`,
+      [a, getPublicFactoryAddresses()],
     );
     if (!token) throw new Error('Token not found');
 
@@ -75,8 +79,9 @@ export class FavoritesService {
        USING tokens t
        WHERE f.token_id = t.id
          AND f.wallet = $1
-         AND t.contract_address = $2`,
-      [w, a],
+         AND t.contract_address = $2
+         AND ${publicFactoryClause('t', 3)}`,
+      [w, a, getPublicFactoryAddresses()],
     );
     return (result.rowCount ?? 0) > 0;
   }
@@ -90,8 +95,9 @@ export class FavoritesService {
          SELECT 1 FROM favorites f
          JOIN tokens t ON f.token_id = t.id
          WHERE f.wallet = $1 AND t.contract_address = $2
+           AND ${publicFactoryClause('t', 3)}
        ) AS exists`,
-      [w, a],
+      [w, a, getPublicFactoryAddresses()],
     );
     return row?.exists ?? false;
   }

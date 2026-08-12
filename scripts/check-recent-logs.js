@@ -1,10 +1,10 @@
-const { createPublicClient, http, parseAbiItem } = require('viem');
+const RPC_URL = process.env.ARC_RPC_URL || 'https://rpc.testnet.arc.network';
+const FACTORY_ADDRESS = process.env.ARC_TOKEN_FACTORY_ADDRESS;
+const CURVE_ADDRESS = process.argv[2];
 
-const RPC_URL = 'https://rpc.testnet.arc.io';
-
-const FACTORY_ADDRESS = '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b';
-const TOKEN_BRO = '0x014c4e5c57db5a6ad93540f22b905c51458a743b';
-const CURVE_BRO = '0x4c65538eefea10a3000b2167d4fdf80753494ee4';
+if (!FACTORY_ADDRESS) {
+  throw new Error('ARC_TOKEN_FACTORY_ADDRESS is required');
+}
 
 async function main() {
   const fetch = (await import('node-fetch')).default || globalThis.fetch;
@@ -49,7 +49,9 @@ async function main() {
     console.log('Sample factory log:', factoryJson.result[0]);
   }
 
-  // 2. Curve logs for bro ($PROLS)
+  if (!CURVE_ADDRESS) return;
+
+  // 2. Optional curve logs supplied as the first argument.
   const curveRes = await fetch(RPC_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -59,7 +61,7 @@ async function main() {
       method: 'eth_getLogs',
       params: [
         {
-          address: CURVE_BRO,
+          address: CURVE_ADDRESS,
           fromBlock: '0x' + fromBlock.toString(16),
           toBlock: '0x' + currentBlock.toString(16),
         },
@@ -67,7 +69,7 @@ async function main() {
     }),
   });
   const curveJson = await curveRes.json();
-  console.log(`Curve logs for PROLS (${CURVE_BRO}): ${curveJson.result?.length || 0}`);
+  console.log(`Curve logs (${CURVE_ADDRESS}): ${curveJson.result?.length || 0}`);
   if (curveJson.result?.length > 0) {
     console.log('Sample curve logs:', curveJson.result);
   }

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
+import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 /**
  * OHLCV candle data for the trading terminal chart.
@@ -79,7 +80,8 @@ export class CandlesService {
   ): Promise<OhlcvCandle[]> {
     const normalized = tokenAddress.toLowerCase();
     const normalizedTf = timeframe.toLowerCase();
-    const cacheKey = `candles:${normalized}:${normalizedTf}:${mode}:${limit}`;
+    const publicFactories = getPublicFactoryAddresses();
+    const cacheKey = `candles:${publicFactories.join(',')}:${normalized}:${normalizedTf}:${mode}:${limit}`;
 
     // Check Redis cache (5s TTL — fast for live trading)
     const cached = await this.redis.getJson<OhlcvCandle[]>(cacheKey);
@@ -97,8 +99,9 @@ export class CandlesService {
          (array_agg(${valueColumn}::numeric ORDER BY tr.timestamp ASC, tr.log_index ASC))[1]::text AS first_val
        FROM trades tr
        JOIN tokens t ON tr.token_id = t.id
-       WHERE t.contract_address = $1`,
-      [normalized],
+       WHERE t.contract_address = $1
+         AND ${publicFactoryClause('t', 2)}`,
+      [normalized, publicFactories],
     );
 
     const tradeCount = parseInt(countRes.rows[0]?.count || '0', 10);
@@ -115,7 +118,10 @@ export class CandlesService {
     // 2. Query sparse buckets from DB using Postgres epoch aggregation in UTC
     const query = `
       WITH token_info AS (
-        SELECT id FROM tokens WHERE contract_address = $1 LIMIT 1
+        SELECT t.id FROM tokens t
+        WHERE t.contract_address = $1
+          AND ${publicFactoryClause('t', 3)}
+        LIMIT 1
       ),
       trade_buckets AS (
         SELECT
@@ -142,7 +148,7 @@ export class CandlesService {
     `;
 
     try {
-      const result = await this.db.query(query, [normalized, bucketSeconds]);
+      const result = await this.db.query(query, [normalized, bucketSeconds, publicFactories]);
 
       const sparse: OhlcvCandle[] = result.rows.map((row) => ({
         timestamp: Number(row.timestamp),

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { isValidEvmAddress } from '../common/utils';
+import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 /**
  * ReferralService — tracks wallet-to-wallet referral attribution.
@@ -100,14 +101,30 @@ export class ReferralService {
       total_volume_usdc: string;
       reward_earned_usdc: string;
     }>(
-      `SELECT
-         COUNT(*)::text as total_referred,
-         COUNT(*) FILTER (WHERE trade_count > 0)::text as active_referred,
-         COALESCE(SUM(total_volume_usdc), 0)::text as total_volume_usdc,
-         COALESCE(SUM(reward_earned_usdc), 0)::text as reward_earned_usdc
-       FROM referrals
-       WHERE referrer_wallet = $1`,
-      [w],
+      `WITH activity AS (
+         SELECT tr.wallet, tr.usdc_amount::numeric AS volume_usdc
+         FROM trades tr JOIN tokens t ON t.id = tr.token_id
+         WHERE ${publicFactoryClause('t', 2)}
+         UNION ALL
+         SELECT CASE WHEN s.is_buy THEN s.to_address ELSE s.sender END,
+                CASE WHEN s.is_buy THEN s.usdc_in ELSE s.usdc_out END::numeric
+         FROM amm_swaps s JOIN tokens t ON t.id = s.token_id
+         WHERE ${publicFactoryClause('t', 2)}
+       ), referred AS (
+         SELECT r.referred_wallet,
+                COUNT(a.wallet) AS trade_count,
+                COALESCE(SUM(a.volume_usdc), 0) AS volume_usdc
+         FROM referrals r LEFT JOIN activity a ON a.wallet = r.referred_wallet
+         WHERE r.referrer_wallet = $1
+         GROUP BY r.referred_wallet
+       )
+       SELECT
+         COUNT(*)::text AS total_referred,
+         COUNT(*) FILTER (WHERE trade_count > 0)::text AS active_referred,
+         COALESCE(SUM(volume_usdc), 0)::text AS total_volume_usdc,
+         COALESCE(SUM(volume_usdc) * $3::numeric / 10000, 0)::text AS reward_earned_usdc
+       FROM referred`,
+      [w, getPublicFactoryAddresses(), this.rewardPctBps],
     );
 
     if (!stats) {
@@ -140,18 +157,31 @@ export class ReferralService {
       attributed_at: string;
       first_token_address: string | null;
     }>(
-      `SELECT
-         referred_wallet,
-         trade_count,
-         total_volume_usdc::text,
-         reward_earned_usdc::text,
-         attributed_at,
-         first_token_address
-       FROM referrals
-       WHERE referrer_wallet = $1
-       ORDER BY attributed_at DESC
-       LIMIT $2 OFFSET $3`,
-      [w, limit, offset],
+      `WITH activity AS (
+         SELECT tr.wallet, tr.usdc_amount::numeric AS volume_usdc,
+                t.contract_address AS token_address, tr.timestamp
+         FROM trades tr JOIN tokens t ON t.id = tr.token_id
+         WHERE ${publicFactoryClause('t', 2)}
+         UNION ALL
+         SELECT CASE WHEN s.is_buy THEN s.to_address ELSE s.sender END,
+                CASE WHEN s.is_buy THEN s.usdc_in ELSE s.usdc_out END::numeric,
+                t.contract_address, s.timestamp
+         FROM amm_swaps s JOIN tokens t ON t.id = s.token_id
+         WHERE ${publicFactoryClause('t', 2)}
+       )
+       SELECT r.referred_wallet,
+              COUNT(a.wallet)::int AS trade_count,
+              COALESCE(SUM(a.volume_usdc), 0)::text AS total_volume_usdc,
+              (COALESCE(SUM(a.volume_usdc), 0) * $3::numeric / 10000)::text AS reward_earned_usdc,
+              r.attributed_at,
+              (array_agg(a.token_address ORDER BY a.timestamp ASC)
+                FILTER (WHERE a.token_address IS NOT NULL))[1] AS first_token_address
+       FROM referrals r LEFT JOIN activity a ON a.wallet = r.referred_wallet
+       WHERE r.referrer_wallet = $1
+       GROUP BY r.referred_wallet, r.attributed_at
+       ORDER BY r.attributed_at DESC
+       LIMIT $4 OFFSET $5`,
+      [w, getPublicFactoryAddresses(), this.rewardPctBps, limit, offset],
     );
 
     const count = await this.db.queryOne<{ count: string }>(
@@ -197,6 +227,17 @@ export class ReferralService {
     const w = referredWallet.toLowerCase();
     const reward = (volumeUsdc * BigInt(this.rewardPctBps)) / 10_000n;
 
+    if (tokenAddress) {
+      const visible = await this.db.queryOne<{ visible: boolean }>(
+        `SELECT EXISTS(
+           SELECT 1 FROM tokens t
+           WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 2)}
+         ) AS visible`,
+        [tokenAddress.toLowerCase(), getPublicFactoryAddresses()],
+      );
+      if (!visible?.visible) return { updated: 0, reward: 0n };
+    }
+
     // Only update if this wallet is referred (no-op otherwise).
     const result = await this.db.query(
       `UPDATE referrals
@@ -221,16 +262,25 @@ export class ReferralService {
       total_volume_usdc: string;
       reward_earned_usdc: string;
     }>(
-      `SELECT
-         referrer_wallet,
-         COUNT(*)::text as total_referred,
-         SUM(total_volume_usdc)::text as total_volume_usdc,
-         SUM(reward_earned_usdc)::text as reward_earned_usdc
-       FROM referrals
-       GROUP BY referrer_wallet
-       ORDER BY SUM(total_volume_usdc) DESC
-       LIMIT $1`,
-      [limit],
+      `WITH activity AS (
+         SELECT tr.wallet, tr.usdc_amount::numeric AS volume_usdc
+         FROM trades tr JOIN tokens t ON t.id = tr.token_id
+         WHERE ${publicFactoryClause('t', 1)}
+         UNION ALL
+         SELECT CASE WHEN s.is_buy THEN s.to_address ELSE s.sender END,
+                CASE WHEN s.is_buy THEN s.usdc_in ELSE s.usdc_out END::numeric
+         FROM amm_swaps s JOIN tokens t ON t.id = s.token_id
+         WHERE ${publicFactoryClause('t', 1)}
+       )
+       SELECT r.referrer_wallet,
+              COUNT(DISTINCT r.referred_wallet)::text AS total_referred,
+              COALESCE(SUM(a.volume_usdc), 0)::text AS total_volume_usdc,
+              (COALESCE(SUM(a.volume_usdc), 0) * $2::numeric / 10000)::text AS reward_earned_usdc
+       FROM referrals r JOIN activity a ON a.wallet = r.referred_wallet
+       GROUP BY r.referrer_wallet
+       ORDER BY SUM(a.volume_usdc) DESC
+       LIMIT $3`,
+      [getPublicFactoryAddresses(), this.rewardPctBps, limit],
     );
 
     return rows.map((r) => ({

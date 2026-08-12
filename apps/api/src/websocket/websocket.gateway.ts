@@ -9,6 +9,8 @@ import { OnModuleInit, Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { RedisService } from '../redis/redis.service';
 import { createHash } from 'node:crypto';
+import { DatabaseService } from '../database/database.service';
+import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 /**
  * WebsocketGateway — relays Redis pub/sub events to connected WebSocket clients.
@@ -58,15 +60,23 @@ export class WebsocketGateway implements OnModuleInit {
   @WebSocketServer()
   server: Server;
 
-  constructor(private redis: RedisService) {}
+  constructor(
+    private redis: RedisService,
+    private db: DatabaseService,
+  ) {}
 
   @SubscribeMessage('join')
-  handleJoin(
+  async handleJoin(
     @ConnectedSocket() client: Socket,
     @MessageBody() room: unknown,
   ) {
     if (typeof room !== 'string' || !this.isAllowedRoom(room)) return;
-    void client.join(room.toLowerCase());
+    const normalized = room.toLowerCase();
+    if (normalized.startsWith('token:')) {
+      const visible = await this.isVisibleToken(normalized.slice('token:'.length));
+      if (!visible) return;
+    }
+    await client.join(normalized);
   }
 
   @SubscribeMessage('leave')
@@ -85,22 +95,35 @@ export class WebsocketGateway implements OnModuleInit {
   async onModuleInit() {
     // Subscribe to the global token events channel
     await this.redis.subscribe('token:events', (message: string) => {
-      try {
-        const event = JSON.parse(message);
-        // Relay to the global room
-        this.server.to('tokens:global').emit('token:event', event);
-        // Also relay to the per-token room if tokenAddress is present
-        if (event.tokenAddress) {
-          this.server
-            .to(`token:${event.tokenAddress.toLowerCase()}`)
-            .emit('token:event', event);
-        }
-      } catch (err) {
-        this.logger.error(`Failed to relay event: ${err.message}`);
-      }
+      void this.relayVisibleEvent(message);
     });
 
     this.logger.log('WebSocket gateway subscribed to Redis pub/sub');
+  }
+
+  private async relayVisibleEvent(message: string): Promise<void> {
+    try {
+      const event = JSON.parse(message);
+      if (!event.tokenAddress || !(await this.isVisibleToken(event.tokenAddress))) return;
+      this.server.to('tokens:global').emit('token:event', event);
+      this.server
+        .to(`token:${event.tokenAddress.toLowerCase()}`)
+        .emit('token:event', event);
+    } catch (err) {
+      this.logger.error(`Failed to relay event: ${err.message}`);
+    }
+  }
+
+  private async isVisibleToken(address: string): Promise<boolean> {
+    const row = await this.db.queryOne<{ visible: boolean }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM tokens t
+         WHERE t.contract_address = $1
+           AND ${publicFactoryClause('t', 2)}
+       ) AS visible`,
+      [address.toLowerCase(), getPublicFactoryAddresses()],
+    );
+    return row?.visible ?? false;
   }
 
   /**

@@ -1,4 +1,5 @@
 import { DatabaseService } from '../database/database.service';
+import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 export type WalletTier = 'shrimp' | 'fish' | 'dolphin' | 'whale';
 
@@ -70,14 +71,16 @@ export async function refreshWalletStats(
   const metrics = await db.queryOne<any>(
     `WITH wallet_activity AS (
        SELECT token_id, type, gross_usdc_amount AS usdc_amount, timestamp
-       FROM trades WHERE wallet = $1
+       FROM trades tr JOIN tokens t ON t.id = tr.token_id
+       WHERE tr.wallet = $1 AND ${publicFactoryClause('t', 2)}
        UNION ALL
        SELECT token_id,
               CASE WHEN is_buy THEN 'buy' ELSE 'sell' END,
               CASE WHEN is_buy THEN usdc_in ELSE usdc_out END,
               timestamp
-       FROM amm_swaps
-       WHERE (is_buy AND to_address = $1) OR (NOT is_buy AND sender = $1)
+       FROM amm_swaps s JOIN tokens t ON t.id = s.token_id
+       WHERE ((s.is_buy AND s.to_address = $1) OR (NOT s.is_buy AND s.sender = $1))
+         AND ${publicFactoryClause('t', 2)}
      ), position_metrics AS (
        SELECT
          COALESCE(SUM(ROUND(p.quantity_base_units * t.price * 1000000 / 1000000000000000000)), 0) AS portfolio_value,
@@ -90,7 +93,7 @@ export async function refreshWalletStats(
          MAX(p.last_activity_at) AS last_active_at
        FROM wallet_token_positions p
        JOIN tokens t ON t.id = p.token_id
-       WHERE p.wallet = $1
+       WHERE p.wallet = $1 AND ${publicFactoryClause('t', 2)}
      )
      SELECT
        p.*,
@@ -108,7 +111,7 @@ export async function refreshWalletStats(
      GROUP BY p.portfolio_value, p.realized_pnl, p.unrealized_pnl,
               p.open_positions, p.closed_positions, p.profitable_positions,
               p.first_seen_at, p.last_active_at`,
-    [normalized],
+    [normalized, getPublicFactoryAddresses()],
   );
   if (!metrics) return;
 
@@ -125,9 +128,9 @@ export async function refreshWalletStats(
        unrealized_pnl_usdc, volume_7d_usdc, volume_30d_usdc,
        lifetime_volume_usdc, largest_trade_usdc, buy_count, sell_count,
        distinct_tokens_traded, open_positions, closed_positions,
-       profitable_positions, first_seen_at, last_active_at, calculated_at
+       profitable_positions, first_seen_at, last_active_at, factory_scope, calculated_at
      ) VALUES (
-       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW()
+       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW()
      )
      ON CONFLICT (wallet) DO UPDATE SET
        tier = EXCLUDED.tier,
@@ -146,6 +149,7 @@ export async function refreshWalletStats(
        profitable_positions = EXCLUDED.profitable_positions,
        first_seen_at = EXCLUDED.first_seen_at,
        last_active_at = EXCLUDED.last_active_at,
+       factory_scope = EXCLUDED.factory_scope,
        calculated_at = NOW()`,
     [
       normalized,
@@ -165,6 +169,7 @@ export async function refreshWalletStats(
       Number(metrics.profitable_positions),
       metrics.first_seen_at,
       metrics.last_active_at,
+      getPublicFactoryAddresses().join(','),
     ],
   );
 }

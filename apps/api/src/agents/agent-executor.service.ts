@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { DatabaseService } from '../database/database.service';
+import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 import { AgentsService } from './agents.service';
 
 /**
@@ -248,9 +249,11 @@ export class AgentExecutorService {
   private async pickRecentToken(): Promise<string | null> {
     // Most recent non-graduated token with a bonding curve.
     const row = await this.db.queryOne<{ contract_address: string }>(
-      `SELECT contract_address FROM tokens
-       WHERE status = 'active' AND curve_address IS NOT NULL
+      `SELECT t.contract_address FROM tokens t
+       WHERE t.status = 'active' AND t.curve_address IS NOT NULL
+         AND ${publicFactoryClause('t', 1)}
        ORDER BY created_at DESC LIMIT 1`,
+      [getPublicFactoryAddresses()],
     );
     return row?.contract_address || null;
   }
@@ -258,10 +261,12 @@ export class AgentExecutorService {
   private async pickOwnLaunch(agentId: number): Promise<string | null> {
     // Most recent confirmed launch by this agent.
     const row = await this.db.queryOne<{ token_address: string }>(
-      `SELECT token_address FROM agent_launches
-       WHERE agent_id = $1 AND status = 'confirmed'
+      `SELECT al.token_address FROM agent_launches al
+       JOIN tokens t ON t.contract_address = al.token_address
+       WHERE al.agent_id = $1 AND al.status = 'confirmed'
+         AND ${publicFactoryClause('t', 2)}
        ORDER BY created_at DESC LIMIT 1`,
-      [agentId],
+      [agentId, getPublicFactoryAddresses()],
     );
     return row?.token_address || null;
   }

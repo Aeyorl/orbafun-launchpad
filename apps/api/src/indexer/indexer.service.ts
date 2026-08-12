@@ -3,6 +3,7 @@ import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
 import { updateWalletPosition } from '../users/position-accounting';
 import { refreshWalletStats } from '../users/wallet-intelligence';
+import { getIndexedFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 const CURVE_SUPPLY = 880_000_000n * 10n ** 18n;
 const CURVE_VIRTUAL_USDC = 5_866_666_700n;
@@ -70,6 +71,10 @@ export class IndexerService {
   // ─── TokenCreated ────────────────────────────────────────────────────────
   private async handleTokenCreated(event: TokenCreatedEvent): Promise<void> {
     const factoryAddress = event.factoryAddress?.toLowerCase() || null;
+    if (!factoryAddress || !getIndexedFactoryAddresses().includes(factoryAddress)) {
+      this.logger.warn(`Ignored TokenCreated from untrusted factory ${factoryAddress || 'unknown'}`);
+      return;
+    }
     const uncappedFactories = new Set(
       (process.env.UNCAPPED_TOKEN_FACTORY_ADDRESSES || '')
         .split(',')
@@ -151,13 +156,14 @@ export class IndexerService {
 
     // Publish WebSocket event
     const token = await this.db.queryOne(
-      `SELECT * FROM tokens WHERE contract_address = $1`,
-      [event.token.toLowerCase()],
+      `SELECT * FROM tokens t
+       WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 2)}`,
+      [event.token.toLowerCase(), getIndexedFactoryAddresses()],
     );
     if (token) {
       await this.redis.publishTokenEvent(event.token.toLowerCase(), 'NEW_TOKEN', token);
       // Invalidate cache
-      await this.redis.del('tokens:list:newest:active:20:0:');
+      await this.redis.delPattern('tokens:list:*');
     }
   }
 
@@ -171,9 +177,11 @@ export class IndexerService {
 
       // Find token by curve address
       const tokenResult = await client.query(
-        `SELECT id, contract_address, real_usdc, tokens_sold
-         FROM tokens WHERE curve_address = $1 FOR UPDATE`,
-        [event.curveAddress.toLowerCase()],
+        `SELECT t.id, t.contract_address, t.real_usdc, t.tokens_sold
+         FROM tokens t
+         WHERE curve_address = $1 AND ${publicFactoryClause('t', 2)}
+         FOR UPDATE`,
+        [event.curveAddress.toLowerCase(), getIndexedFactoryAddresses()],
       );
       if (tokenResult.rows.length === 0) {
         this.logger.warn(`Buy: token not found for curve ${event.curveAddress}`);
@@ -361,9 +369,10 @@ export class IndexerService {
       await client.query('BEGIN');
 
       const tokenResult = await client.query(
-        `SELECT id, contract_address FROM tokens
-         WHERE curve_address = $1 FOR UPDATE`,
-        [event.curveAddress.toLowerCase()],
+        `SELECT t.id, t.contract_address FROM tokens t
+         WHERE curve_address = $1 AND ${publicFactoryClause('t', 2)}
+         FOR UPDATE`,
+        [event.curveAddress.toLowerCase(), getIndexedFactoryAddresses()],
       );
       if (tokenResult.rows.length === 0) {
         await client.query('ROLLBACK');
@@ -540,8 +549,9 @@ export class IndexerService {
       await client.query('BEGIN');
 
       const tokenResult = await client.query(
-        `SELECT id FROM tokens WHERE contract_address = $1`,
-        [event.token.toLowerCase()],
+        `SELECT t.id FROM tokens t
+         WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 2)}`,
+        [event.token.toLowerCase(), getIndexedFactoryAddresses()],
       );
       if (tokenResult.rows.length === 0) {
         await client.query('ROLLBACK');
@@ -616,8 +626,11 @@ export class IndexerService {
       );
       await client.query(
         `UPDATE graduations SET lp_burned = $2
-         WHERE token_id = (SELECT id FROM tokens WHERE contract_address = $1)`,
-        [tokenAddr, lpBurned],
+         WHERE token_id = (
+           SELECT t.id FROM tokens t
+           WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 3)}
+         )`,
+        [tokenAddr, lpBurned, getIndexedFactoryAddresses()],
       );
       await client.query('COMMIT');
     } catch (err) {
@@ -662,8 +675,9 @@ export class IndexerService {
 
       // Get the token's contract address.
       const tokenResult2 = await client.query(
-        `SELECT contract_address FROM tokens WHERE id = $1`,
-        [tokenId],
+        `SELECT t.contract_address FROM tokens t
+         WHERE t.id = $1 AND ${publicFactoryClause('t', 2)}`,
+        [tokenId, getIndexedFactoryAddresses()],
       );
       if (tokenResult2.rows.length === 0) {
         this.logger.warn(`AMM Swap: token not found for id ${tokenId}`);
@@ -831,10 +845,10 @@ export class IndexerService {
 
     // Publish WebSocket event (look up token contract address again).
     const tokenAddr2 = await this.db.queryOne<{ contract_address: string }>(
-      `SELECT contract_address FROM tokens WHERE id = (
+      `SELECT t.contract_address FROM tokens t WHERE t.id = (
          SELECT token_id FROM graduations WHERE amm_pair_address = $1
-       )`,
-      [event.ammPairAddress.toLowerCase()],
+       ) AND ${publicFactoryClause('t', 2)}`,
+      [event.ammPairAddress.toLowerCase(), getIndexedFactoryAddresses()],
     );
     if (tokenAddr2) {
       const positionWallet = isBuy
@@ -847,7 +861,8 @@ export class IndexerService {
         { ammPairAddress: event.ammPairAddress.toLowerCase(), sender: event.sender.toLowerCase(), isBuy },
       );
       // Invalidate caches
-      await this.redis.del(`token:${tokenAddr2.contract_address.toLowerCase()}`);
+      await this.redis.delPattern(`token:*:${tokenAddr2.contract_address.toLowerCase()}`);
+      await this.redis.delPattern(`candles:*:${tokenAddr2.contract_address.toLowerCase()}:*`);
       await this.redis.delPattern('tokens:list:*');
       await this.redis.delPattern('leaderboard:*');
     }
@@ -891,13 +906,14 @@ export class IndexerService {
 
   private async invalidateTokenCaches(tokenContractAddress: string): Promise<void> {
     try {
-      await this.redis.del(`token:${tokenContractAddress}`);
+      await this.redis.delPattern(`token:*:${tokenContractAddress}`);
+      await this.redis.delPattern(`candles:*:${tokenContractAddress}:*`);
       // Invalidate token list caches (explore page, all sort/filter combos)
       await this.redis.delPattern('tokens:list:*');
       // Invalidate leaderboard caches
       await this.redis.delPattern('leaderboard:*');
       // Invalidate platform stats
-      await this.redis.del('stats:platform');
+      await this.redis.delPattern('stats:platform:*');
     } catch (err) {
       this.logger.warn(`Cache invalidation failed: ${err.message}`);
     }
@@ -907,13 +923,10 @@ export class IndexerService {
     try {
       await refreshWalletStats(this.db, wallet);
       await Promise.all([
-        this.redis.del(`user:${wallet}`),
-        this.redis.del(`user-holdings:${wallet}`),
-        this.redis.del(`user-stats:${wallet}`),
-        this.redis.del(`user-tier:${wallet}`),
-        this.redis.del(`user-pnl:${wallet}:7d`),
-        this.redis.del(`user-pnl:${wallet}:30d`),
-        this.redis.del(`user-pnl:${wallet}:all`),
+        this.redis.delPattern(`user:*:${wallet}`),
+        this.redis.delPattern(`user-holdings:*:${wallet}`),
+        this.redis.delPattern(`user-stats:*:${wallet}`),
+        this.redis.delPattern(`user-pnl:*:${wallet}:*`),
       ]);
     } catch (err) {
       // Derived intelligence must never make confirmed trade ingestion fail.

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
+import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 @Injectable()
 export class LeaderboardService {
@@ -15,7 +16,8 @@ export class LeaderboardService {
    * GET /leaderboard?type=top_creators|top_gainers&limit=20
    */
   async getLeaderboard(type: string, limit: number): Promise<any> {
-    const cacheKey = `leaderboard:${type}:${limit}`;
+    const publicFactories = getPublicFactoryAddresses();
+    const cacheKey = `leaderboard:${publicFactories.join(',')}:${type}:${limit}`;
     const cached = await this.redis.getJson<any>(cacheKey);
     if (cached) return cached;
 
@@ -26,7 +28,7 @@ export class LeaderboardService {
         `SELECT
            u.wallet,
            u.username,
-           u.tokens_launched,
+           COUNT(DISTINCT t.id)::int AS tokens_launched,
            COALESCE(tv.vol, 0)::text as total_volume_usdc,
            COUNT(DISTINCT t.id) FILTER (WHERE t.status = 'active') as active_tokens,
            COALESCE(SUM(t.market_cap) FILTER (WHERE t.status = 'active'), 0) as total_market_cap
@@ -38,16 +40,18 @@ export class LeaderboardService {
            SELECT t.creator_wallet, (SUM(tr.usdc_amount) / 1000000.0) as vol
            FROM tokens t
            JOIN trades tr ON tr.token_id = t.id
+           WHERE ${publicFactoryClause('t', 1)}
            GROUP BY t.creator_wallet
          ) tv ON tv.creator_wallet = u.wallet
          LEFT JOIN tokens t ON t.creator_wallet = u.wallet
+           AND ${publicFactoryClause('t', 1)}
          LEFT JOIN wallet_stats ws ON ws.wallet = u.wallet
-         WHERE u.tokens_launched > 0 OR t.id IS NOT NULL
-         GROUP BY u.wallet, u.username, u.tokens_launched, tv.vol,
+         WHERE t.id IS NOT NULL
+         GROUP BY u.wallet, u.username, tv.vol,
                   ws.tier, ws.calculated_at
          ORDER BY COALESCE(tv.vol, 0) DESC
-         LIMIT $1`,
-        [limit],
+         LIMIT $2`,
+        [publicFactories, limit],
       );
     } else if (type === 'top_gainers') {
       // Top gainers: tokens with the highest percentage gain in the last 24h.
@@ -87,11 +91,12 @@ export class LeaderboardService {
            LIMIT 1
          ) latest ON true
          WHERE t.status = 'active'
+           AND ${publicFactoryClause('t', 1)}
            AND latest.price IS NOT NULL
            AND earliest.price IS NOT NULL
          ORDER BY gain_pct DESC
-         LIMIT $1`,
-        [limit],
+         LIMIT $2`,
+        [publicFactories, limit],
       );
     } else if (type === 'top_volume') {
       result = await this.db.queryRows(
@@ -106,19 +111,21 @@ export class LeaderboardService {
            volume_24h,
            status,
            created_at
-         FROM tokens
+         FROM tokens t
+         WHERE ${publicFactoryClause('t', 1)}
          ORDER BY volume_24h DESC
-         LIMIT $1`,
-        [limit],
+         LIMIT $2`,
+        [publicFactories, limit],
       );
     } else if (type === 'market_cap' || type === 'new') {
       result = await this.db.queryRows(
         `SELECT contract_address, name, symbol, image, creator_wallet, price,
                 market_cap, volume_24h, status, created_at
-         FROM tokens
+         FROM tokens t
+         WHERE ${publicFactoryClause('t', 1)}
          ORDER BY ${type === 'market_cap' ? 'market_cap DESC' : 'created_at DESC'}
-         LIMIT $1`,
-        [limit],
+         LIMIT $2`,
+        [publicFactories, limit],
       );
     } else {
       result = [];

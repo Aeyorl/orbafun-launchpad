@@ -4,7 +4,7 @@ import { DeployerService } from '../deployer.service';
 const { encodeAbiParameters, keccak256, toBytes } = require('viem');
 
 const TX_HASH = `0x${'ab'.repeat(32)}`;
-const FACTORY = '0x8b59b3c4b7a634d8599e4dfb6891ceefd5ca424b';
+const FACTORY = '0xf09fc443d4f0f217f1b65d112b5fb8928a4ff09e';
 const TOKEN = '0x1111111111111111111111111111111111111111';
 const CURVE = '0x2222222222222222222222222222222222222222';
 const CREATOR = '0x3333333333333333333333333333333333333333';

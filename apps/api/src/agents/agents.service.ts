@@ -5,6 +5,7 @@ import { BroadcastTransactionError, DeployerService, LaunchResult, TradeResult }
 import { MessagesService } from '../messages/messages.service';
 import { TokenMetadataService, TokenMetadataInput } from '../token-metadata/token-metadata.service';
 import { isValidEvmAddress } from '../common/utils';
+import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 import { AlertService, safeAlertError } from '../monitoring/alert.service';
 import { TransactionFinalizerService } from './transaction-finalizer.service';
 
@@ -262,11 +263,11 @@ export class AgentsService {
    */
   async listAgents(limit: number, offset: number, search?: string) {
     const searchClause = search
-      ? `WHERE a.active = true AND (a.name ILIKE $3 OR a.description ILIKE $3)`
+      ? `WHERE a.active = true AND (a.name ILIKE $4 OR a.description ILIKE $4)`
       : `WHERE a.active = true`;
     const params = search
-      ? [limit, offset, `%${search}%`]
-      : [limit, offset];
+      ? [getPublicFactoryAddresses(), limit, offset, `%${search}%`]
+      : [getPublicFactoryAddresses(), limit, offset];
 
     const agents = await this.db.queryRows(
       `SELECT
@@ -281,19 +282,25 @@ export class AgentsService {
        LEFT JOIN (
          SELECT agent_id,
            COUNT(*) AS total_launches,
-           COUNT(*) FILTER (WHERE status = 'confirmed') AS confirmed_launches,
-           SUM(fee_paid + gas_paid / 1000000000000) AS total_spent
-         FROM agent_launches GROUP BY agent_id
+           COUNT(*) FILTER (WHERE al.status = 'confirmed') AS confirmed_launches,
+           SUM(al.fee_paid + al.gas_paid / 1000000000000) AS total_spent
+         FROM agent_launches al
+         JOIN tokens t ON t.contract_address = al.token_address
+           AND ${publicFactoryClause('t', 1)}
+         GROUP BY agent_id
        ) la ON la.agent_id = a.id
        LEFT JOIN (
          SELECT agent_id,
            COUNT(*) AS total_trades,
            SUM(usdc_amount) AS total_volume
-         FROM agent_trades WHERE status = 'confirmed' GROUP BY agent_id
+         FROM agent_trades atr
+         JOIN tokens t ON t.contract_address = atr.token_address
+           AND ${publicFactoryClause('t', 1)}
+         WHERE atr.status = 'confirmed' GROUP BY agent_id
        ) tr ON tr.agent_id = a.id
        ${searchClause}
        ORDER BY COALESCE(la.confirmed_launches, 0) DESC, a.created_at DESC
-       LIMIT $1 OFFSET $2`,
+       LIMIT $2 OFFSET $3`,
       params,
     );
 
@@ -344,15 +351,21 @@ export class AgentsService {
        FROM agents a
        LEFT JOIN (
          SELECT agent_id,
-           COUNT(*) FILTER (WHERE status = 'confirmed') AS confirmed_launches,
-           SUM(fee_paid + gas_paid / 1000000000000) AS total_spent
-         FROM agent_launches GROUP BY agent_id
+           COUNT(*) FILTER (WHERE al.status = 'confirmed') AS confirmed_launches,
+           SUM(al.fee_paid + al.gas_paid / 1000000000000) AS total_spent
+         FROM agent_launches al
+         JOIN tokens t ON t.contract_address = al.token_address
+           AND ${publicFactoryClause('t', 1)}
+         GROUP BY agent_id
        ) la ON la.agent_id = a.id
        LEFT JOIN (
          SELECT agent_id,
            COUNT(*) AS total_trades,
            SUM(usdc_amount) AS total_volume
-         FROM agent_trades WHERE status = 'confirmed' GROUP BY agent_id
+         FROM agent_trades atr
+         JOIN tokens t ON t.contract_address = atr.token_address
+           AND ${publicFactoryClause('t', 1)}
+         WHERE atr.status = 'confirmed' GROUP BY agent_id
        ) tr ON tr.agent_id = a.id
        LEFT JOIN (
          SELECT agent_id, SUM(amount) AS total_tips
@@ -360,8 +373,8 @@ export class AgentsService {
        ) tip ON tip.agent_id = a.id
        WHERE a.active = true
        ORDER BY ${orderBy}
-       LIMIT $1`,
-      [limit],
+       LIMIT $2`,
+      [getPublicFactoryAddresses(), limit],
     );
 
     return { metric, agents };
@@ -394,13 +407,15 @@ export class AgentsService {
       confirmed_launches: string;
       total_spent: string;
     }>(
-      `SELECT
+       `SELECT
          COUNT(*)::text AS total_launches,
-         COUNT(*) FILTER (WHERE status = 'confirmed')::text AS confirmed_launches,
-         COALESCE(SUM(fee_paid + gas_paid / 1000000000000), 0)::text AS total_spent
-       FROM agent_launches
-       WHERE agent_id = (SELECT id FROM agents WHERE agent_id = $1)`,
-      [agentId],
+         COUNT(*) FILTER (WHERE al.status = 'confirmed')::text AS confirmed_launches,
+         COALESCE(SUM(al.fee_paid + al.gas_paid / 1000000000000), 0)::text AS total_spent
+       FROM agent_launches al
+       JOIN tokens t ON t.contract_address = al.token_address
+       WHERE al.agent_id = (SELECT id FROM agents WHERE agent_id = $1)
+         AND ${publicFactoryClause('t', 2)}`,
+      [agentId, getPublicFactoryAddresses()],
     );
 
     return {
@@ -420,18 +435,21 @@ export class AgentsService {
    */
   async getAgentLaunches(agentDbId: number, limit: number, offset: number) {
     const launches = await this.db.queryRows(
-      `SELECT token_address, curve_address, tx_hash, name, symbol, image,
-              description, fee_paid, gas_paid, status, created_at
-       FROM agent_launches
-       WHERE agent_id = $1
-       ORDER BY created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [agentDbId, limit, offset],
+      `SELECT al.token_address, al.curve_address, al.tx_hash, al.name, al.symbol, al.image,
+              al.description, al.fee_paid, al.gas_paid, al.status, al.created_at
+       FROM agent_launches al
+       JOIN tokens t ON t.contract_address = al.token_address
+       WHERE al.agent_id = $1 AND ${publicFactoryClause('t', 2)}
+       ORDER BY al.created_at DESC
+       LIMIT $3 OFFSET $4`,
+      [agentDbId, getPublicFactoryAddresses(), limit, offset],
     );
 
     const countResult = await this.db.queryOne<{ total: string }>(
-      `SELECT COUNT(*)::text AS total FROM agent_launches WHERE agent_id = $1`,
-      [agentDbId],
+      `SELECT COUNT(*)::text AS total
+       FROM agent_launches al JOIN tokens t ON t.contract_address = al.token_address
+       WHERE al.agent_id = $1 AND ${publicFactoryClause('t', 2)}`,
+      [agentDbId, getPublicFactoryAddresses()],
     );
 
     return {
@@ -453,19 +471,20 @@ export class AgentsService {
          t.real_usdc, t.tokens_sold
        FROM agent_launches al
        JOIN agents a ON a.id = al.agent_id
-       LEFT JOIN tokens t ON t.contract_address = al.token_address
-       WHERE a.agent_id = $1
+       JOIN tokens t ON t.contract_address = al.token_address
+       WHERE a.agent_id = $1 AND ${publicFactoryClause('t', 2)}
        ORDER BY al.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [agentId, limit, offset],
+       LIMIT $3 OFFSET $4`,
+      [agentId, getPublicFactoryAddresses(), limit, offset],
     );
 
     const countResult = await this.db.queryOne<{ total: string }>(
       `SELECT COUNT(*)::text AS total
        FROM agent_launches al
        JOIN agents a ON a.id = al.agent_id
-       WHERE a.agent_id = $1`,
-      [agentId],
+       JOIN tokens t ON t.contract_address = al.token_address
+       WHERE a.agent_id = $1 AND ${publicFactoryClause('t', 2)}`,
+      [agentId, getPublicFactoryAddresses()],
     );
 
     return {
@@ -497,7 +516,8 @@ export class AgentsService {
            ) AS payload
          FROM agent_launches al
          JOIN agents a ON a.id = al.agent_id
-         WHERE a.agent_id = $1
+         JOIN tokens visible_token ON visible_token.contract_address = al.token_address
+         WHERE a.agent_id = $1 AND ${publicFactoryClause('visible_token', 2)}
 
          UNION ALL
 
@@ -515,7 +535,8 @@ export class AgentsService {
            ) AS payload
          FROM agent_trades ats
          JOIN agents a ON a.id = ats.agent_id
-         WHERE a.agent_id = $1
+         JOIN tokens visible_token ON visible_token.contract_address = ats.token_address
+         WHERE a.agent_id = $1 AND ${publicFactoryClause('visible_token', 2)}
 
          UNION ALL
 
@@ -534,17 +555,23 @@ export class AgentsService {
          WHERE a.agent_id = $1
        ) AS combined
        ORDER BY created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [agentId, limit, offset],
+       LIMIT $3 OFFSET $4`,
+      [agentId, getPublicFactoryAddresses(), limit, offset],
     );
 
     const countResult = await this.db.queryOne<{ total: string }>(
       `SELECT
-         (SELECT COUNT(*) FROM agent_launches al JOIN agents a ON a.id = al.agent_id WHERE a.agent_id = $1)
-         + (SELECT COUNT(*) FROM agent_trades ats JOIN agents a ON a.id = ats.agent_id WHERE a.agent_id = $1)
+         (SELECT COUNT(*) FROM agent_launches al
+          JOIN agents a ON a.id = al.agent_id
+          JOIN tokens visible_token ON visible_token.contract_address = al.token_address
+          WHERE a.agent_id = $1 AND ${publicFactoryClause('visible_token', 2)})
+         + (SELECT COUNT(*) FROM agent_trades ats
+            JOIN agents a ON a.id = ats.agent_id
+            JOIN tokens visible_token ON visible_token.contract_address = ats.token_address
+            WHERE a.agent_id = $1 AND ${publicFactoryClause('visible_token', 2)})
          + (SELECT COUNT(*) FROM agent_tips t JOIN agents a ON a.id = t.agent_id WHERE a.agent_id = $1)
        AS total`,
-      [agentId],
+      [agentId, getPublicFactoryAddresses()],
     );
 
     return {
@@ -564,9 +591,11 @@ export class AgentsService {
     tokenAddress: string,
   ): Promise<{ curve_address: string } | null> {
     return this.db.queryOne<{ curve_address: string }>(
-      `SELECT curve_address FROM agent_launches
-       WHERE agent_id = $1 AND token_address = $2 AND status = 'confirmed'`,
-      [agentDbId, tokenAddress.toLowerCase()],
+      `SELECT al.curve_address FROM agent_launches al
+       JOIN tokens t ON t.contract_address = al.token_address
+       WHERE al.agent_id = $1 AND al.token_address = $2 AND al.status = 'confirmed'
+         AND ${publicFactoryClause('t', 3)}`,
+      [agentDbId, tokenAddress.toLowerCase(), getPublicFactoryAddresses()],
     );
   }
 
@@ -666,8 +695,9 @@ export class AgentsService {
       this.logger.warn(`Deployer balance check failed: ${(err as Error).message}`);
     }
     const token = await this.db.queryOne<{ curve_address: string }>(
-      `SELECT curve_address FROM tokens WHERE contract_address = $1`,
-      [tokenAddress.toLowerCase()],
+      `SELECT t.curve_address FROM tokens t
+       WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 2)}`,
+      [tokenAddress.toLowerCase(), getPublicFactoryAddresses()],
     );
     if (!token || !token.curve_address) {
       throw new NotFoundException('Token or bonding curve not found');
@@ -749,8 +779,9 @@ export class AgentsService {
 
     // Resolve the curve address.
     const token = await this.db.queryOne<{ curve_address: string }>(
-      `SELECT curve_address FROM tokens WHERE contract_address = $1`,
-      [tokenAddress.toLowerCase()],
+      `SELECT t.curve_address FROM tokens t
+       WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 2)}`,
+      [tokenAddress.toLowerCase(), getPublicFactoryAddresses()],
     );
     if (!token || !token.curve_address) {
       throw new NotFoundException('Token or bonding curve not found');
@@ -830,18 +861,21 @@ export class AgentsService {
    */
   async getAgentTrades(agentDbId: number, limit: number, offset: number) {
     const trades = await this.db.queryRows(
-      `SELECT token_address, curve_address, tx_hash, type,
-              usdc_amount, token_amount, gas_paid, status, created_at
-       FROM agent_trades
-       WHERE agent_id = $1
-       ORDER BY created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [agentDbId, limit, offset],
+      `SELECT atr.token_address, atr.curve_address, atr.tx_hash, atr.type,
+              atr.usdc_amount, atr.token_amount, atr.gas_paid, atr.status, atr.created_at
+       FROM agent_trades atr
+       JOIN tokens t ON t.contract_address = atr.token_address
+       WHERE atr.agent_id = $1 AND ${publicFactoryClause('t', 2)}
+       ORDER BY atr.created_at DESC
+       LIMIT $3 OFFSET $4`,
+      [agentDbId, getPublicFactoryAddresses(), limit, offset],
     );
 
     const countResult = await this.db.queryOne<{ total: string }>(
-      `SELECT COUNT(*)::text AS total FROM agent_trades WHERE agent_id = $1`,
-      [agentDbId],
+      `SELECT COUNT(*)::text AS total FROM agent_trades atr
+       JOIN tokens t ON t.contract_address = atr.token_address
+       WHERE atr.agent_id = $1 AND ${publicFactoryClause('t', 2)}`,
+      [agentDbId, getPublicFactoryAddresses()],
     );
 
     return {

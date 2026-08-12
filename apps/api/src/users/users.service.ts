@@ -3,6 +3,7 @@ import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
 import { TokensService } from '../tokens/tokens.service';
 import { refreshWalletStats } from './wallet-intelligence';
+import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 export interface UserHolding {
   token: Record<string, unknown>;
@@ -47,9 +48,13 @@ export class UsersService {
     private tokensService: TokensService,
   ) {}
 
+  private scopeCacheKey(): string {
+    return getPublicFactoryAddresses().join(',');
+  }
+
   async getUserProfile(wallet: string): Promise<UserProfile | null> {
     const normalized = wallet.toLowerCase();
-    const cacheKey = `user:${normalized}`;
+    const cacheKey = `user:${this.scopeCacheKey()}:${normalized}`;
     const cached = await this.redis.getJson<UserProfile>(cacheKey);
     if (cached) return cached;
 
@@ -65,12 +70,15 @@ export class UsersService {
     });
     const tradeStats = await this.db.queryOne<any>(
       `WITH activity AS (
-         SELECT type, gross_usdc_amount AS usdc_amount FROM trades WHERE wallet = $1
+         SELECT tr.type, tr.gross_usdc_amount AS usdc_amount
+         FROM trades tr JOIN tokens t ON t.id = tr.token_id
+         WHERE tr.wallet = $1 AND ${publicFactoryClause('t', 2)}
          UNION ALL
-         SELECT CASE WHEN is_buy THEN 'buy' ELSE 'sell' END,
-                CASE WHEN is_buy THEN usdc_in ELSE usdc_out END
-         FROM amm_swaps
-         WHERE (is_buy AND to_address = $1) OR (NOT is_buy AND sender = $1)
+         SELECT CASE WHEN s.is_buy THEN 'buy' ELSE 'sell' END,
+                CASE WHEN s.is_buy THEN s.usdc_in ELSE s.usdc_out END
+         FROM amm_swaps s JOIN tokens t ON t.id = s.token_id
+         WHERE ((s.is_buy AND s.to_address = $1) OR (NOT s.is_buy AND s.sender = $1))
+           AND ${publicFactoryClause('t', 2)}
        )
        SELECT
          COUNT(*) AS total_trades,
@@ -78,14 +86,14 @@ export class UsersService {
          COUNT(*) FILTER (WHERE type = 'sell') AS total_sells,
          COALESCE(SUM(usdc_amount), 0) AS total_usdc_volume
        FROM activity`,
-      [normalized],
+      [normalized, getPublicFactoryAddresses()],
     );
 
     const profile: UserProfile = {
       wallet: user.wallet,
       username: user.username,
       avatar: user.avatar,
-      tokens_launched: user.tokens_launched,
+      tokens_launched: launchedTokens.total,
       total_volume_usdc: tradeStats?.total_usdc_volume?.toString() || '0',
       created_at: user.created_at,
       launched_tokens: launchedTokens,
@@ -103,19 +111,20 @@ export class UsersService {
 
   async getWalletStats(wallet: string) {
     const normalized = wallet.toLowerCase();
-    const cacheKey = `user-stats:${normalized}`;
+    const cacheKey = `user-stats:${this.scopeCacheKey()}:${normalized}`;
     const cached = await this.redis.getJson<any>(cacheKey);
     if (cached) return cached;
 
+    const scope = this.scopeCacheKey();
     let stats = await this.db.queryOne<any>(
-      `SELECT * FROM wallet_stats WHERE wallet = $1`,
-      [normalized],
+      `SELECT * FROM wallet_stats WHERE wallet = $1 AND factory_scope = $2`,
+      [normalized, scope],
     );
     if (!stats) {
       await refreshWalletStats(this.db, normalized);
       stats = await this.db.queryOne<any>(
-        `SELECT * FROM wallet_stats WHERE wallet = $1`,
-        [normalized],
+        `SELECT * FROM wallet_stats WHERE wallet = $1 AND factory_scope = $2`,
+        [normalized, scope],
       );
     }
 
@@ -141,7 +150,7 @@ export class UsersService {
 
   async getUserPnl(wallet: string, period: PnlPeriod) {
     const normalized = wallet.toLowerCase();
-    const cacheKey = `user-pnl:${normalized}:${period}`;
+    const cacheKey = `user-pnl:${this.scopeCacheKey()}:${normalized}:${period}`;
     const cached = await this.redis.getJson<any>(cacheKey);
     if (cached) return cached;
 
@@ -162,8 +171,8 @@ export class UsersService {
          MAX(p.updated_at) AS calculated_at
        FROM wallet_token_positions p
        JOIN tokens t ON t.id = p.token_id
-       WHERE p.wallet = $1`,
-      [normalized],
+       WHERE p.wallet = $1 AND ${publicFactoryClause('t', 2)}`,
+      [normalized, getPublicFactoryAddresses()],
     );
 
     let realized = BigInt(allTime?.realized_pnl || '0');
@@ -172,18 +181,20 @@ export class UsersService {
       const interval = period === '7d' ? '7 days' : '30 days';
       const periodResult = await this.db.queryOne<any>(
         `WITH realized_events AS (
-           SELECT realized_pnl_usdc, allocated_cost_usdc, timestamp
-           FROM trades WHERE wallet = $1 AND type = 'sell'
+           SELECT tr.realized_pnl_usdc, tr.allocated_cost_usdc, tr.timestamp
+           FROM trades tr JOIN tokens t ON t.id = tr.token_id
+           WHERE tr.wallet = $1 AND tr.type = 'sell' AND ${publicFactoryClause('t', 3)}
            UNION ALL
-           SELECT realized_pnl_usdc, allocated_cost_usdc, timestamp
-           FROM amm_swaps WHERE sender = $1 AND NOT is_buy
+           SELECT s.realized_pnl_usdc, s.allocated_cost_usdc, s.timestamp
+           FROM amm_swaps s JOIN tokens t ON t.id = s.token_id
+           WHERE s.sender = $1 AND NOT s.is_buy AND ${publicFactoryClause('t', 3)}
          )
          SELECT
            COALESCE(SUM(realized_pnl_usdc), 0) AS realized_pnl,
            COALESCE(SUM(allocated_cost_usdc), 0) AS realized_cost
          FROM realized_events
          WHERE timestamp >= NOW() - $2::interval`,
-        [normalized, interval],
+        [normalized, interval, getPublicFactoryAddresses()],
       );
       realized = BigInt(periodResult?.realized_pnl || '0');
       realizedCost = BigInt(periodResult?.realized_cost || '0');
@@ -256,15 +267,16 @@ export class UsersService {
            ELSE NULL END AS average_entry_price
        FROM wallet_token_positions p
        JOIN tokens t ON t.id = p.token_id
-       WHERE p.wallet = $1 ${statusSql}
+       WHERE p.wallet = $1 AND ${publicFactoryClause('t', 2)} ${statusSql}
        ORDER BY p.last_activity_at DESC
-       LIMIT $2 OFFSET $3`,
-      [normalized, limit, offset],
+       LIMIT $3 OFFSET $4`,
+      [normalized, getPublicFactoryAddresses(), limit, offset],
     );
     const count = await this.db.queryOne<any>(
       `SELECT COUNT(*) AS total FROM wallet_token_positions p
-       WHERE p.wallet = $1 ${statusSql}`,
-      [normalized],
+       JOIN tokens t ON t.id = p.token_id
+       WHERE p.wallet = $1 AND ${publicFactoryClause('t', 2)} ${statusSql}`,
+      [normalized, getPublicFactoryAddresses()],
     );
 
     return {
@@ -288,8 +300,9 @@ export class UsersService {
            ELSE NULL END AS average_entry_price
        FROM wallet_token_positions p
        JOIN tokens t ON t.id = p.token_id
-       WHERE p.wallet = $1 AND t.contract_address = $2`,
-      [wallet.toLowerCase(), tokenAddress.toLowerCase()],
+       WHERE p.wallet = $1 AND t.contract_address = $2
+         AND ${publicFactoryClause('t', 3)}`,
+      [wallet.toLowerCase(), tokenAddress.toLowerCase(), getPublicFactoryAddresses()],
     );
     return row ? serializePosition(row) : null;
   }
@@ -298,7 +311,7 @@ export class UsersService {
     wallet: string,
   ): Promise<{ holdings: UserHolding[]; total_value_usdc: string }> {
     const normalized = wallet.toLowerCase();
-    const cacheKey = `user-holdings:${normalized}`;
+    const cacheKey = `user-holdings:${this.scopeCacheKey()}:${normalized}`;
     const cached = await this.redis.getJson<any>(cacheKey);
     if (cached) return cached;
 

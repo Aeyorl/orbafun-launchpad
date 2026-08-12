@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
+import { getIndexedFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 /**
  * EnvioPollerService — polls Envio HyperIndex's Hasura GraphQL API for
@@ -108,6 +109,7 @@ export class EnvioPollerService implements OnModuleInit {
     if (tokens.length === 0) return;
 
     let maxBlock = lastBlock;
+    const acceptedTokens: any[] = [];
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
@@ -115,7 +117,7 @@ export class EnvioPollerService implements OnModuleInit {
         const block = BigInt(t.createdAtBlock);
         if (block > maxBlock) maxBlock = block;
 
-        await client.query(
+        const result = await client.query(
           `INSERT INTO tokens (
             contract_address, curve_address, creator_wallet,
             name, symbol, image, description,
@@ -123,12 +125,16 @@ export class EnvioPollerService implements OnModuleInit {
             real_usdc, tokens_sold, creator_fees_accrued, protocol_fees_accrued,
             status, amm_pair_address, graduated_at, lp_burned,
             created_block, created_tx_hash, created_at
-          ) VALUES (
+          ) SELECT
             $1, $2, $3, $4, $5, $6, NULL,
             $7, $8, $9,
             $10, $11, $12, $13,
             $14, $15, $16, $17,
             $18, $19, to_timestamp($20)
+          WHERE EXISTS (
+            SELECT 1 FROM tokens existing
+            WHERE existing.contract_address = $1
+              AND ${publicFactoryClause('existing', 21)}
           )
           ON CONFLICT (contract_address) DO UPDATE SET
             price = EXCLUDED.price,
@@ -141,7 +147,8 @@ export class EnvioPollerService implements OnModuleInit {
             status = EXCLUDED.status,
             amm_pair_address = EXCLUDED.amm_pair_address,
             graduated_at = EXCLUDED.graduated_at,
-            lp_burned = EXCLUDED.lp_burned`,
+            lp_burned = EXCLUDED.lp_burned
+          RETURNING id`,
           [
             t.id.toLowerCase(),
             t.curve.toLowerCase(),
@@ -163,8 +170,10 @@ export class EnvioPollerService implements OnModuleInit {
             t.createdAtBlock,
             t.createdAtTx,
             t.createdAt,
+            getIndexedFactoryAddresses(),
           ],
         );
+        if (result.rowCount === 1) acceptedTokens.push(t);
       }
       await this.setSyncBlock('Token', maxBlock);
       await client.query('COMMIT');
@@ -176,14 +185,14 @@ export class EnvioPollerService implements OnModuleInit {
     }
 
     // Publish WebSocket events for new tokens
-    for (const t of tokens) {
+    for (const t of acceptedTokens) {
       await this.redis.publishTokenEvent(t.id.toLowerCase(), 'NEW_TOKEN', t);
     }
     // Invalidate token list cache
-    await this.redis.delPattern('tokens:list:*');
+    if (acceptedTokens.length > 0) await this.redis.delPattern('tokens:list:*');
 
-    if (tokens.length > 0) {
-      this.logger.log(`Synced ${tokens.length} tokens (block ${lastBlock} → ${maxBlock})`);
+    if (acceptedTokens.length > 0) {
+      this.logger.log(`Synced ${acceptedTokens.length} tokens (block ${lastBlock} → ${maxBlock})`);
     }
   }
 
@@ -205,6 +214,7 @@ export class EnvioPollerService implements OnModuleInit {
     if (trades.length === 0) return;
 
     let maxBlock = lastBlock;
+    const acceptedTrades: any[] = [];
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
@@ -217,8 +227,9 @@ export class EnvioPollerService implements OnModuleInit {
 
         // Find our token id
         const tokenResult = await client.query(
-          `SELECT id FROM tokens WHERE contract_address = $1`,
-          [tokenAddress],
+          `SELECT t.id FROM tokens t
+           WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 2)}`,
+          [tokenAddress, getIndexedFactoryAddresses()],
         );
         if (tokenResult.rows.length === 0) {
           this.logger.warn(`Trade sync: token ${tokenAddress} not found in DB, skipping`);
@@ -254,6 +265,7 @@ export class EnvioPollerService implements OnModuleInit {
             tr.timestamp,
           ],
         );
+        acceptedTrades.push(tr);
 
         // Update token aggregate state from the trade's "after" fields.
         // The Envio Token entity is updated by the Buy/Sell handlers, but
@@ -287,7 +299,7 @@ export class EnvioPollerService implements OnModuleInit {
     }
 
     // Publish WebSocket events for new trades
-    for (const tr of trades) {
+    for (const tr of acceptedTrades) {
       const tokenAddress = tr.token?.id?.toLowerCase();
       if (tokenAddress) {
         const eventType = tr.type === 'buy' ? 'NEW_BUY' : 'NEW_SELL';
@@ -316,6 +328,7 @@ export class EnvioPollerService implements OnModuleInit {
     if (graduations.length === 0) return;
 
     let maxBlock = lastBlock;
+    const acceptedGraduations: any[] = [];
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
@@ -327,8 +340,9 @@ export class EnvioPollerService implements OnModuleInit {
         if (!tokenAddress) continue;
 
         const tokenResult = await client.query(
-          `SELECT id FROM tokens WHERE contract_address = $1`,
-          [tokenAddress],
+          `SELECT t.id FROM tokens t
+           WHERE t.contract_address = $1 AND ${publicFactoryClause('t', 2)}`,
+          [tokenAddress, getIndexedFactoryAddresses()],
         );
         if (tokenResult.rows.length === 0) continue;
         const tokenId = tokenResult.rows[0].id;
@@ -350,6 +364,7 @@ export class EnvioPollerService implements OnModuleInit {
             g.timestamp,
           ],
         );
+        acceptedGraduations.push(g);
       }
       await this.setSyncBlock('Graduation', maxBlock);
       await client.query('COMMIT');
@@ -360,7 +375,7 @@ export class EnvioPollerService implements OnModuleInit {
       client.release();
     }
 
-    for (const g of graduations) {
+    for (const g of acceptedGraduations) {
       const tokenAddress = g.token?.id?.toLowerCase();
       if (tokenAddress) {
         await this.redis.publishTokenEvent(tokenAddress, 'TOKEN_GRADUATED', g);
