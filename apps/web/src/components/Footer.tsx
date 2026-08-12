@@ -10,7 +10,6 @@ export function Footer() {
       <div className="mx-auto max-w-[1440px] px-4 lg:px-6">
         <div className="mb-8 flex items-center justify-between border-b border-bg-border pb-4 font-mono text-[9px] tracking-[0.18em] text-text-muted">
           <span>ORBA / DAYBREAK BAZAAR</span>
-          <span className="flex items-center gap-2 text-accent-green"><i className="h-1.5 w-1.5 rounded-full bg-accent-green" /> MARKET OPEN</span>
         </div>
         <div className="grid grid-cols-2 gap-8 text-sm md:grid-cols-4">
           {/* Brand */}
