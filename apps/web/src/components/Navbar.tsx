@@ -1,6 +1,6 @@
 'use client';
 
-import { List, MagnifyingGlass, Wallet, X } from '@phosphor-icons/react';
+import { List, MagnifyingGlass, UserCircle, Wallet, X } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -92,10 +92,17 @@ export function Navbar() {
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          <span className="hidden items-center gap-2 font-mono text-[9px] tracking-[0.14em] text-text-muted lg:flex">
-            <i className="h-1.5 w-1.5 rounded-full bg-accent-green shadow-[0_0_10px_rgba(200,255,90,0.7)]" />
-            ARC TESTNET
-          </span>
+          {mounted && isConnected && address && (
+            <Link
+              href={`/profile/${address}`}
+              className={`tab hidden items-center gap-1.5 lg:inline-flex ${
+                isActive('/profile') ? 'tab-active' : ''
+              }`}
+            >
+              <UserCircle size={17} aria-hidden="true" />
+              Profile
+            </Link>
+          )}
           <button
             onClick={() => {
               setMobileSearchOpen((value) => !value);
@@ -137,7 +144,7 @@ export function Navbar() {
               setMenuOpen((value) => !value);
               setMobileSearchOpen(false);
             }}
-            className="icon-button"
+            className="icon-button xl:hidden"
             aria-label="Navigation menu"
             aria-expanded={menuOpen}
             aria-controls="primary-menu"
@@ -154,7 +161,7 @@ export function Navbar() {
       )}
 
       {menuOpen && (
-        <div id="primary-menu" className="border-t border-bg-border bg-bg-base/95 px-4 py-3 backdrop-blur-xl">
+        <div id="primary-menu" className="border-t border-bg-border bg-bg-base/95 px-4 py-3 backdrop-blur-xl xl:hidden">
           <div className="mx-auto grid max-w-[1440px] grid-cols-2 gap-1 sm:grid-cols-4 lg:grid-cols-7">
             {menuLinks.map((item) => (
               <Link
