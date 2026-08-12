@@ -92,6 +92,11 @@ export const config = createConfig({
   },
 });
 
+function requiredAddress(value: string | undefined, name: string) {
+  if (!value) throw new Error(`Orba requires ${name}`);
+  return value as `0x${string}`;
+}
+
 function requiredMainnetAddress(value: string | undefined, fallbackAddress: string, name: string) {
   if (value) return value as `0x${string}`;
   if (IS_ARC_MAINNET) throw new Error(`Arc mainnet requires ${name}`);
@@ -101,10 +106,10 @@ function requiredMainnetAddress(value: string | undefined, fallbackAddress: stri
 // Contract addresses from env. Mainnet deliberately has no fallbacks.
 export const CONTRACTS = {
   USDC: requiredMainnetAddress(process.env.NEXT_PUBLIC_ARC_USDC_ADDRESS, '0x3600000000000000000000000000000000000000', 'NEXT_PUBLIC_ARC_USDC_ADDRESS'),
-  TOKEN_FACTORY: requiredMainnetAddress(process.env.NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS, '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b', 'NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS'),
-  TREASURY: requiredMainnetAddress(process.env.NEXT_PUBLIC_TREASURY_ADDRESS, '0x2cAc61423fe5d7e74e5f3504901478F52a71156D', 'NEXT_PUBLIC_TREASURY_ADDRESS'),
-  MIGRATOR: requiredMainnetAddress(process.env.NEXT_PUBLIC_MIGRATOR_ADDRESS, '0x34d4eC02a916164F178885B7ed05127D40847212', 'NEXT_PUBLIC_MIGRATOR_ADDRESS'),
-  AMM_FACTORY: requiredMainnetAddress(process.env.NEXT_PUBLIC_AMM_FACTORY_ADDRESS, '0x4058646F179a4f5dF430E8e125b8F30fF3489BF9', 'NEXT_PUBLIC_AMM_FACTORY_ADDRESS'),
+  TOKEN_FACTORY: requiredAddress(process.env.NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS, 'NEXT_PUBLIC_TOKEN_FACTORY_ADDRESS'),
+  TREASURY: requiredAddress(process.env.NEXT_PUBLIC_TREASURY_ADDRESS, 'NEXT_PUBLIC_TREASURY_ADDRESS'),
+  MIGRATOR: requiredAddress(process.env.NEXT_PUBLIC_MIGRATOR_ADDRESS, 'NEXT_PUBLIC_MIGRATOR_ADDRESS'),
+  AMM_FACTORY: requiredAddress(process.env.NEXT_PUBLIC_AMM_FACTORY_ADDRESS, 'NEXT_PUBLIC_AMM_FACTORY_ADDRESS'),
 } as const;
 
 // API URLs

@@ -64,10 +64,14 @@ incorrect. The cutover configuration is:
 ARC_TOKEN_FACTORY_ADDRESS=0xF09FC443D4f0F217F1B65d112b5fB8928a4ff09E
 TOKEN_FACTORY_ADDRESSES=0xF09FC443D4f0F217F1B65d112b5fB8928a4ff09E
 PUBLIC_TOKEN_FACTORY_ADDRESSES=0xF09FC443D4f0F217F1B65d112b5fB8928a4ff09E
-ARC_POLLER_REPLAY_FROM_BLOCK=56014339
 UNCAPPED_TOKEN_FACTORY_ADDRESSES=
-AGENT_DEPLOYER_ACTIONS_ENABLED=false
+DEPLOYER_ACTIONS_ENABLED=false
 ```
+
+Replay evidence (2026-08-12): the poller replayed from block `56014339`,
+persisted checkpoint `56629282` while the observed RPC head was `56629325`,
+and resumed its normal five-second head-following loop. The temporary
+`ARC_POLLER_REPLAY_FROM_BLOCK` override was then removed.
 
 The public factory scope is an application visibility boundary. Legacy rows
 remain in PostgreSQL for audit and rollback, but public queries, direct token
@@ -87,8 +91,8 @@ tokens created by the hardened factory.
    approve a bounded USDC allowance. Never use an unlimited allowance.
 6. With separate transaction approval, run one capped-factory canary and verify
    treasury fee receipt, indexing, buy/sell, 4% wallet cap and stack isolation.
-7. Cut the frontend to the hardened addresses, smoke-test, then remove
-   `ARC_POLLER_REPLAY_FROM_BLOCK` after confirmed catch-up.
+7. Cut the frontend to the hardened addresses and smoke-test after removing
+   the temporary replay override.
 
 Rollback restores the previous application deployment and visibility settings.
 It does not delete database evidence or modify either on-chain stack.
