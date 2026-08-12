@@ -66,7 +66,6 @@ export function Navbar() {
           <img src="/orba-wordmark-bloom.svg" alt="Orba" className="h-9 w-auto dark:hidden" />
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/orba-wordmark-bloom-dark.svg" alt="Orba" className="hidden h-9 w-auto dark:block" />
-          <span className="hidden font-mono text-[8px] font-bold tracking-[0.16em] text-text-muted sm:inline">DAYBREAK / 02</span>
         </Link>
 
         <div className="hidden min-w-0 flex-1 sm:block xl:max-w-[280px] 2xl:max-w-md">

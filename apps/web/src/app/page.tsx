@@ -6,7 +6,6 @@ import Link from 'next/link';
 import { api, Token, SortOption } from '@/lib/api';
 import { TokenGrid } from '@/components/TokenGrid';
 import { AgentBadge } from '@/components/AgentBadge';
-import { LiveActivityRail } from '@/components/LiveActivityRail';
 import { useTokenEvents } from '@/lib/useWebSocket';
 import { formatUsdDirect, formatMarketCap, tokenEmoji, ipfsToGateway } from '@/lib/utils';
 import { ArrowRight, ArrowUpRight, Robot, Sparkle, UsersThree } from '@phosphor-icons/react';
@@ -186,8 +185,6 @@ export default function LandingPage() {
           </div>
         )}
       </section>
-
-      <LiveActivityRail />
 
       {/* AI Agent Tokens */}
       {agentTokensData && agentTokensData.tokens.length > 0 && (
