@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { api, Holder } from '@/lib/api';
-import { formatTokens, shortenAddress } from '@/lib/utils';
+import { formatTokens, shortenAddress, timeAgo } from '@/lib/utils';
 import { ARC_EXPLORER_URL } from '@/lib/config';
 import { WalletBadge } from '@/components/WalletBadge';
 import { Waves } from '@phosphor-icons/react';
@@ -51,7 +51,12 @@ export function HoldersPanel({ tokenAddress, currentPrice }: { tokenAddress: str
 
   // Filter based on tab
   const whales = holders.filter((h) => Number(h.percentage) > 5);
-  const displayed = tab === 'whales' ? whales : holders;
+  const displayed = tab === 'whales'
+    ? whales
+    : tab === 'recent'
+      ? [...holders].sort((a, b) => new Date(b.last_activity_at).getTime() - new Date(a.last_activity_at).getTime())
+      : holders;
+  const topTenConcentration = holders.slice(0, 10).reduce((sum, holder) => sum + Number(holder.percentage), 0);
 
   return (
     <div className="card">
@@ -70,7 +75,15 @@ export function HoldersPanel({ tokenAddress, currentPrice }: { tokenAddress: str
           active={tab === 'whales'}
           onClick={() => setTab('whales')}
         />
+        <TabButton label="Recent" active={tab === 'recent'} onClick={() => setTab('recent')} />
       </div>
+
+      {holders.length > 0 && (
+        <div className="mb-3 flex items-center justify-between rounded-lg bg-bg-input/60 px-3 py-2 text-xs">
+          <span className="text-text-muted">Top 10 concentration</span>
+          <span className="font-semibold tabular-nums">{topTenConcentration.toFixed(2)}%</span>
+        </div>
+      )}
 
       {/* Distribution bar */}
       {holders.length > 0 && (
@@ -126,20 +139,25 @@ function HolderRow({
   const pct = Number(holder.percentage);
   const isWhale = pct > 5;
   // Estimate USD value: balance is in 18-dec token units, price is USDC per token
-  const balance = Number(holder.balance);
+  const balance = Number(holder.balance) / 1e18;
   const usdValue = currentPrice && balance > 0 ? balance * currentPrice : null;
 
   return (
     <div className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-bg-hover transition-colors text-sm group">
       <div className="flex items-center gap-2 min-w-0">
         <span className="text-text-muted text-xs w-5 tabular-nums">{rank}</span>
-        <Link
-          href={`/profile/${holder.wallet}`}
-          className="font-mono text-text-secondary text-xs truncate hover:text-accent-blue hover:underline transition-colors"
-          title={holder.wallet}
-        >
-          {shortenAddress(holder.wallet)}
-        </Link>
+        <div className="min-w-0">
+          <Link
+            href={`/profile/${holder.wallet}`}
+            className="block font-mono text-text-secondary text-xs truncate hover:text-accent-blue hover:underline transition-colors"
+            title={holder.wallet}
+          >
+            {shortenAddress(holder.wallet)}
+          </Link>
+          <span className="block text-[10px] text-text-muted">
+            {timeAgo(holder.last_activity_at)} · {holder.buy_count} buys / {holder.sell_count} sells
+          </span>
+        </div>
         {holder.wallet_tier && holder.wallet_tier_label && holder.wallet_tier_calculated_at && (
           <WalletBadge tier={{
             key: holder.wallet_tier,

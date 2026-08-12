@@ -4,7 +4,8 @@ import { RedisService } from '../redis/redis.service';
 
 /**
  * OHLCV candle data for the trading terminal chart.
- * Aggregated server-side from the `trades` table.
+ * Aggregated server-side from bonding-curve trades and AMM swaps. Graduation
+ * is a liquidity handoff, not a chart boundary.
  */
 export interface OhlcvCandle {
   timestamp: number;   // UTC Unix seconds (bucket start)
@@ -87,16 +88,26 @@ export class CandlesService {
 
     const bucketSeconds = TIMEFRAME_SECONDS[timeframe] || TIMEFRAME_SECONDS['5m'];
     const windowSeconds = TIMEFRAME_WINDOW[timeframe] || TIMEFRAME_WINDOW['5m'];
-    const valueColumn = mode === 'price' ? 'tr.price' : 'tr.market_cap_after';
+    const valueColumn = mode === 'price' ? 'activity.price' : 'activity.market_cap';
 
     // 1. Check if token has any executed trades in the database
     const countRes = await this.db.query(
       `SELECT
          COUNT(*)::text AS count,
-         MIN(tr.timestamp)::text AS min_ts,
-         (array_agg(${valueColumn}::numeric ORDER BY tr.timestamp ASC, tr.log_index ASC))[1]::text AS first_val
-       FROM trades tr
-       JOIN tokens t ON tr.token_id = t.id
+         MIN(activity.timestamp)::text AS min_ts,
+         (array_agg(${valueColumn}::numeric ORDER BY activity.timestamp ASC, activity.log_index ASC))[1]::text AS first_val,
+         (array_agg(${valueColumn}::numeric ORDER BY activity.timestamp DESC, activity.log_index DESC))[1]::text AS last_val
+       FROM (
+         SELECT tr.token_id, tr.timestamp, tr.log_index, tr.price,
+                tr.market_cap_after AS market_cap, tr.usdc_amount AS volume_raw
+         FROM trades tr
+         UNION ALL
+         SELECT s.token_id, s.timestamp, s.log_index, s.price_after AS price,
+                (s.price_after * 1000000000)::numeric AS market_cap,
+                CASE WHEN s.is_buy THEN s.usdc_in ELSE s.usdc_out END AS volume_raw
+         FROM amm_swaps s
+       ) activity
+       JOIN tokens t ON activity.token_id = t.id
        WHERE t.contract_address = $1`,
       [normalized],
     );
@@ -109,8 +120,8 @@ export class CandlesService {
       return [];
     }
 
-    const firstTradeTs = Math.floor(new Date(countRes.rows[0].min_ts).getTime() / 1000);
     const initialVal = Number(countRes.rows[0].first_val || '0');
+    const lastVal = Number(countRes.rows[0].last_val || initialVal);
 
     // 2. Query sparse buckets from DB using Postgres epoch aggregation in UTC
     const query = `
@@ -119,15 +130,24 @@ export class CandlesService {
       ),
       trade_buckets AS (
         SELECT
-          (EXTRACT(EPOCH FROM tr.timestamp)::bigint / $2) * $2 AS bucket,
-          (array_agg(${valueColumn}::numeric ORDER BY tr.timestamp ASC, tr.log_index ASC))[1] AS open_val,
+          (EXTRACT(EPOCH FROM activity.timestamp)::bigint / $2) * $2 AS bucket,
+          (array_agg(${valueColumn}::numeric ORDER BY activity.timestamp ASC, activity.log_index ASC))[1] AS open_val,
           MAX(${valueColumn}::numeric) AS high_val,
           MIN(${valueColumn}::numeric) AS low_val,
-          (array_agg(${valueColumn}::numeric ORDER BY tr.timestamp DESC, tr.log_index DESC))[1] AS close_val,
-          SUM(tr.usdc_amount::numeric) AS volume_raw
-        FROM trades tr
-        JOIN token_info ti ON tr.token_id = ti.id
-        WHERE tr.timestamp >= NOW() - INTERVAL '${windowSeconds} seconds'
+          (array_agg(${valueColumn}::numeric ORDER BY activity.timestamp DESC, activity.log_index DESC))[1] AS close_val,
+          SUM(activity.volume_raw::numeric) AS volume_raw
+        FROM (
+          SELECT tr.token_id, tr.timestamp, tr.log_index, tr.price,
+                 tr.market_cap_after AS market_cap, tr.usdc_amount AS volume_raw
+          FROM trades tr
+          UNION ALL
+          SELECT s.token_id, s.timestamp, s.log_index, s.price_after AS price,
+                 (s.price_after * 1000000000)::numeric AS market_cap,
+                 CASE WHEN s.is_buy THEN s.usdc_in ELSE s.usdc_out END AS volume_raw
+          FROM amm_swaps s
+        ) activity
+        JOIN token_info ti ON activity.token_id = ti.id
+        WHERE activity.timestamp >= NOW() - INTERVAL '${windowSeconds} seconds'
         GROUP BY bucket
       )
       SELECT
@@ -154,8 +174,17 @@ export class CandlesService {
       }));
 
       if (sparse.length === 0) {
-        await this.redis.setJson(cacheKey, [], 5);
-        return [];
+        const timestamp = Math.floor(Date.now() / 1000 / bucketSeconds) * bucketSeconds;
+        const retained = [{
+          timestamp,
+          open: lastVal,
+          high: lastVal,
+          low: lastVal,
+          close: lastVal,
+          volume: 0,
+        }];
+        await this.redis.setJson(cacheKey, retained, 5);
+        return retained;
       }
 
       // 3. Gap filling from earliest trade bucket to current in-progress bucket (UTC)

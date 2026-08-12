@@ -12,12 +12,13 @@ import { useCandles } from '@/hooks/useCandles';
 import { TokenHeader } from '@/components/trading/TokenHeader';
 import { AdvancedTradingChart } from '@/components/trading/AdvancedTradingChart';
 import { TradeTerminal } from '@/components/trading/TradeTerminal';
+import { MarketFlowCard } from '@/components/trading/MarketFlowCard';
+import { CompactTradeTape } from '@/components/trading/CompactTradeTape';
+import { RelatedMarkets } from '@/components/trading/RelatedMarkets';
 
 import { TradeHistory } from '@/components/TradeHistory';
 import { HoldersPanel } from '@/components/HoldersPanel';
 import { TokenChat } from '@/components/TokenChat';
-import { FavoriteButton } from '@/components/FavoriteButton';
-import { ShareButton } from '@/components/ShareButton';
 import { SocialLinks } from '@/components/SocialLinks';
 import {
   formatUsdc,
@@ -51,7 +52,7 @@ export default function TradePage() {
   } = useTokenStats(address);
 
   // Load OHLCV candles with live websocket updates
-  const { candles, isConnected, connectionStatus, isLoading: isCandlesLoading } = useCandles(
+  const { candles, isConnected, connectionStatus, latestMove, isLoading: isCandlesLoading } = useCandles(
     address,
     timeframe,
     metricMode
@@ -157,30 +158,37 @@ export default function TradePage() {
         token={token}
         change24h={change24h}
         totalHolders={totalHolders}
-        onSelectInfoTab={() => setActiveTab('info')}
       />
 
-      {/* Main Terminal Section: Chart (~70%) + Buy/Sell (~30%) */}
+      {/* Main Terminal Section: chart + first-viewport tape + execution rail */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
-        {/* Chart Column */}
-        <div className="lg:col-span-8 space-y-3">
-          <AdvancedTradingChart
-            candles={candles}
-            tokenAddress={address}
-            tokenName={token.name}
-            tokenSymbol={token.symbol}
-            timeframe={timeframe}
-            isConnected={isConnected}
-            connectionStatus={connectionStatus}
-            onTimeframeChange={setTimeframe}
-            metricMode={metricMode}
-            onMetricModeChange={setMetricMode}
-          />
+        <div className="lg:col-span-8 xl:col-span-9">
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-9">
+            <div className="xl:col-span-7">
+              <AdvancedTradingChart
+                candles={candles}
+                tokenAddress={address}
+                tokenName={token.name}
+                tokenSymbol={token.symbol}
+                timeframe={timeframe}
+                isConnected={isConnected}
+                connectionStatus={connectionStatus}
+                onTimeframeChange={setTimeframe}
+                metricMode={metricMode}
+                onMetricModeChange={setMetricMode}
+                latestMove={latestMove}
+              />
+            </div>
+            <div className="xl:col-span-2">
+              <CompactTradeTape trades={trades} symbol={token.symbol} />
+            </div>
+          </div>
         </div>
 
-        {/* Trade Terminal Column + Bonding Curve Progress */}
-        <div id="trading-terminal-panel" className="lg:col-span-4 space-y-3 scroll-mt-20">
+        {/* Execution, flow, and lifecycle rail */}
+        <div id="trading-terminal-panel" className="lg:col-span-4 xl:col-span-3 space-y-3 scroll-mt-20">
           <TradeTerminal token={token} />
+          <MarketFlowCard tokenAddress={address} />
 
           {/* Dedicated Bonding Curve Progress Card */}
           <div className="card space-y-2.5">
@@ -288,6 +296,8 @@ export default function TradePage() {
           <TokenChat tokenAddress={address} />
         )}
       </div>
+
+      <RelatedMarkets token={token} />
 
       {/* Sticky Mobile Trade Action Bar */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-bg-base/95 backdrop-blur-md border-t border-bg-border p-3 flex gap-2.5 shadow-subtle-3">

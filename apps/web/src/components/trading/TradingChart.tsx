@@ -5,6 +5,8 @@ import { OhlcvCandle, CandleTimeframe } from '@/lib/api';
 import { formatMarketCap, formatPrice } from '@/lib/utils';
 import { ChartToolbar, ChartType, MetricMode, ScaleType } from './ChartToolbar';
 import { ConnectionStatus } from '@/lib/useWebSocket';
+import type { LiveMarketMove } from '@/hooks/useCandles';
+import { LiveMovementEvidence } from './LiveMovementEvidence';
 
 // Dynamic imports for lightweight-charts (client-side only)
 let createChart: any;
@@ -36,6 +38,7 @@ export const TradingChart = memo(function TradingChart({
   onTimeframeChange,
   metricMode: externalMode,
   onMetricModeChange: externalModeChange,
+  latestMove,
 }: {
   candles: OhlcvCandle[];
   tokenSymbol?: string;
@@ -45,6 +48,7 @@ export const TradingChart = memo(function TradingChart({
   onTimeframeChange: (tf: CandleTimeframe) => void;
   metricMode?: MetricMode;
   onMetricModeChange?: (mode: MetricMode) => void;
+  latestMove?: LiveMarketMove | null;
 }) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<any>(null);
@@ -358,6 +362,10 @@ export const TradingChart = memo(function TradingChart({
         onFullscreen={handleFullscreen}
         onResetChart={handleReset}
       />
+
+      <div className="flex h-7 items-center border-b border-[#1e2a44] bg-[#0a0e1a] px-3">
+        <LiveMovementEvidence key={latestMove?.id || 'waiting'} move={latestMove} metricMode={metricMode} />
+      </div>
 
       {/* Chart canvas */}
       <div className="relative flex-1 min-h-0">

@@ -5,6 +5,8 @@ import { api, CandleTimeframe, OhlcvCandle } from '@/lib/api';
 import { MetricMode } from './ChartToolbar';
 import { TradingChart } from './TradingChart';
 import { ConnectionStatus } from '@/lib/useWebSocket';
+import type { LiveMarketMove } from '@/hooks/useCandles';
+import { LiveMovementEvidence } from './LiveMovementEvidence';
 
 const LIBRARY_PATH = '/vendor/tradingview/charting_library/';
 const LIBRARY_SCRIPT = `${LIBRARY_PATH}charting_library.standalone.js`;
@@ -264,6 +266,7 @@ type AdvancedChartProps = {
   onTimeframeChange: (timeframe: CandleTimeframe) => void;
   metricMode: MetricMode;
   onMetricModeChange: (mode: MetricMode) => void;
+  latestMove?: LiveMarketMove | null;
 };
 
 function LicensedAdvancedChart({
@@ -277,6 +280,7 @@ function LicensedAdvancedChart({
   onTimeframeChange,
   metricMode,
   onMetricModeChange,
+  latestMove,
 }: AdvancedChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<TvWidget | null>(null);
@@ -402,6 +406,7 @@ function LicensedAdvancedChart({
           <span className={`h-2 w-2 ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
           <span>{isConnected ? 'Live' : connectionStatus === 'reconnecting' ? 'Reconnecting' : 'Connecting'}</span>
           <span className="text-[#4f5d75]">TradingView Advanced Charts</span>
+          <LiveMovementEvidence key={latestMove?.id || 'waiting'} move={latestMove} metricMode={metricMode} />
         </div>
         <div className="flex items-center border border-[#1e2a44]">
           {(['price', 'mcap'] as const).map((mode) => (
@@ -456,6 +461,7 @@ export const AdvancedTradingChart = memo(function AdvancedTradingChart(props: Ad
         onTimeframeChange={props.onTimeframeChange}
         metricMode={props.metricMode}
         onMetricModeChange={handleMetricModeChange}
+        latestMove={props.latestMove}
       />
     );
   }

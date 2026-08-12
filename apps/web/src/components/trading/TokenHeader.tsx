@@ -4,10 +4,10 @@ import { memo, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { Token } from '@/lib/api';
-import { ARC_EXPLORER_URL } from '@/lib/config';
 import { FavoriteButton } from '@/components/FavoriteButton';
 import { AgentBadge } from '@/components/AgentBadge';
-import { Copy, Flag, LinkSimple } from '@phosphor-icons/react';
+import { TokenArtwork } from '@/components/TokenArtwork';
+import { Copy } from '@phosphor-icons/react';
 import {
   formatMarketCap,
   formatPrice,
@@ -15,25 +15,19 @@ import {
   formatUsdDirect,
   shortenAddress,
   bondingCurveProgress,
-  tokenEmoji,
-  ipfsToGateway,
 } from '@/lib/utils';
 
 interface TokenHeaderProps {
   token: Token;
   change24h: { diff: number; pct: number; isPositive: boolean };
   totalHolders: number;
-  onSelectInfoTab?: () => void;
 }
 
 export const TokenHeader = memo(function TokenHeader({
   token,
   change24h,
   totalHolders,
-  onSelectInfoTab,
 }: TokenHeaderProps) {
-  const [shareOpen, setShareOpen] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
   const [copiedCa, setCopiedCa] = useState(false);
   const [isSticky, setIsSticky] = useState(false);
 
@@ -90,32 +84,6 @@ export const TokenHeader = memo(function TokenHeader({
     }
   };
 
-  const handleShare = async () => {
-    const url = typeof window !== 'undefined' ? window.location.href : '';
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `${token.name} ($${token.symbol}) — Orba`,
-          text: `Check out $${token.symbol} on Orba launchpad!`,
-          url,
-        });
-      } catch {
-        // User cancelled
-      }
-    } else {
-      try {
-        await navigator.clipboard.writeText(url);
-        toast.success('Token link copied to clipboard!');
-      } catch {
-        toast.error('Failed to copy link');
-      }
-    }
-  };
-
-  const shareUrl = typeof window !== 'undefined' ? window.location.href : '';
-  const tweetText = `Check out $${token.symbol} on Orba — ${shareUrl}`;
-  const tweetUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(tweetText)}`;
-
   const scrollToTradeTerminal = () => {
     const el = document.getElementById('trading-terminal-panel');
     el?.scrollIntoView({ behavior: 'smooth' });
@@ -134,21 +102,7 @@ export const TokenHeader = memo(function TokenHeader({
           <div className="flex items-center justify-between gap-4">
             {/* Token Identity */}
             <div className="flex items-center gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-bg-base border border-bg-border flex items-center justify-center text-xl overflow-hidden flex-shrink-0 shadow-sm">
-                {token.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={ipfsToGateway(token.image)}
-                    alt={token.name}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
-                ) : (
-                  tokenEmoji(token.symbol)
-                )}
-              </div>
+              <TokenArtwork src={token.image} alt={token.name} className="w-12 h-12 rounded-2xl flex-shrink-0 shadow-sm" />
               <div className="space-y-0.5">
                 <div className="flex items-center gap-2">
                   <h1 className="font-bold text-lg text-text-primary tracking-tight leading-none">
@@ -212,7 +166,7 @@ export const TokenHeader = memo(function TokenHeader({
               )}
             </div>
 
-            {/* Actions: Copy, Share, Watch, More */}
+            {/* Actions: Copy and Watch */}
             <div className="flex items-center gap-2">
               {/* Copy Contract */}
               <button
@@ -237,118 +191,8 @@ export const TokenHeader = memo(function TokenHeader({
                 <span>{copiedCa ? 'Copied!' : 'Copy'}</span>
               </button>
 
-              {/* Share */}
-              <div className="relative">
-                <button
-                  onClick={() => setShareOpen((v) => !v)}
-                  className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5 font-medium rounded-full"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="18" cy="5" r="3" />
-                    <circle cx="6" cy="12" r="3" />
-                    <circle cx="18" cy="19" r="3" />
-                    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-                    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-                  </svg>
-                  <span>Share</span>
-                </button>
-
-                {shareOpen && (
-                  <>
-                    <div className="fixed inset-0 z-20" onClick={() => setShareOpen(false)} />
-                    <div className="absolute right-0 top-full mt-1.5 z-30 card p-1.5 min-w-[170px] space-y-1 shadow-subtle-2">
-                      <button
-                        onClick={() => {
-                          handleShare();
-                          setShareOpen(false);
-                        }}
-                        className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2"
-                      >
-                        <LinkSimple size={14} aria-hidden="true" /> Copy link / Share
-                      </button>
-                      <a
-                        href={tweetUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => setShareOpen(false)}
-                        className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2 block"
-                      >
-                        <span>𝕏</span> Post on X
-                      </a>
-                    </div>
-                  </>
-                )}
-              </div>
-
               {/* Watchlist Star */}
               <FavoriteButton tokenAddress={token.contract_address} />
-
-              {/* More Actions Menu (⋮) */}
-              <div className="relative">
-                <button
-                  onClick={() => setMoreOpen((v) => !v)}
-                  className="btn-secondary text-xs px-2.5 py-1.5 font-bold rounded-full"
-                  title="More options"
-                >
-                  ⋮
-                </button>
-
-                {moreOpen && (
-                  <>
-                    <div className="fixed inset-0 z-20" onClick={() => setMoreOpen(false)} />
-                    <div className="absolute right-0 top-full mt-1.5 z-30 card p-1.5 min-w-[180px] space-y-1 shadow-subtle-2">
-                      <button
-                        onClick={() => {
-                          copyContract();
-                          setMoreOpen(false);
-                        }}
-                        className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2"
-                      >
-                        <Copy size={14} aria-hidden="true" /> Copy contract address
-                      </button>
-                      <a
-                        href={`${ARC_EXPLORER_URL}/address/${token.contract_address}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={() => setMoreOpen(false)}
-                        className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2 block"
-                      >
-                        ↗ View on ArcScan
-                      </a>
-                      {onSelectInfoTab && (
-                        <button
-                          onClick={() => {
-                            onSelectInfoTab();
-                            setMoreOpen(false);
-                          }}
-                          className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium flex items-center gap-2"
-                        >
-                          ℹ️ Token details & info
-                        </button>
-                      )}
-                      <button
-                        onClick={() => {
-                          toast.success('Report submitted to moderators');
-                          setMoreOpen(false);
-                        }}
-                        className="w-full text-left text-xs px-3 py-2 rounded-lg hover:bg-bg-hover transition-colors font-medium text-rose-500 flex items-center gap-2"
-                      >
-                        <Flag size={14} aria-hidden="true" /> Report token
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
             </div>
           </div>
 
@@ -404,21 +248,7 @@ export const TokenHeader = memo(function TokenHeader({
           {/* Top Identity Row */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-10 h-10 rounded-xl bg-bg-base border border-bg-border flex items-center justify-center text-lg overflow-hidden flex-shrink-0">
-                {token.image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={ipfsToGateway(token.image)}
-                    alt={token.name}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none';
-                    }}
-                  />
-                ) : (
-                  tokenEmoji(token.symbol)
-                )}
-              </div>
+              <TokenArtwork src={token.image} alt={token.name} className="w-10 h-10 rounded-xl flex-shrink-0" />
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5 truncate">
                   <span className="font-bold text-base text-text-primary truncate">{token.name}</span>
@@ -452,15 +282,8 @@ export const TokenHeader = memo(function TokenHeader({
               </div>
             </div>
 
-            {/* Mobile Actions */}
+            {/* Mobile Action */}
             <div className="flex items-center gap-1.5 flex-shrink-0">
-              <button
-                onClick={handleShare}
-                className="btn-secondary text-xs p-2 rounded-full"
-                title="Share token"
-              >
-                ↗
-              </button>
               <button
                 onClick={copyContract}
                 className="btn-secondary text-xs p-2 rounded-full"
@@ -522,18 +345,7 @@ export const TokenHeader = memo(function TokenHeader({
       {isSticky && (
         <div className="fixed top-0 left-0 right-0 z-40 bg-bg-base/95 backdrop-blur-md border-b border-bg-border py-2.5 px-4 shadow-subtle-2 transition-all duration-300 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg bg-bg-card border border-bg-border flex items-center justify-center text-sm overflow-hidden flex-shrink-0">
-              {token.image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={ipfsToGateway(token.image)}
-                  alt={token.symbol}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                tokenEmoji(token.symbol)
-              )}
-            </div>
+            <TokenArtwork src={token.image} alt={token.name} className="w-7 h-7 rounded-lg flex-shrink-0" />
             <div className="flex items-baseline gap-2">
               <span className="font-bold text-sm text-text-primary">${token.symbol}</span>
               <span className="text-sm font-extrabold text-text-primary tabular-nums">
@@ -556,12 +368,6 @@ export const TokenHeader = memo(function TokenHeader({
               className="btn-secondary text-xs px-2.5 py-1 rounded-full hidden sm:flex items-center gap-1"
             >
               <Copy size={14} aria-hidden="true" /> Copy
-            </button>
-            <button
-              onClick={handleShare}
-              className="btn-secondary text-xs px-2.5 py-1 rounded-full"
-            >
-              ↗ Share
             </button>
             <button
               onClick={scrollToTradeTerminal}
