@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
-import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
 /**
  * OHLCV candle data for the trading terminal chart.
- * Aggregated server-side from the `trades` table.
+ * Aggregated server-side from bonding-curve trades and AMM swaps. Graduation
+ * is a liquidity handoff, not a chart boundary.
  */
 export interface OhlcvCandle {
   timestamp: number;   // UTC Unix seconds (bucket start)
@@ -80,8 +80,7 @@ export class CandlesService {
   ): Promise<OhlcvCandle[]> {
     const normalized = tokenAddress.toLowerCase();
     const normalizedTf = timeframe.toLowerCase();
-    const publicFactories = getPublicFactoryAddresses();
-    const cacheKey = `candles:${publicFactories.join(',')}:${normalized}:${normalizedTf}:${mode}:${limit}`;
+    const cacheKey = `candles:${normalized}:${normalizedTf}:${mode}:${limit}`;
 
     // Check Redis cache (5s TTL — fast for live trading)
     const cached = await this.redis.getJson<OhlcvCandle[]>(cacheKey);
@@ -89,19 +88,28 @@ export class CandlesService {
 
     const bucketSeconds = TIMEFRAME_SECONDS[timeframe] || TIMEFRAME_SECONDS['5m'];
     const windowSeconds = TIMEFRAME_WINDOW[timeframe] || TIMEFRAME_WINDOW['5m'];
-    const valueColumn = mode === 'price' ? 'price' : 'market_cap';
+    const valueColumn = mode === 'price' ? 'activity.price' : 'activity.market_cap';
 
     // 1. Check if token has any executed trades in the database
     const countRes = await this.db.query(
       `SELECT
          COUNT(*)::text AS count,
          MIN(activity.timestamp)::text AS min_ts,
-         (array_agg(activity.${valueColumn}::numeric ORDER BY activity.timestamp ASC, activity.log_index ASC))[1]::text AS first_val
-       FROM (SELECT tr.token_id, tr.timestamp, tr.log_index, tr.price, tr.market_cap_after AS market_cap, tr.usdc_amount AS volume_raw FROM trades tr UNION ALL SELECT s.token_id, s.timestamp, s.log_index, s.price_after, (s.price_after * 1000000000)::numeric, CASE WHEN s.is_buy THEN s.usdc_in ELSE s.usdc_out END FROM amm_swaps s) activity
+         (array_agg(${valueColumn}::numeric ORDER BY activity.timestamp ASC, activity.log_index ASC))[1]::text AS first_val,
+         (array_agg(${valueColumn}::numeric ORDER BY activity.timestamp DESC, activity.log_index DESC))[1]::text AS last_val
+       FROM (
+         SELECT tr.token_id, tr.timestamp, tr.log_index, tr.price,
+                tr.market_cap_after AS market_cap, tr.usdc_amount AS volume_raw
+         FROM trades tr
+         UNION ALL
+         SELECT s.token_id, s.timestamp, s.log_index, s.price_after AS price,
+                (s.price_after * 1000000000)::numeric AS market_cap,
+                CASE WHEN s.is_buy THEN s.usdc_in ELSE s.usdc_out END AS volume_raw
+         FROM amm_swaps s
+       ) activity
        JOIN tokens t ON activity.token_id = t.id
-       WHERE t.contract_address = $1
-         AND ${publicFactoryClause('t', 2)}`,
-      [normalized, publicFactories],
+       WHERE t.contract_address = $1`,
+      [normalized],
     );
 
     const tradeCount = parseInt(countRes.rows[0]?.count || '0', 10);
@@ -113,14 +121,12 @@ export class CandlesService {
     }
 
     const initialVal = Number(countRes.rows[0].first_val || '0');
+    const lastVal = Number(countRes.rows[0].last_val || initialVal);
 
     // 2. Query sparse buckets from DB using Postgres epoch aggregation in UTC
     const query = `
       WITH token_info AS (
-        SELECT t.id FROM tokens t
-        WHERE t.contract_address = $1
-          AND ${publicFactoryClause('t', 3)}
-        LIMIT 1
+        SELECT id FROM tokens WHERE contract_address = $1 LIMIT 1
       ),
       trade_buckets AS (
         SELECT
@@ -130,7 +136,16 @@ export class CandlesService {
           MIN(${valueColumn}::numeric) AS low_val,
           (array_agg(${valueColumn}::numeric ORDER BY activity.timestamp DESC, activity.log_index DESC))[1] AS close_val,
           SUM(activity.volume_raw::numeric) AS volume_raw
-        FROM (SELECT tr.token_id, tr.timestamp, tr.log_index, tr.price, tr.market_cap_after AS market_cap, tr.usdc_amount AS volume_raw FROM trades tr UNION ALL SELECT s.token_id, s.timestamp, s.log_index, s.price_after, (s.price_after * 1000000000)::numeric, CASE WHEN s.is_buy THEN s.usdc_in ELSE s.usdc_out END FROM amm_swaps s) activity
+        FROM (
+          SELECT tr.token_id, tr.timestamp, tr.log_index, tr.price,
+                 tr.market_cap_after AS market_cap, tr.usdc_amount AS volume_raw
+          FROM trades tr
+          UNION ALL
+          SELECT s.token_id, s.timestamp, s.log_index, s.price_after AS price,
+                 (s.price_after * 1000000000)::numeric AS market_cap,
+                 CASE WHEN s.is_buy THEN s.usdc_in ELSE s.usdc_out END AS volume_raw
+          FROM amm_swaps s
+        ) activity
         JOIN token_info ti ON activity.token_id = ti.id
         WHERE activity.timestamp >= NOW() - INTERVAL '${windowSeconds} seconds'
         GROUP BY bucket
@@ -147,7 +162,7 @@ export class CandlesService {
     `;
 
     try {
-      const result = await this.db.query(query, [normalized, bucketSeconds, publicFactories]);
+      const result = await this.db.query(query, [normalized, bucketSeconds]);
 
       const sparse: OhlcvCandle[] = result.rows.map((row) => ({
         timestamp: Number(row.timestamp),
@@ -159,8 +174,17 @@ export class CandlesService {
       }));
 
       if (sparse.length === 0) {
-        await this.redis.setJson(cacheKey, [], 5);
-        return [];
+        const timestamp = Math.floor(Date.now() / 1000 / bucketSeconds) * bucketSeconds;
+        const retained = [{
+          timestamp,
+          open: lastVal,
+          high: lastVal,
+          low: lastVal,
+          close: lastVal,
+          volume: 0,
+        }];
+        await this.redis.setJson(cacheKey, retained, 5);
+        return retained;
       }
 
       // 3. Gap filling from earliest trade bucket to current in-progress bucket (UTC)

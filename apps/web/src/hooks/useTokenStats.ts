@@ -62,6 +62,7 @@ export function useTokenStats(tokenAddress: string | null) {
         queryClient.invalidateQueries({ queryKey: ['token', tokenAddress] });
         queryClient.invalidateQueries({ queryKey: ['tokenTrades', tokenAddress] });
         queryClient.invalidateQueries({ queryKey: ['tokenHolders', tokenAddress] });
+        queryClient.invalidateQueries({ queryKey: ['marketFlow', tokenAddress] });
         queryClient.invalidateQueries({ queryKey: ['balance'] });
         queryClient.invalidateQueries({ queryKey: ['readContract'] });
       }

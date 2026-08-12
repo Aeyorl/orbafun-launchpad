@@ -5,6 +5,8 @@ import { api, CandleTimeframe, OhlcvCandle } from '@/lib/api';
 import { MetricMode } from './ChartToolbar';
 import { TradingChart } from './TradingChart';
 import { ConnectionStatus } from '@/lib/useWebSocket';
+import type { LiveMarketMove } from '@/hooks/useCandles';
+import { LiveMovementEvidence } from './LiveMovementEvidence';
 
 const LIBRARY_PATH = '/vendor/tradingview/charting_library/';
 const LIBRARY_SCRIPT = `${LIBRARY_PATH}charting_library.standalone.js`;
@@ -71,23 +73,6 @@ const TIMEFRAME_TO_RESOLUTION: Record<CandleTimeframe, TvResolution> = {
 };
 
 let libraryPromise: Promise<boolean> | null = null;
-
-function useObservedTheme() {
-  const [isDark, setIsDark] = useState(
-    () => typeof document !== 'undefined' && document.documentElement.classList.contains('dark'),
-  );
-
-  useEffect(() => {
-    const root = document.documentElement;
-    const syncTheme = () => setIsDark(root.classList.contains('dark'));
-    syncTheme();
-    const observer = new MutationObserver(syncTheme);
-    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
-
-  return isDark;
-}
 
 function loadTradingViewLibrary(): Promise<boolean> {
   if (typeof window === 'undefined') return Promise.resolve(false);
@@ -281,6 +266,7 @@ type AdvancedChartProps = {
   onTimeframeChange: (timeframe: CandleTimeframe) => void;
   metricMode: MetricMode;
   onMetricModeChange: (mode: MetricMode) => void;
+  latestMove?: LiveMarketMove | null;
 };
 
 function LicensedAdvancedChart({
@@ -294,8 +280,8 @@ function LicensedAdvancedChart({
   onTimeframeChange,
   metricMode,
   onMetricModeChange,
+  latestMove,
 }: AdvancedChartProps) {
-  const isDark = useObservedTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetRef = useRef<TvWidget | null>(null);
   const timeframeRef = useRef(timeframe);
@@ -337,26 +323,6 @@ function LicensedAdvancedChart({
 
     let disposed = false;
     const nonce = document.querySelector<HTMLScriptElement>('script[nonce]')?.nonce;
-    const palette = isDark
-      ? {
-          background: '#13182b',
-          toolbar: '#171d32',
-          grid: 'rgba(126, 153, 255, 0.10)',
-          text: '#9aa4bf',
-          up: '#62d29f',
-          down: '#ff7162',
-          crosshair: '#7e99ff',
-        }
-      : {
-          background: '#fffdf6',
-          toolbar: '#fffdf6',
-          grid: 'rgba(130, 116, 87, 0.13)',
-          text: '#70778a',
-          up: '#4ca978',
-          down: '#e86959',
-          crosshair: '#2348df',
-        };
-
     const widget = new TradingView.widget({
       container: containerRef.current,
       datafeed,
@@ -367,9 +333,9 @@ function LicensedAdvancedChart({
       locale: 'en',
       timezone: 'Etc/UTC',
       autosize: true,
-      theme: isDark ? 'dark' : 'light',
-      toolbar_bg: palette.toolbar,
-      loading_screen: { backgroundColor: palette.background, foregroundColor: palette.crosshair },
+      theme: 'dark',
+      toolbar_bg: '#0a0e1a',
+      loading_screen: { backgroundColor: '#0a0e1a', foregroundColor: '#2775ca' },
       enabled_features: [
         'seconds_resolution',
         'iframe_loading_same_origin',
@@ -383,18 +349,17 @@ function LicensedAdvancedChart({
         intervals: [...SUPPORTED_RESOLUTIONS],
       },
       overrides: {
-        'paneProperties.background': palette.background,
+        'paneProperties.background': '#0a0e1a',
         'paneProperties.backgroundType': 'solid',
-        'paneProperties.vertGridProperties.color': palette.grid,
-        'paneProperties.horzGridProperties.color': palette.grid,
-        'scalesProperties.textColor': palette.text,
-        'crossHairProperties.color': palette.crosshair,
-        'mainSeriesProperties.candleStyle.upColor': palette.up,
-        'mainSeriesProperties.candleStyle.downColor': palette.down,
-        'mainSeriesProperties.candleStyle.borderUpColor': palette.up,
-        'mainSeriesProperties.candleStyle.borderDownColor': palette.down,
-        'mainSeriesProperties.candleStyle.wickUpColor': palette.up,
-        'mainSeriesProperties.candleStyle.wickDownColor': palette.down,
+        'paneProperties.vertGridProperties.color': 'rgba(39, 117, 202, 0.08)',
+        'paneProperties.horzGridProperties.color': 'rgba(39, 117, 202, 0.08)',
+        'scalesProperties.textColor': '#8b95a8',
+        'mainSeriesProperties.candleStyle.upColor': '#22c55e',
+        'mainSeriesProperties.candleStyle.downColor': '#ef4444',
+        'mainSeriesProperties.candleStyle.borderUpColor': '#22c55e',
+        'mainSeriesProperties.candleStyle.borderDownColor': '#ef4444',
+        'mainSeriesProperties.candleStyle.wickUpColor': '#22c55e',
+        'mainSeriesProperties.candleStyle.wickDownColor': '#ef4444',
       },
     });
 
@@ -421,7 +386,7 @@ function LicensedAdvancedChart({
       }
       widgetRef.current = null;
     };
-  }, [datafeed, isDark, metricMode, onTimeframeChange, tokenAddress, timeframe]);
+  }, [datafeed, metricMode, onTimeframeChange, tokenAddress]);
 
   useEffect(() => {
     const latest = candles.at(-1);
@@ -435,14 +400,15 @@ function LicensedAdvancedChart({
   }, [candles, timeframe]);
 
   return (
-    <div className="h-full overflow-hidden bg-bg-card">
-      <div className="flex h-10 items-center justify-between border-b border-bg-border px-3 text-xs">
-        <div className="flex items-center gap-2 text-text-secondary">
-          <span className={`h-2 w-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+    <div className="card !p-0 overflow-hidden border border-bg-border bg-[#0a0e1a]">
+      <div className="flex h-10 items-center justify-between border-b border-[#1e2a44] px-3 text-xs">
+        <div className="flex items-center gap-2 text-[#8b95a8]">
+          <span className={`h-2 w-2 ${isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
           <span>{isConnected ? 'Live' : connectionStatus === 'reconnecting' ? 'Reconnecting' : 'Connecting'}</span>
-          <span className="text-text-muted">TradingView Advanced Charts</span>
+          <span className="text-[#4f5d75]">TradingView Advanced Charts</span>
+          <LiveMovementEvidence key={latestMove?.id || 'waiting'} move={latestMove} metricMode={metricMode} />
         </div>
-        <div className="flex items-center overflow-hidden rounded-md border border-bg-border">
+        <div className="flex items-center border border-[#1e2a44]">
           {(['price', 'mcap'] as const).map((mode) => (
             <button
               key={mode}
@@ -450,8 +416,8 @@ function LicensedAdvancedChart({
               onClick={() => onMetricModeChange(mode)}
               className={`px-3 py-1 font-medium uppercase transition-colors ${
                 metricMode === mode
-                  ? 'bg-accent-blue text-white'
-                  : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                  ? 'bg-[#2775ca] text-white'
+                  : 'text-[#8b95a8] hover:text-white'
               }`}
             >
               {mode === 'price' ? 'Price' : 'Market cap'}
@@ -459,7 +425,7 @@ function LicensedAdvancedChart({
           ))}
         </div>
       </div>
-      <div ref={containerRef} className="h-[420px] w-full sm:h-[500px] lg:h-[460px]" />
+      <div ref={containerRef} className="h-[380px] w-full sm:h-[480px] lg:h-[560px]" />
     </div>
   );
 }
@@ -495,6 +461,7 @@ export const AdvancedTradingChart = memo(function AdvancedTradingChart(props: Ad
         onTimeframeChange={props.onTimeframeChange}
         metricMode={props.metricMode}
         onMetricModeChange={handleMetricModeChange}
+        latestMove={props.latestMove}
       />
     );
   }

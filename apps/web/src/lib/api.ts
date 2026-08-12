@@ -100,9 +100,27 @@ export interface Holder {
   wallet: string;
   balance: string;       // 18-dec token amount (as string)
   percentage: string;    // 0-100
+  last_activity_at: string;
+  buy_count: number;
+  sell_count: number;
   wallet_tier: WalletTierSnapshot['key'] | null;
   wallet_tier_label: string | null;
   wallet_tier_calculated_at: string | null;
+}
+
+export type MarketFlowWindow = '5m' | '1h' | '6h' | '24h';
+
+export interface MarketFlow {
+  window: MarketFlowWindow;
+  price_change_pct: string;
+  buy_count: number;
+  sell_count: number;
+  buy_volume_usdc: string;
+  sell_volume_usdc: string;
+  unique_buyers: number;
+  unique_sellers: number;
+  current_market_cap: string;
+  all_time_high: string;
 }
 
 export interface HolderListResponse {
@@ -301,6 +319,11 @@ export const api = {
   getTokenHolders: (address: string, limit = 20) =>
     fetchApi<HolderListResponse>(
       `/tokens/${address.toLowerCase()}/holders?limit=${limit}`
+    ),
+
+  getMarketFlow: (address: string, window: MarketFlowWindow = '24h') =>
+    fetchApi<MarketFlow>(
+      `/tokens/${address.toLowerCase()}/market-flow?window=${window}`
     ),
 
   getCandles: async (

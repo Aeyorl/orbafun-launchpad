@@ -5,6 +5,22 @@ import { useCallback, useRef, useEffect, useState } from 'react';
 import { api, OhlcvCandle, CandleTimeframe } from '@/lib/api';
 import { useTokenEvents, TokenEvent } from '@/lib/useWebSocket';
 
+export interface LiveMarketMove {
+  id: string;
+  side: 'buy' | 'sell';
+  price: number;
+  marketCap: number;
+  value: number;
+  volume: number;
+  timestamp: number;
+}
+
+const TIMEFRAME_SECONDS: Record<CandleTimeframe, number> = {
+  '10s': 10,
+  '1m': 60, '5m': 300, '15m': 900, '30m': 1800,
+  '1h': 3600, '4h': 14400, '1d': 86400,
+};
+
 /**
  * useCandles — fetches historical OHLCV candles from the API and
  * incrementally updates the current candle from WebSocket trade events.
@@ -23,12 +39,7 @@ export function useCandles(
   const queryClient = useQueryClient();
   const candlesRef = useRef<OhlcvCandle[]>([]);
   const [liveCandles, setLiveCandles] = useState<OhlcvCandle[]>([]);
-
-  const TIMEFRAME_SECONDS: Record<CandleTimeframe, number> = {
-    '10s': 10,
-    '1m': 60, '5m': 300, '15m': 900, '30m': 1800,
-    '1h': 3600, '4h': 14400, '1d': 86400,
-  };
+  const [latestMove, setLatestMove] = useState<LiveMarketMove | null>(null);
 
   const { data: historicalCandles, isLoading, error } = useQuery({
     queryKey: ['candles', tokenAddress, timeframe, mode],
@@ -103,6 +114,16 @@ export function useCandles(
         return candles;
       });
 
+      setLatestMove({
+        id: String(trade.tx_hash || `${event.type}-${tradeTime}`),
+        side: event.type === 'NEW_BUY' ? 'buy' : 'sell',
+        price: tradePrice,
+        marketCap: tradeMcap,
+        value,
+        volume: tradeVolume,
+        timestamp: Number.isFinite(tradeTime) ? tradeTime : Date.now(),
+      });
+
       // Also invalidate token data so stats update
       queryClient.invalidateQueries({ queryKey: ['token', tokenAddress] });
     },
@@ -116,6 +137,7 @@ export function useCandles(
     isLoading,
     isConnected,
     connectionStatus,
+    latestMove,
     error,
   };
 }

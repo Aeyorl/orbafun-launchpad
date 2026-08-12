@@ -5,6 +5,7 @@ import { isValidEvmAddress } from '../common/utils';
 
 const VALID_TIMEFRAMES: CandleTimeframe[] = ['10s', '1m', '5m', '15m', '30m', '1h', '4h', '1d'];
 const VALID_MODES = ['price', 'mcap'] as const;
+const VALID_FLOW_WINDOWS = ['5m', '1h', '6h', '24h'] as const;
 
 @Controller('tokens')
 export class TokensController {
@@ -115,6 +116,20 @@ export class TokensController {
     const limitNum = limit ? Math.min(parseInt(limit, 10) || 500, 2000) : 500;
 
     return this.candlesService.getCandles(address, tf, m, limitNum);
+  }
+
+  @Get(':address/market-flow')
+  async getMarketFlow(
+    @Param('address') address: string,
+    @Query('window') window?: string,
+  ) {
+    if (!isValidEvmAddress(address)) {
+      throw new BadRequestException('Invalid token address');
+    }
+    const selectedWindow = VALID_FLOW_WINDOWS.includes(window as any)
+      ? (window as (typeof VALID_FLOW_WINDOWS)[number])
+      : '24h';
+    return this.tokensService.getMarketFlow(address, selectedWindow);
   }
 
   /**

@@ -1,29 +1,35 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Copy } from '@phosphor-icons/react';
 
-import { HoldersPanel } from '@/components/HoldersPanel';
-import { SocialLinks } from '@/components/SocialLinks';
-import { TokenChat } from '@/components/TokenChat';
-import { TradeHistory } from '@/components/TradeHistory';
-import { AdvancedTradingChart } from '@/components/trading/AdvancedTradingChart';
-import { TokenHeader } from '@/components/trading/TokenHeader';
-import { TradeTerminal } from '@/components/trading/TradeTerminal';
-import { useCandles } from '@/hooks/useCandles';
+import { api, CandleTimeframe } from '@/lib/api';
 import { useTokenStats } from '@/hooks/useTokenStats';
-import { api, CandleTimeframe, Trade } from '@/lib/api';
-import { ARC_EXPLORER_URL } from '@/lib/config';
+import { useCandles } from '@/hooks/useCandles';
+
+import { TokenHeader } from '@/components/trading/TokenHeader';
+import { AdvancedTradingChart } from '@/components/trading/AdvancedTradingChart';
+import { TradeTerminal } from '@/components/trading/TradeTerminal';
+import { MarketFlowCard } from '@/components/trading/MarketFlowCard';
+import { CompactTradeTape } from '@/components/trading/CompactTradeTape';
+import { RelatedMarkets } from '@/components/trading/RelatedMarkets';
+
+import { TradeHistory } from '@/components/TradeHistory';
+import { HoldersPanel } from '@/components/HoldersPanel';
+import { TokenChat } from '@/components/TokenChat';
+import { SocialLinks } from '@/components/SocialLinks';
 import {
-  formatTokens,
   formatUsdc,
+  formatTokens,
+  formatMarketCap,
+  bondingCurveProgress,
   shortenAddress,
+  ipfsToGateway,
 } from '@/lib/utils';
 
-type ObservatoryTab = 'activity' | 'holders' | 'traders' | 'chat' | 'details';
+type TerminalTab = 'trades' | 'holders' | 'info' | 'chat';
 
 export default function TradePage() {
   const params = useParams();
@@ -32,28 +38,37 @@ export default function TradePage() {
 
   const [timeframe, setTimeframe] = useState<CandleTimeframe>('5m');
   const [metricMode, setMetricMode] = useState<'price' | 'mcap'>('price');
-  const [activeTab, setActiveTab] = useState<ObservatoryTab>('activity');
-  const timeframeChosenRef = useRef(false);
+  const [activeTab, setActiveTab] = useState<TerminalTab>('trades');
 
+  // Load token stats & live trades
   const {
     token,
     trades,
     totalTrades,
+    holders,
     totalHolders,
     change24h,
     isLoading: isStatsLoading,
   } = useTokenStats(address);
 
-  const { candles, isConnected, connectionStatus } = useCandles(address, timeframe, metricMode);
+  // Load OHLCV candles with live websocket updates
+  const { candles, isConnected, connectionStatus, latestMove, isLoading: isCandlesLoading } = useCandles(
+    address,
+    timeframe,
+    metricMode
+  );
 
+  // Off-chain metadata (banner cover + social links)
   const { data: metadata } = useQuery({
     queryKey: ['token-metadata', address],
     queryFn: () => api.getTokenMetadata(address),
     staleTime: 30_000,
-    enabled: Boolean(address),
+    enabled: !!address,
   });
 
+  // Retry polling for fresh launches indexing
   const retryCountRef = useRef(0);
+  const MAX_RETRIES = 10;
   const [waitingForIndexer, setWaitingForIndexer] = useState(true);
 
   useEffect(() => {
@@ -62,137 +77,246 @@ export default function TradePage() {
       retryCountRef.current = 0;
       return;
     }
-    if (retryCountRef.current >= 10) {
+    if (retryCountRef.current >= MAX_RETRIES) {
       setWaitingForIndexer(false);
       return;
     }
-
     setWaitingForIndexer(true);
-    const timer = window.setInterval(() => {
-      retryCountRef.current += 1;
+    const timer = setInterval(() => {
+      retryCountRef.current++;
       queryClient.invalidateQueries({ queryKey: ['token', address] });
-      if (retryCountRef.current >= 10) {
+      if (retryCountRef.current >= MAX_RETRIES) {
         setWaitingForIndexer(false);
-        window.clearInterval(timer);
+        clearInterval(timer);
       }
     }, 3_000);
-    return () => window.clearInterval(timer);
+    return () => clearInterval(timer);
   }, [token, isStatsLoading, address, queryClient]);
 
-  useEffect(() => {
-    if (timeframeChosenRef.current || trades.length === 0) return;
-    setTimeframe(initialTimeframeFromTrade(trades[0].timestamp));
-    timeframeChosenRef.current = true;
-  }, [trades]);
-
-  const changeTimeframe = (next: CandleTimeframe) => {
-    timeframeChosenRef.current = true;
-    setTimeframe(next);
-  };
-
-  if (isStatsLoading && !token) return <TradingTerminalSkeleton />;
+  if (isStatsLoading && !token) {
+    return <TradingTerminalSkeleton />;
+  }
 
   if (!token && waitingForIndexer) {
     return (
-      <div className="mx-auto max-w-md py-20 text-center">
-        <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-accent-blue border-t-transparent" />
-        <h1 className="text-2xl">Indexing token on Arc…</h1>
-        <p className="mt-2 text-sm text-text-secondary">Setting up the live chart and trading workspace.</p>
+      <div className="text-center py-16">
+        <div className="inline-block w-8 h-8 border-3 border-accent-blue border-t-transparent rounded-full animate-spin mb-4" />
+        <h1 className="text-2xl font-bold mb-2">Indexing token on Arc…</h1>
+        <p className="text-text-secondary mb-4">
+          Your token was launched! Setting up live chart and terminal…
+        </p>
       </div>
     );
   }
 
   if (!token) {
     return (
-      <div className="card mx-auto my-12 max-w-md space-y-4 py-12 text-center">
-        <h1 className="text-2xl">Couldn’t load this token</h1>
-        <p className="text-sm text-text-secondary">The indexer may still be catching up, or this address is not an Orba token.</p>
-        <div className="flex justify-center gap-3">
-          <button type="button" onClick={() => queryClient.invalidateQueries({ queryKey: ['token', address] })} className="btn-primary text-sm">
-            Retry
+      <div className="card text-center py-16 max-w-md mx-auto my-12 space-y-4">
+        <div className="inline-block w-10 h-10 border-4 border-accent-peach border-t-accent-sienna rounded-full animate-spin" />
+        <div>
+          <h1 className="text-2xl font-serif mb-2">Connecting to Arc Blockchain…</h1>
+          <p className="text-sm text-text-secondary">
+            Fetching live token data directly from the network.
+          </p>
+        </div>
+        <div className="flex justify-center gap-3 pt-2">
+          <button
+            onClick={() => queryClient.invalidateQueries({ queryKey: ['token', address] })}
+            className="btn-primary text-sm px-5 py-2"
+          >
+            Retry now
           </button>
-          <Link href="/explore" className="btn-secondary text-sm">Explore tokens</Link>
+          <Link href="/explore" className="btn-secondary text-sm px-5 py-2">
+            Explore tokens
+          </Link>
         </div>
       </div>
     );
   }
 
-  const about = metadata?.description || token.description;
+  const bannerUri = metadata?.banner || null;
 
   return (
-    <div className="observatory-page mx-auto max-w-[1480px] space-y-3 pb-24 lg:pb-10">
+    <div className="max-w-[1600px] mx-auto space-y-3 pb-20 lg:pb-8">
+      {/* Banner cover image if present */}
+      {bannerUri && (
+        <div className="card overflow-hidden !p-0 max-h-36 sm:max-h-48">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={ipfsToGateway(bannerUri)}
+            alt={`${token.name} banner`}
+            className="w-full h-full object-cover"
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+        </div>
+      )}
+
+      {/* Top Token Header & Hero Price */}
       <TokenHeader
         token={token}
         change24h={change24h}
         totalHolders={totalHolders}
-        onSelectInfoTab={() => setActiveTab('details')}
       />
 
-      <section className="overflow-hidden rounded-xl border border-bg-border bg-bg-card shadow-subtle">
-        <div className="grid min-w-0 lg:h-[500px] lg:min-h-0 lg:overflow-hidden lg:grid-cols-[minmax(0,7fr)_minmax(340px,3fr)]">
-          <div className="min-w-0 border-b border-bg-border lg:min-h-0 lg:border-b-0 lg:border-r">
-            <AdvancedTradingChart
-              candles={candles}
-              tokenAddress={address}
-              tokenName={token.name}
-              tokenSymbol={token.symbol}
-              timeframe={timeframe}
-              isConnected={isConnected}
-              connectionStatus={connectionStatus}
-              onTimeframeChange={changeTimeframe}
-              metricMode={metricMode}
-              onMetricModeChange={setMetricMode}
-            />
-          </div>
-          <div
-            id="trading-terminal-panel"
-            className="min-w-0 scroll-mt-20 lg:h-[500px] lg:min-h-0 lg:max-h-[500px] lg:overflow-hidden"
-          >
-            <TradeTerminal token={token} />
+      {/* Main Terminal Section: chart + first-viewport tape + execution rail */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
+        <div className="lg:col-span-8 xl:col-span-9">
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-9">
+            <div className="xl:col-span-7">
+              <AdvancedTradingChart
+                candles={candles}
+                tokenAddress={address}
+                tokenName={token.name}
+                tokenSymbol={token.symbol}
+                timeframe={timeframe}
+                isConnected={isConnected}
+                connectionStatus={connectionStatus}
+                onTimeframeChange={setTimeframe}
+                metricMode={metricMode}
+                onMetricModeChange={setMetricMode}
+                latestMove={latestMove}
+              />
+            </div>
+            <div className="xl:col-span-2">
+              <CompactTradeTape trades={trades} symbol={token.symbol} />
+            </div>
           </div>
         </div>
-      </section>
 
-      <section id="community" className="scroll-mt-20 overflow-hidden rounded-xl border border-bg-border bg-bg-card shadow-subtle">
-        <div className="grid lg:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.72fr)]">
-          <AboutPanel tokenName={token.name} description={about} />
+        {/* Execution, flow, and lifecycle rail */}
+        <div id="trading-terminal-panel" className="lg:col-span-4 xl:col-span-3 space-y-3 scroll-mt-20">
+          <TradeTerminal token={token} />
+          <MarketFlowCard tokenAddress={address} />
 
-          <div className="min-w-0 border-t border-bg-border lg:border-l lg:border-t-0">
-            <div className="flex items-center gap-1 overflow-x-auto border-b border-bg-border px-3 pt-1">
-              <TabButton active={activeTab === 'activity'} onClick={() => setActiveTab('activity')} label={`Activity (${totalTrades})`} />
-              <TabButton active={activeTab === 'holders'} onClick={() => setActiveTab('holders')} label={`Holders (${totalHolders})`} />
-              <TabButton active={activeTab === 'traders'} onClick={() => setActiveTab('traders')} label="Top traders" />
-              <TabButton active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} label="Agent chat" />
-              <TabButton active={activeTab === 'details'} onClick={() => setActiveTab('details')} label="Details" />
+          {/* Dedicated Bonding Curve Progress Card */}
+          <div className="card space-y-2.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-text-primary">Bonding Curve Progress</span>
+              <span className="font-bold text-accent-blue tabular-nums">
+                {token.status === 'graduated' ? '100% (Graduated)' : `${bondingCurveProgress(token.market_cap).toFixed(1)}%`}
+              </span>
             </div>
 
-            <div className="min-h-[260px] p-3 sm:p-4">
-              {activeTab === 'activity' && <TradeHistory initialTrades={trades} tokenAddress={address} embedded />}
-              {activeTab === 'holders' && <HoldersPanel tokenAddress={address} currentPrice={Number(token.price)} />}
-              {activeTab === 'traders' && <TopTraders trades={trades} />}
-              {activeTab === 'chat' && <TokenChat tokenAddress={address} />}
-              {activeTab === 'details' && (
-                <div className="grid gap-5 md:grid-cols-2">
-                  <div className="space-y-2 text-sm">
-                    <DetailRow label="Token contract" value={shortenAddress(token.contract_address)} copyValue={token.contract_address} />
-                    <DetailRow label="Bonding curve" value={shortenAddress(token.curve_address)} copyValue={token.curve_address} />
-                    {token.amm_pair_address && <DetailRow label="AMM pair" value={shortenAddress(token.amm_pair_address)} copyValue={token.amm_pair_address} />}
-                    <DetailRow label="USDC in curve" value={formatUsdc(token.real_usdc)} />
-                    <DetailRow label="Tokens sold" value={formatTokens(token.tokens_sold)} />
-                  </div>
-                  <SocialLinks tokenAddress={address} creatorWallet={token.creator_wallet} />
+            <div className="progress-bar h-2.5 rounded-full overflow-hidden">
+              <div
+                className="progress-fill h-full bg-accent-blue transition-all duration-500"
+                style={{ width: `${token.status === 'graduated' ? 100 : bondingCurveProgress(token.market_cap)}%` }}
+              />
+            </div>
+
+            <div className="flex items-center justify-between text-[11px] text-text-muted tabular-nums">
+              <span>{formatMarketCap(token.market_cap)} Current MC</span>
+              <span>$30.0K Graduation</span>
+            </div>
+
+            {token.status !== 'graduated' && (
+              <div className="text-right text-[11px] font-mono text-accent-blue font-medium">
+                {formatUsdc(Math.max(0, 30000000000 - Number(token.market_cap || '0')))} until DEX graduation
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom Tabs Section: Trades / Holders / Info / Chat */}
+      <div className="card space-y-4">
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-1 border-b border-bg-border pb-2 overflow-x-auto text-sm">
+          <button
+            onClick={() => setActiveTab('trades')}
+            className={`tab ${activeTab === 'trades' ? 'tab-active' : ''}`}
+          >
+            Trades ({totalTrades})
+          </button>
+          <button
+            onClick={() => setActiveTab('holders')}
+            className={`tab ${activeTab === 'holders' ? 'tab-active' : ''}`}
+          >
+            Holders ({totalHolders})
+          </button>
+          <button
+            onClick={() => setActiveTab('info')}
+            className={`tab ${activeTab === 'info' ? 'tab-active' : ''}`}
+          >
+            Token Info & About
+          </button>
+          <button
+            onClick={() => setActiveTab('chat')}
+            className={`tab ${activeTab === 'chat' ? 'tab-active' : ''}`}
+          >
+            Agent Chat
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'trades' && (
+          <TradeHistory initialTrades={trades} tokenAddress={address} />
+        )}
+
+        {activeTab === 'holders' && (
+          <HoldersPanel tokenAddress={address} currentPrice={Number(token.price)} />
+        )}
+
+        {activeTab === 'info' && (
+          <div className="grid md:grid-cols-2 gap-6 pt-2">
+            <div className="space-y-3">
+              <h3 className="font-semibold text-base">Token Details</h3>
+              <div className="space-y-2 text-sm">
+                <InfoRow label="Contract Address" value={shortenAddress(token.contract_address)} copyValue={token.contract_address} />
+                <InfoRow label="Bonding Curve" value={shortenAddress(token.curve_address)} copyValue={token.curve_address} />
+                {token.amm_pair_address && (
+                  <InfoRow label="AMM Pair (DEX)" value={shortenAddress(token.amm_pair_address)} copyValue={token.amm_pair_address} />
+                )}
+                <InfoRow label="USDC in Curve" value={formatUsdc(token.real_usdc)} />
+                <InfoRow label="Tokens Sold" value={formatTokens(token.tokens_sold)} />
+                <InfoRow label="Creator Fees Accrued" value={formatUsdc(token.creator_fees_accrued)} />
+                <InfoRow label="Protocol Fees Accrued" value={formatUsdc(token.protocol_fees_accrued)} />
+                {token.lp_burned && (
+                  <InfoRow label="LP Burned" value={`${formatTokens(token.lp_burned)} LP`} />
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {token.description && (
+                <div>
+                  <h3 className="font-semibold text-base mb-2">About {token.name}</h3>
+                  <p className="text-sm text-text-secondary leading-relaxed">{token.description}</p>
                 </div>
               )}
+
+              <SocialLinks tokenAddress={address} creatorWallet={token.creator_wallet} />
             </div>
           </div>
-        </div>
-      </section>
+        )}
 
-      <div className="fixed inset-x-0 bottom-0 z-40 flex gap-2.5 border-t border-bg-border bg-bg-base/95 p-3 shadow-subtle-3 backdrop-blur-md lg:hidden">
-        <button type="button" onClick={() => document.getElementById('trading-terminal-panel')?.scrollIntoView({ behavior: 'smooth' })} className="btn-buy flex-1 py-3 text-sm font-bold">
+        {activeTab === 'chat' && (
+          <TokenChat tokenAddress={address} />
+        )}
+      </div>
+
+      <RelatedMarkets token={token} />
+
+      {/* Sticky Mobile Trade Action Bar */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-bg-base/95 backdrop-blur-md border-t border-bg-border p-3 flex gap-2.5 shadow-subtle-3">
+        <button
+          onClick={() => {
+            const tradePanel = document.getElementById('trading-terminal-panel');
+            tradePanel?.scrollIntoView({ behavior: 'smooth' });
+          }}
+          className="btn-buy flex-1 py-3 text-sm font-bold shadow-sm rounded-lg"
+        >
           Buy ${token.symbol}
         </button>
-        <button type="button" onClick={() => document.getElementById('trading-terminal-panel')?.scrollIntoView({ behavior: 'smooth' })} className="btn-sell flex-1 py-3 text-sm font-bold">
+        <button
+          onClick={() => {
+            const tradePanel = document.getElementById('trading-terminal-panel');
+            tradePanel?.scrollIntoView({ behavior: 'smooth' });
+          }}
+          className="btn-sell flex-1 py-3 text-sm font-bold shadow-sm rounded-lg"
+        >
           Sell ${token.symbol}
         </button>
       </div>
@@ -200,95 +324,37 @@ export default function TradePage() {
   );
 }
 
-function initialTimeframeFromTrade(timestamp: string): CandleTimeframe {
-  const ageMs = Math.max(0, Date.now() - new Date(timestamp).getTime());
-  if (ageMs <= 12 * 60 * 60_000) return '5m';
-  if (ageMs <= 3 * 24 * 60 * 60_000) return '15m';
-  if (ageMs <= 14 * 24 * 60 * 60_000) return '1h';
-  if (ageMs <= 60 * 24 * 60 * 60_000) return '4h';
-  return '1d';
-}
-
-function AboutPanel({
-  tokenName,
-  description,
-}: {
-  tokenName: string;
-  description: string | null | undefined;
-}) {
+function InfoRow({ label, value, copyValue }: { label: string; value: string; copyValue?: string }) {
   return (
-    <aside className="p-5 sm:p-6">
-      <h2 className="font-sans text-lg font-bold tracking-tight">About {tokenName}</h2>
-      <p className="mt-4 max-w-xl text-sm leading-6 text-text-secondary">
-        {description || 'The creator has not added a description yet.'}
-      </p>
-    </aside>
-  );
-}
-
-function TabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`relative flex-none px-3 py-3 text-xs font-semibold transition-colors ${active ? 'text-accent-blue' : 'text-text-secondary hover:text-text-primary'}`}
-    >
-      {label}
-      {active && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent-blue" />}
-    </button>
-  );
-}
-
-function TopTraders({ trades }: { trades: Trade[] }) {
-  const rows = Object.values(trades.reduce<Record<string, { wallet: string; volume: number; trades: number }>>((acc, trade) => {
-    const key = trade.wallet.toLowerCase();
-    const row = acc[key] || { wallet: trade.wallet, volume: 0, trades: 0 };
-    row.volume += Number(trade.usdc_amount);
-    row.trades += 1;
-    acc[key] = row;
-    return acc;
-  }, {})).sort((a, b) => b.volume - a.volume).slice(0, 8);
-
-  if (rows.length === 0) return <EmptyPanel message="No trader activity yet" />;
-
-  return (
-    <div className="divide-y divide-bg-border">
-      {rows.map((row, index) => (
-        <div key={row.wallet} className="grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 py-3 text-sm">
-          <span className="font-mono text-xs text-text-muted">{String(index + 1).padStart(2, '0')}</span>
-          <Link href={`/profile/${row.wallet}`} className="truncate font-mono text-text-primary hover:text-accent-blue">{shortenAddress(row.wallet)}</Link>
-          <div className="text-right">
-            <div className="font-mono font-semibold text-text-primary">{formatUsdc(row.volume)}</div>
-            <div className="text-[11px] text-text-muted">{row.trades} trades</div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function DetailRow({ label, value, copyValue }: { label: string; value: string; copyValue?: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-bg-border py-2.5 last:border-0">
+    <div className="flex justify-between items-center">
       <span className="text-text-muted">{label}</span>
-      <span className="flex items-center gap-1.5 font-mono font-medium text-text-primary">
-        {value}
-        {copyValue && <button type="button" onClick={() => navigator.clipboard.writeText(copyValue)} className="text-text-muted hover:text-accent-blue"><Copy size={13} /></button>}
-      </span>
+      <div className="flex items-center gap-1.5 font-medium tabular-nums">
+        <span>{value}</span>
+        {copyValue && (
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(copyValue);
+            }}
+            className="text-text-muted hover:text-text-primary text-xs"
+            title="Copy address"
+          >
+            📋
+          </button>
+        )}
+      </div>
     </div>
   );
-}
-
-function EmptyPanel({ message }: { message: string }) {
-  return <div className="grid min-h-52 place-items-center text-sm text-text-muted">{message}</div>;
 }
 
 function TradingTerminalSkeleton() {
   return (
-    <div className="mx-auto max-w-[1480px] animate-pulse space-y-3">
-      <div className="h-56 rounded-xl border border-bg-border bg-bg-card" />
-      <div className="h-[690px] rounded-xl border border-bg-border bg-bg-card" />
-      <div className="h-72 rounded-xl border border-bg-border bg-bg-card" />
+    <div className="max-w-[1600px] mx-auto space-y-3 animate-pulse">
+      <div className="card h-14 bg-bg-card" />
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3">
+        <div className="lg:col-span-8 card h-[520px] bg-bg-card" />
+        <div className="lg:col-span-4 card h-[520px] bg-bg-card" />
+      </div>
+      <div className="card h-64 bg-bg-card" />
     </div>
   );
 }
