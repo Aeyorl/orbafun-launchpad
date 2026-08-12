@@ -14,7 +14,26 @@ const IPFS_GATEWAYS = [
   'https://dweb.link',
 ];
 
-export function proxy(request: NextRequest) {
+async function tokenRouteStatus(request: NextRequest, apiUrl: string) {
+  const match = request.nextUrl.pathname.match(
+    /^\/(?:coin|trade)\/(0x[0-9a-f]{40})\/?$/i,
+  );
+  if (!match) return null;
+
+  try {
+    const response = await fetch(`${apiUrl}/tokens/${match[1].toLowerCase()}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (response.status === 404) return 404;
+    if (!response.ok) return 503;
+    return null;
+  } catch {
+    return 503;
+  }
+}
+
+export async function proxy(request: NextRequest) {
   const nonce = crypto.randomUUID().replace(/-/g, '');
   const isTradingViewRuntime = request.nextUrl.pathname.startsWith(
     '/vendor/tradingview/charting_library/',
@@ -46,7 +65,12 @@ export function proxy(request: NextRequest) {
   requestHeaders.set('x-nonce', nonce);
   requestHeaders.set('Content-Security-Policy', csp);
 
-  const response = NextResponse.next({ request: { headers: requestHeaders } });
+  const tokenStatus = await tokenRouteStatus(request, apiUrl);
+  const response = tokenStatus
+    ? new NextResponse(tokenStatus === 404 ? 'Not Found' : 'Service Unavailable', {
+        status: tokenStatus,
+      })
+    : NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set('Content-Security-Policy', csp);
   response.headers.set('X-Frame-Options', isTradingViewRuntime ? 'SAMEORIGIN' : 'DENY');
   return response;
