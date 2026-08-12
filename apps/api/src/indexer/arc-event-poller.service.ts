@@ -152,13 +152,22 @@ export class ArcEventPollerService implements OnModuleInit {
       }
     }
 
-    // If no last block, start from a recent block (current - 1000) to avoid
-    // re-indexing the entire chain history on first run.
+    // If no checkpoint exists, start at the deployment block. A moving
+    // "current - 1000" window silently loses older launch history.
     if (this.lastBlock === 0n) {
-      const currentBlock = await this.getCurrentBlock();
-      this.lastBlock = currentBlock > 1000n ? currentBlock - 1000n : 1n;
+      const configured = process.env.ARC_DEPLOYMENT_BLOCK;
+      const chainId = Number(process.env.ARC_CHAIN_ID || 5_042_002);
+      const deploymentBlock = configured
+        ? BigInt(configured)
+        : chainId === 5_042_002
+          ? 52_509_682n
+          : 0n;
+      if (deploymentBlock <= 0n) {
+        throw new Error('ARC_DEPLOYMENT_BLOCK is required when no indexer checkpoint exists');
+      }
+      this.lastBlock = deploymentBlock - 1n;
       this.logger.warn(
-        `No sync state found — starting from block ${this.lastBlock} (current - 1000)`,
+        `No sync state found — starting from deployment block ${deploymentBlock}`,
       );
       await this.saveLastBlock(this.lastBlock);
     }
@@ -468,6 +477,9 @@ export class ArcEventPollerService implements OnModuleInit {
           10,
         )}): ${err.message}`,
       );
+      // Do not checkpoint beyond an event that failed to persist. Handlers are
+      // idempotent, so replaying the range is safe.
+      throw err;
     }
   }
 

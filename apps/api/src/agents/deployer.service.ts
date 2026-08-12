@@ -1,4 +1,16 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { DatabaseService } from '../database/database.service';
+
+export class BroadcastTransactionError extends Error {
+  constructor(
+    message: string,
+    public readonly txHash: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+    this.name = 'BroadcastTransactionError';
+  }
+}
 import { createAwsKmsAccount } from './aws-kms-account';
 
 /**
@@ -29,7 +41,28 @@ const {
   fallback,
   keccak256,
   toHex,
+  encodeFunctionData,
+  decodeAbiParameters,
 } = require('viem');
+
+export type TransactionInspection =
+  | { status: 'unknown' }
+  | { status: 'reverted'; txHash: string }
+  | { status: 'replaced'; txHash: string }
+  | {
+      status: 'success';
+      txHash: string;
+      gasUsed: bigint;
+      tokenAddress?: string;
+      curveAddress?: string;
+      tokenAmount?: bigint;
+      usdcAmount?: bigint;
+    };
+
+export interface TransactionInspectionContext {
+  operation: 'launch' | 'buy' | 'sell';
+  payload: Record<string, unknown>;
+}
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { privateKeyToAccount } = require('viem/accounts');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -198,6 +231,13 @@ const USDC_ADDRESS = requiredMainnetAddress(
 const TOKEN_CREATED_EVENT_TOPIC = keccak256(
   toHex('TokenCreated(address,address,address,string,string,string,uint256)'),
 );
+const BUY_V2_EVENT_TOPIC = keccak256(
+  toHex('BuyV2(address,uint256,uint256,uint256,uint256,uint256)'),
+);
+const SELL_V2_EVENT_TOPIC = keccak256(
+  toHex('SellV2(address,uint256,uint256,uint256,uint256,uint256)'),
+);
+const FIVE_UINT256_PARAMETERS = Array.from({ length: 5 }, () => ({ type: 'uint256' }));
 
 const RPC_URLS = (
   process.env.ARC_RPC_URLS ||
@@ -230,7 +270,7 @@ export class DeployerService implements OnModuleInit {
   private account: any;
   private tokenFactoryAddress: string;
 
-  constructor() {
+  constructor(private readonly db: DatabaseService) {
     this.tokenFactoryAddress = requiredMainnetAddress(
       process.env.ARC_TOKEN_FACTORY_ADDRESS,
       '0x8b59B3c4B7A634d8599e4DFB6891CEefd5CA424b',
@@ -352,6 +392,19 @@ export class DeployerService implements OnModuleInit {
     symbol: string,
     image: string,
     description: string,
+    intentId?: string,
+  ): Promise<LaunchResult> {
+    return this.withSignerLock(() =>
+      this.launchTokenUnlocked(name, symbol, image, description, intentId),
+    );
+  }
+
+  private async launchTokenUnlocked(
+    name: string,
+    symbol: string,
+    image: string,
+    description: string,
+    intentId?: string,
   ): Promise<LaunchResult> {
     if (!this.isConfigured()) {
       throw new Error('Deployer signer is not configured or funded actions are disabled');
@@ -392,23 +445,35 @@ export class DeployerService implements OnModuleInit {
     }
 
     // Submit the createToken transaction.
-    const txHash = await this.walletClient.writeContract({
+    const request = {
       address: this.tokenFactoryAddress,
       abi: TOKEN_FACTORY_ABI,
       functionName: 'createToken',
       args: [name, symbol.toUpperCase(), image, description],
       chain: ACTIVE_ARC_CHAIN,
       account: this.account,
-    });
+    };
+    const txHash = intentId
+      ? await this.signPersistAndBroadcast(intentId, request)
+      : await this.walletClient.writeContract(request);
 
     this.logger.log(`createToken tx submitted: ${txHash}`);
 
     // Wait for receipt to get the deployed addresses and gas used.
-    const receipt = await this.publicClient.waitForTransactionReceipt({
-      hash: txHash,
-      confirmations: 1,
-      timeout: 30_000,
-    });
+    let receipt;
+    try {
+      receipt = await this.publicClient.waitForTransactionReceipt({
+        hash: txHash,
+        confirmations: 1,
+        timeout: 30_000,
+      });
+    } catch (err) {
+      throw new BroadcastTransactionError(
+        `createToken transaction was broadcast but receipt is unresolved (tx: ${txHash})`,
+        txHash as string,
+        { cause: err },
+      );
+    }
 
     if (receipt.status !== 'success') {
       throw new Error(`createToken transaction reverted (tx: ${txHash})`);
@@ -462,6 +527,10 @@ export class DeployerService implements OnModuleInit {
    * creation-fee allowance automatically, so this is not required for setup.
    */
   async approveTokenFactory(): Promise<string> {
+    return this.withSignerLock(() => this.approveTokenFactoryUnlocked());
+  }
+
+  private async approveTokenFactoryUnlocked(): Promise<string> {
     if (!this.isConfigured()) {
       throw new Error('Deployer wallet not configured');
     }
@@ -573,7 +642,19 @@ export class DeployerService implements OnModuleInit {
   async buyTokens(
     curveAddress: string,
     usdcAmount: bigint,
+    slippageBps: bigint = 500n,
+    intentId?: string,
+  ): Promise<TradeResult> {
+    return this.withSignerLock(() =>
+      this.buyTokensUnlocked(curveAddress, usdcAmount, slippageBps, intentId),
+    );
+  }
+
+  private async buyTokensUnlocked(
+    curveAddress: string,
+    usdcAmount: bigint,
     slippageBps: bigint = 500n, // 5% default
+    intentId?: string,
   ): Promise<TradeResult> {
     if (!this.isConfigured()) {
       throw new Error('Deployer wallet not configured');
@@ -621,22 +702,34 @@ export class DeployerService implements OnModuleInit {
     }
 
     // Execute the buy.
-    const buyTx = await this.walletClient.writeContract({
+    const request = {
       address: curve,
       abi: BONDING_CURVE_ABI,
       functionName: 'buy',
       args: [usdcAmount, minTokensOut],
       chain: ACTIVE_ARC_CHAIN,
       account: this.account,
-    });
+    };
+    const buyTx = intentId
+      ? await this.signPersistAndBroadcast(intentId, request)
+      : await this.walletClient.writeContract(request);
 
     this.logger.log(`Buy tx submitted: ${buyTx}`);
 
-    const receipt = await this.publicClient.waitForTransactionReceipt({
-      hash: buyTx,
-      confirmations: 1,
-      timeout: 30_000,
-    });
+    let receipt;
+    try {
+      receipt = await this.publicClient.waitForTransactionReceipt({
+        hash: buyTx,
+        confirmations: 1,
+        timeout: 30_000,
+      });
+    } catch (err) {
+      throw new BroadcastTransactionError(
+        `Buy transaction was broadcast but receipt is unresolved (tx: ${buyTx})`,
+        buyTx as string,
+        { cause: err },
+      );
+    }
 
     if (receipt.status !== 'success') {
       throw new Error(`Buy transaction reverted (tx: ${buyTx})`);
@@ -666,7 +759,20 @@ export class DeployerService implements OnModuleInit {
     tokenAddress: string,
     curveAddress: string,
     tokenAmount: bigint,
+    slippageBps: bigint = 500n,
+    intentId?: string,
+  ): Promise<TradeResult> {
+    return this.withSignerLock(() =>
+      this.sellTokensUnlocked(tokenAddress, curveAddress, tokenAmount, slippageBps, intentId),
+    );
+  }
+
+  private async sellTokensUnlocked(
+    tokenAddress: string,
+    curveAddress: string,
+    tokenAmount: bigint,
     slippageBps: bigint = 500n, // 5% default
+    intentId?: string,
   ): Promise<TradeResult> {
     if (!this.isConfigured()) {
       throw new Error('Deployer wallet not configured');
@@ -729,22 +835,34 @@ export class DeployerService implements OnModuleInit {
     }
 
     // Execute the sell.
-    const sellTx = await this.walletClient.writeContract({
+    const request = {
       address: curve,
       abi: BONDING_CURVE_ABI,
       functionName: 'sell',
       args: [tokenAmount, minUsdcOut],
       chain: ACTIVE_ARC_CHAIN,
       account: this.account,
-    });
+    };
+    const sellTx = intentId
+      ? await this.signPersistAndBroadcast(intentId, request)
+      : await this.walletClient.writeContract(request);
 
     this.logger.log(`Sell tx submitted: ${sellTx}`);
 
-    const receipt = await this.publicClient.waitForTransactionReceipt({
-      hash: sellTx,
-      confirmations: 1,
-      timeout: 30_000,
-    });
+    let receipt;
+    try {
+      receipt = await this.publicClient.waitForTransactionReceipt({
+        hash: sellTx,
+        confirmations: 1,
+        timeout: 30_000,
+      });
+    } catch (err) {
+      throw new BroadcastTransactionError(
+        `Sell transaction was broadcast but receipt is unresolved (tx: ${sellTx})`,
+        sellTx as string,
+        { cause: err },
+      );
+    }
 
     if (receipt.status !== 'success') {
       throw new Error(`Sell transaction reverted (tx: ${sellTx})`);
@@ -758,6 +876,130 @@ export class DeployerService implements OnModuleInit {
       usdcAmount: quote as bigint, // USDC received (approx)
       gasUsed: receipt.gasUsed,
     };
+  }
+
+  private async signPersistAndBroadcast(intentId: string, request: any): Promise<string> {
+    const data = encodeFunctionData({
+      abi: request.abi,
+      functionName: request.functionName,
+      args: request.args,
+    });
+    const prepared = await this.walletClient.prepareTransactionRequest({
+      account: this.account,
+      chain: ACTIVE_ARC_CHAIN,
+      to: request.address,
+      data,
+    });
+    const signedTx = await this.account.signTransaction(prepared);
+    const txHash = keccak256(signedTx) as string;
+
+    // This commit occurs before sendRawTransaction. A crash at any later point
+    // is recoverable by broadcasting the same signed bytes (same nonce/hash).
+    const persisted = await this.db.query(
+      `UPDATE agent_transaction_intents
+       SET signed_tx = $2, tx_hash = $3, status = 'prepared', updated_at = NOW()
+       WHERE id = $1 AND status = 'created'`,
+      [intentId, signedTx, txHash],
+    );
+    if ((persisted as any).rowCount !== 1) {
+      throw new Error(`Transaction intent ${intentId} is not signable`);
+    }
+    await this.rebroadcastSignedTransaction(signedTx);
+    await this.db.query(
+      `UPDATE agent_transaction_intents SET status = 'broadcast', updated_at = NOW()
+       WHERE id = $1 AND status = 'prepared'`,
+      [intentId],
+    );
+    return txHash;
+  }
+
+  private async withSignerLock<T>(operation: () => Promise<T>): Promise<T> {
+    // Transaction-scoped advisory lock serializes the shared deployer account
+    // across every API replica. PostgreSQL releases it automatically on crash.
+    return this.db.transaction(async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock($1)', [1_330_790_990]);
+      return operation();
+    });
+  }
+
+  async getTransactionStatus(txHash: string): Promise<'success' | 'reverted' | 'pending'> {
+    if (!this.publicClient) return 'pending';
+    try {
+      const receipt = await this.publicClient.getTransactionReceipt({
+        hash: txHash as `0x${string}`,
+      });
+      return receipt.status === 'success' ? 'success' : 'reverted';
+    } catch {
+      return 'pending';
+    }
+  }
+
+  /** Re-send exactly the bytes persisted before the first RPC submission. */
+  async rebroadcastSignedTransaction(signedTx: string): Promise<void> {
+    if (!this.walletClient) throw new Error('Deployer wallet is not configured');
+    try {
+      await this.walletClient.sendRawTransaction({ serializedTransaction: signedTx });
+    } catch (err: any) {
+      // "already known" / "nonce too low" are normal after a crash following send.
+      const message = String(err?.message || err).toLowerCase();
+      if (!message.includes('already known') && !message.includes('nonce too low')) throw err;
+    }
+  }
+
+  async inspectTransaction(
+    txHash: string,
+    context: TransactionInspectionContext,
+  ): Promise<TransactionInspection> {
+    if (!this.publicClient) return { status: 'unknown' };
+    try {
+      const receipt = await this.publicClient.getTransactionReceipt({ hash: txHash as `0x${string}` });
+      if (receipt.status !== 'success') return { status: 'reverted', txHash };
+      const base = { status: 'success' as const, txHash, gasUsed: receipt.gasUsed };
+
+      if (context.operation === 'launch') {
+        const created = receipt.logs.find(
+          (log: any) =>
+            log.address.toLowerCase() === this.tokenFactoryAddress &&
+            log.topics[0]?.toLowerCase() === TOKEN_CREATED_EVENT_TOPIC.toLowerCase(),
+        );
+        if (!created?.topics[1] || !created?.topics[2]) return { status: 'unknown' };
+        return {
+          ...base,
+          tokenAddress: `0x${created.topics[1].slice(-40)}`.toLowerCase(),
+          curveAddress: `0x${created.topics[2].slice(-40)}`.toLowerCase(),
+        };
+      }
+
+      if (context.operation === 'buy') {
+        const curveAddress = String(context.payload.curveAddress || '').toLowerCase();
+        const bought = receipt.logs.find(
+          (log: any) =>
+            log.address.toLowerCase() === curveAddress &&
+            log.topics[0]?.toLowerCase() === BUY_V2_EVENT_TOPIC.toLowerCase(),
+        );
+        if (!bought) return { status: 'unknown' };
+        const decoded = decodeAbiParameters(FIVE_UINT256_PARAMETERS, bought.data);
+        return { ...base, tokenAmount: decoded[3] as bigint };
+      }
+
+      if (context.operation === 'sell') {
+        const curveAddress = String(context.payload.curveAddress || '').toLowerCase();
+        const sold = receipt.logs.find(
+          (log: any) =>
+            log.address.toLowerCase() === curveAddress &&
+            log.topics[0]?.toLowerCase() === SELL_V2_EVENT_TOPIC.toLowerCase(),
+        );
+        if (!sold) return { status: 'unknown' };
+        const decoded = decodeAbiParameters(FIVE_UINT256_PARAMETERS, sold.data);
+        return { ...base, usdcAmount: decoded[3] as bigint };
+      }
+
+      return base;
+    } catch {
+      // Absence/timeout/provider errors are deliberately indistinguishable and
+      // therefore never release a reservation.
+      return { status: 'unknown' };
+    }
   }
 
   /**

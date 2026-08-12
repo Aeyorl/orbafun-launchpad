@@ -1,11 +1,12 @@
 import { Injectable, Logger, BadRequestException, ForbiddenException, NotFoundException, Optional } from '@nestjs/common';
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import { DatabaseService } from '../database/database.service';
-import { DeployerService, LaunchResult, TradeResult } from './deployer.service';
+import { BroadcastTransactionError, DeployerService, LaunchResult, TradeResult } from './deployer.service';
 import { MessagesService } from '../messages/messages.service';
 import { TokenMetadataService, TokenMetadataInput } from '../token-metadata/token-metadata.service';
 import { isValidEvmAddress } from '../common/utils';
 import { AlertService, safeAlertError } from '../monitoring/alert.service';
+import { TransactionFinalizerService } from './transaction-finalizer.service';
 
 /**
  * AgentsService — manages AI agent registration, API key issuance, and
@@ -65,6 +66,7 @@ export class AgentsService {
     private deployer: DeployerService,
     private messagesService: MessagesService,
     private metadataService: TokenMetadataService,
+    private finalizer: TransactionFinalizerService,
     @Optional() private alerts?: AlertService,
   ) {}
 
@@ -191,15 +193,22 @@ export class AgentsService {
       this.logger.warn(`Deployer balance check failed: ${(err as Error).message}`);
     }
 
+    const image = input.image || '';
+    const description = input.description || '';
     const reservationId = await this.reserveSpending(
       agent.id,
       'launch',
       CREATION_FEE_USDC,
+      {
+        name: input.name.trim(),
+        symbol: input.symbol.trim().toUpperCase(),
+        image,
+        description,
+        usdcAmount: CREATION_FEE_USDC.toString(),
+      },
     );
 
     // Submit the on-chain transaction.
-    const image = input.image || '';
-    const description = input.description || '';
     let result: LaunchResult;
     try {
       result = await this.deployer.launchToken(
@@ -207,9 +216,14 @@ export class AgentsService {
         input.symbol.trim().toUpperCase(),
         image,
         description,
+        reservationId,
       );
     } catch (err) {
-      await this.releaseReservation(reservationId);
+      if (err instanceof BroadcastTransactionError) {
+        await this.markReservationBroadcast(reservationId, err.txHash);
+      } else {
+        await this.releaseReservation(reservationId);
+      }
       await this.alerts?.send('agent-launch-failed', 'critical', 'Agent-funded launch failed', {
         agentId: agent.agentId,
         error: safeAlertError(err),
@@ -217,45 +231,17 @@ export class AgentsService {
       throw err;
     }
 
-    // Record the launch in the database.
-    const gasPaid18dec = result.gasUsed; // 18-dec native USDC (approximate — gas price * gas used)
-    const client = await this.db.connect();
-    let launchRow: { id: number } | undefined;
-    try {
-      await client.query('BEGIN');
-      const inserted = await client.query(
-      `INSERT INTO agent_launches (
-         agent_id, token_address, curve_address, tx_hash,
-         name, symbol, image, description,
-         fee_paid, gas_paid, status
-       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'confirmed')
-       RETURNING id`,
-      [
-        agent.id,
-        result.tokenAddress,
-        result.curveAddress,
-        result.txHash,
-        input.name.trim(),
-        input.symbol.trim().toUpperCase(),
-        image || null,
-        description || null,
-        result.creationFee.toString(),
-        gasPaid18dec.toString(),
-      ],
-      );
-      launchRow = inserted.rows[0];
-      await this.confirmReservation(client, reservationId, result.txHash);
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    const gasPaid18dec = result.gasUsed;
+    await this.finalizer.finalizeSuccess(reservationId, {
+      status: 'success',
+      txHash: result.txHash,
+      tokenAddress: result.tokenAddress,
+      curveAddress: result.curveAddress,
+      gasUsed: result.gasUsed,
+    });
 
     this.logger.log(
-      `Agent ${agent.agentId} launched token ${result.tokenAddress} (launch id: ${launchRow?.id})`,
+      `Agent ${agent.agentId} launched token ${result.tokenAddress}`,
     );
 
     return {
@@ -687,7 +673,11 @@ export class AgentsService {
       throw new NotFoundException('Token or bonding curve not found');
     }
 
-    const reservationId = await this.reserveSpending(agent.id, 'buy', usdcAmount);
+    const reservationId = await this.reserveSpending(agent.id, 'buy', usdcAmount, {
+      tokenAddress: tokenAddress.toLowerCase(),
+      curveAddress: token.curve_address,
+      usdcAmount: usdcAmount.toString(),
+    });
 
     // Execute the buy on-chain.
     let result: TradeResult;
@@ -696,9 +686,14 @@ export class AgentsService {
         token.curve_address,
         usdcAmount,
         slippageBps,
+        reservationId,
       );
     } catch (err) {
-      await this.releaseReservation(reservationId);
+      if (err instanceof BroadcastTransactionError) {
+        await this.markReservationBroadcast(reservationId, err.txHash);
+      } else {
+        await this.releaseReservation(reservationId);
+      }
       await this.alerts?.send('agent-buy-failed', 'critical', 'Agent-funded buy failed', {
         agentId: agent.agentId,
         tokenAddress: tokenAddress.toLowerCase(),
@@ -707,35 +702,13 @@ export class AgentsService {
       throw err;
     }
 
-    // Record the trade.
-    const client = await this.db.connect();
-    try {
-      await client.query('BEGIN');
-
-      await client.query(
-      `INSERT INTO agent_trades (
-         agent_id, token_address, curve_address, tx_hash,
-         type, usdc_amount, token_amount, gas_paid, status
-       )
-       VALUES ($1, $2, $3, $4, 'buy', $5, $6, $7, 'confirmed')`,
-      [
-        agent.id,
-        tokenAddress.toLowerCase(),
-        token.curve_address,
-        result.txHash,
-        result.usdcAmount.toString(),
-        result.tokenAmount.toString(),
-        result.gasUsed.toString(),
-      ],
-      );
-      await this.confirmReservation(client, reservationId, result.txHash);
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    await this.finalizer.finalizeSuccess(reservationId, {
+      status: 'success',
+      txHash: result.txHash,
+      usdcAmount: result.usdcAmount,
+      tokenAmount: result.tokenAmount,
+      gasUsed: result.gasUsed,
+    });
 
     this.logger.log(
       `Agent ${agent.agentId} bought ${result.tokenAmount} tokens for ${result.usdcAmount} USDC on ${tokenAddress}`,
@@ -783,9 +756,24 @@ export class AgentsService {
       throw new NotFoundException('Token or bonding curve not found');
     }
 
-    // Check deployer token balance.
+    // Reserve only inventory economically attributable to this agent. The
+    // deployer wallet is shared, so its aggregate ERC-20 balance is not an
+    // authorization boundary.
+    const positionReservationId = await this.reservePosition(
+      agent.id,
+      tokenAddress.toLowerCase(),
+      tokenAmount,
+      {
+        tokenAddress: tokenAddress.toLowerCase(),
+        curveAddress: token.curve_address,
+        tokenAmount: tokenAmount.toString(),
+      },
+    );
+
+    // Check the aggregate on-chain balance after the per-agent reservation.
     const balance = await this.deployer.getTokenBalance(tokenAddress);
     if (balance < tokenAmount) {
+      await this.releasePositionReservation(positionReservationId);
       throw new BadRequestException(
         `Insufficient token balance in deployer wallet: have ${balance}, need ${tokenAmount}`,
       );
@@ -799,8 +787,14 @@ export class AgentsService {
         token.curve_address,
         tokenAmount,
         slippageBps,
+        positionReservationId,
       );
     } catch (err) {
+      if (err instanceof BroadcastTransactionError) {
+        await this.markPositionReservationBroadcast(positionReservationId, err.txHash);
+      } else {
+        await this.releasePositionReservation(positionReservationId);
+      }
       await this.alerts?.send('agent-sell-failed', 'critical', 'Agent-funded sell failed', {
         agentId: agent.agentId,
         tokenAddress: tokenAddress.toLowerCase(),
@@ -809,23 +803,12 @@ export class AgentsService {
       throw err;
     }
 
-    // Record the trade.
-    await this.db.query(
-      `INSERT INTO agent_trades (
-         agent_id, token_address, curve_address, tx_hash,
-         type, usdc_amount, token_amount, gas_paid, status
-       )
-       VALUES ($1, $2, $3, $4, 'sell', $5, $6, $7, 'confirmed')`,
-      [
-        agent.id,
-        tokenAddress.toLowerCase(),
-        token.curve_address,
-        result.txHash,
-        result.usdcAmount.toString(),
-        result.tokenAmount.toString(),
-        result.gasUsed.toString(),
-      ],
-    );
+    await this.finalizer.finalizeSuccess(positionReservationId, {
+      status: 'success',
+      txHash: result.txHash,
+      usdcAmount: result.usdcAmount,
+      gasUsed: result.gasUsed,
+    });
 
     this.logger.log(
       `Agent ${agent.agentId} sold ${result.tokenAmount} tokens for ${result.usdcAmount} USDC on ${tokenAddress}`,
@@ -868,6 +851,86 @@ export class AgentsService {
   }
 
   /**
+   * Atomically reserve an agent's own confirmed inventory before a sell.
+   */
+  private async reservePosition(
+    agentId: number,
+    tokenAddress: string,
+    amount: bigint,
+    payload: Record<string, string>,
+  ): Promise<string> {
+    const reservationId = randomUUID();
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      const agentResult = await client.query(
+        `SELECT id, active FROM agents WHERE id = $1 FOR UPDATE`,
+        [agentId],
+      );
+      if (!agentResult.rows[0]?.active) {
+        throw new ForbiddenException('Agent is inactive or no longer exists');
+      }
+      const position = await client.query(
+        `SELECT (
+           COALESCE(SUM(CASE WHEN type = 'buy' THEN token_amount ELSE -token_amount END), 0)
+           - COALESCE((SELECT SUM(amount) FROM agent_position_reservations
+             WHERE agent_id = $1 AND token_address = $2 AND status IN ('pending', 'broadcast_confirmed', 'reconciling')), 0)
+         )::text AS available_amount
+         FROM agent_trades
+         WHERE agent_id = $1 AND token_address = $2 AND status = 'confirmed'`,
+        [agentId, tokenAddress],
+      );
+      const available = BigInt(position.rows[0]?.available_amount || '0');
+      if (available < amount) {
+        throw new BadRequestException(
+          `Insufficient agent position: have ${available}, need ${amount}`,
+        );
+      }
+      await client.query(
+        `INSERT INTO agent_transaction_intents
+           (id, reservation_id, agent_id, operation, payload)
+         VALUES ($1, $2, $3, $4, $5::jsonb)`,
+        [reservationId, reservationId, agentId, 'sell', JSON.stringify(payload)],
+      );
+      await client.query(
+        `INSERT INTO agent_position_reservations
+           (reservation_id, transaction_intent_id, agent_id, token_address, amount)
+         VALUES ($1, $1, $2, $3, $4)`,
+        [reservationId, agentId, tokenAddress, amount.toString()],
+      );
+      await client.query('COMMIT');
+      return reservationId;
+    } catch (err) {
+      try { await client.query('ROLLBACK'); } catch {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+
+  private async markPositionReservationBroadcast(
+    reservationId: string,
+    txHash: string,
+  ): Promise<void> {
+    await this.db.query(
+      `UPDATE agent_position_reservations
+       SET tx_hash = $2
+       WHERE reservation_id = $1 AND status IN ('pending', 'broadcast_confirmed', 'reconciling')`,
+      [reservationId, txHash],
+    );
+  }
+
+  private async releasePositionReservation(reservationId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE agent_position_reservations
+       SET status = 'released', resolved_at = NOW()
+       WHERE reservation_id = $1 AND status IN ('pending', 'broadcast_confirmed', 'reconciling')`,
+      [reservationId],
+    );
+  }
+
+  /**
    * Check spending limits including trade spending.
    * @param agent Agent info with limits
    * @param additionalUsdc USDC that will be spent in the upcoming operation
@@ -876,6 +939,7 @@ export class AgentsService {
     agentId: number,
     operation: 'launch' | 'buy',
     principalUsdc: bigint,
+    payload: Record<string, string>,
   ): Promise<string> {
     const reservationId = randomUUID();
     const reservedAmount = principalUsdc + AGENT_GAS_RESERVE_USDC;
@@ -920,7 +984,7 @@ export class AgentsService {
             WHERE agent_id = $1 AND status = 'confirmed' AND type = 'buy'
               AND created_at >= NOW() - INTERVAL '24 hours'), 0)
            + COALESCE((SELECT SUM(amount) FROM agent_spend_reservations
-            WHERE agent_id = $1 AND status = 'pending'
+            WHERE agent_id = $1 AND status IN ('pending', 'broadcast_confirmed', 'reconciling')
               AND created_at >= NOW() - INTERVAL '24 hours'), 0)
          )::text AS total`,
         [agentId],
@@ -934,7 +998,7 @@ export class AgentsService {
             WHERE agent_id = $1 AND status = 'confirmed' AND type = 'buy'
               AND created_at >= NOW() - INTERVAL '30 days'), 0)
            + COALESCE((SELECT SUM(amount) FROM agent_spend_reservations
-            WHERE agent_id = $1 AND status = 'pending'
+            WHERE agent_id = $1 AND status IN ('pending', 'broadcast_confirmed', 'reconciling')
               AND created_at >= NOW() - INTERVAL '30 days'), 0)
          )::text AS total`,
         [agentId],
@@ -960,14 +1024,14 @@ export class AgentsService {
               WHERE status = 'confirmed' AND type = 'buy'
                 AND created_at >= NOW() - INTERVAL '24 hours'), 0)
             + COALESCE((SELECT SUM(amount) FROM agent_spend_reservations
-              WHERE status = 'pending' AND created_at >= NOW() - INTERVAL '24 hours'), 0))::text AS daily,
+              WHERE status IN ('pending', 'broadcast_confirmed', 'reconciling') AND created_at >= NOW() - INTERVAL '24 hours'), 0))::text AS daily,
            (COALESCE((SELECT SUM(fee_paid + gas_paid / 1000000000000) FROM agent_launches
               WHERE status = 'confirmed' AND created_at >= NOW() - INTERVAL '30 days'), 0)
             + COALESCE((SELECT SUM(usdc_amount + gas_paid / 1000000000000) FROM agent_trades
               WHERE status = 'confirmed' AND type = 'buy'
                 AND created_at >= NOW() - INTERVAL '30 days'), 0)
             + COALESCE((SELECT SUM(amount) FROM agent_spend_reservations
-              WHERE status = 'pending' AND created_at >= NOW() - INTERVAL '30 days'), 0))::text AS monthly`,
+              WHERE status IN ('pending', 'broadcast_confirmed', 'reconciling') AND created_at >= NOW() - INTERVAL '30 days'), 0))::text AS monthly`,
       );
       const platformDaily = BigInt(platformSpend.rows[0]?.daily || '0');
       const platformMonthly = BigInt(platformSpend.rows[0]?.monthly || '0');
@@ -997,6 +1061,12 @@ export class AgentsService {
          VALUES ($1, $2, $3, $4)`,
         [reservationId, agentId, operation, reservedAmount.toString()],
       );
+      await client.query(
+        `INSERT INTO agent_transaction_intents
+           (id, reservation_id, agent_id, operation, payload)
+         VALUES ($1, $2, $3, $4, $5::jsonb)`,
+        [reservationId, reservationId, agentId, operation, JSON.stringify(payload)],
+      );
       await client.query('COMMIT');
       return reservationId;
     } catch (err) {
@@ -1013,21 +1083,6 @@ export class AgentsService {
    * List agents deployed by a given owner wallet (self-serve deploy attribution).
    * Includes executor_enabled + last activity timestamp.
    */
-  private async confirmReservation(
-    client: { query: (text: string, params?: any[]) => Promise<any> },
-    reservationId: string,
-    txHash: string,
-  ): Promise<void> {
-    const result = await client.query(
-      `UPDATE agent_spend_reservations
-       SET status = 'confirmed', tx_hash = $2, resolved_at = NOW()
-       WHERE reservation_id = $1 AND status = 'pending'`,
-      [reservationId, txHash],
-    );
-    if (result.rowCount !== 1) {
-      throw new Error(`Spending reservation ${reservationId} is not pending`);
-    }
-  }
 
   private requiredPlatformLimit(name: string): bigint {
     const raw = process.env[name];
@@ -1043,11 +1098,23 @@ export class AgentsService {
     }
   }
 
+  private async markReservationBroadcast(
+    reservationId: string,
+    txHash: string,
+  ): Promise<void> {
+    await this.db.query(
+      `UPDATE agent_spend_reservations
+       SET tx_hash = $2
+       WHERE reservation_id = $1 AND status IN ('pending', 'broadcast_confirmed', 'reconciling')`,
+      [reservationId, txHash],
+    );
+  }
+
   private async releaseReservation(reservationId: string): Promise<void> {
     await this.db.query(
       `UPDATE agent_spend_reservations
        SET status = 'released', resolved_at = NOW()
-       WHERE reservation_id = $1 AND status = 'pending'`,
+       WHERE reservation_id = $1 AND status IN ('pending', 'broadcast_confirmed', 'reconciling')`,
       [reservationId],
     );
   }
