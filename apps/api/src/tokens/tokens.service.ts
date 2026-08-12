@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DatabaseService, QueryParam } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
@@ -59,7 +59,7 @@ export type SortOption = 'newest' | 'market_cap' | 'volume';
 export type StatusFilter = 'active' | 'graduated' | 'all';
 
 @Injectable()
-export class TokensService {
+export class TokensService implements OnModuleInit {
   private readonly logger = new Logger(TokensService.name);
   private readonly CACHE_TTL = 10; // seconds
 
@@ -74,6 +74,33 @@ export class TokensService {
 
   private scopeCacheKey(): string {
     return this.publicFactories().join(',');
+  }
+
+  async onModuleInit(): Promise<void> {
+    const scope = this.scopeCacheKey();
+    const doneKey = `factory-scope-cache-reset:${scope}:done`;
+    if (await this.redis.get(doneKey)) return;
+
+    const lockKey = `factory-scope-cache-reset:${scope}:lock`;
+    if (!(await this.redis.setIfAbsent(lockKey, '1', 300))) return;
+
+    try {
+      await Promise.all([
+        this.redis.delPattern('token:*'),
+        this.redis.delPattern('tokens:*'),
+        this.redis.delPattern('candles:*'),
+        this.redis.delPattern('stats:platform:*'),
+        this.redis.delPattern('leaderboard:*'),
+        this.redis.delPattern('user:*'),
+        this.redis.delPattern('user-stats:*'),
+        this.redis.delPattern('user-pnl:*'),
+        this.redis.delPattern('user-holdings:*'),
+      ]);
+      await this.redis.set(doneKey, new Date().toISOString());
+      this.logger.log(`Cleared public caches for factory scope ${scope}`);
+    } finally {
+      await this.redis.del(lockKey);
+    }
   }
 
   /**
