@@ -10,8 +10,8 @@ tokens only. Existing tokens are immutable and remain `legacy_capped`.
 - `LiquidityMigration` must be redeployed because its factory reference is
   immutable.
 - Treasury, AMMFactory, AMMRouter, the Safe, and ProtocolTimelock are reused.
-- The old factory stays indexed so its tokens remain discoverable and keep the
-  correct legacy trading warning.
+- Old contracts and database rows remain intact for rollback and audit evidence,
+  but the public and indexed factory allowlists contain only the new factory.
 
 ## Testnet cutover
 
@@ -20,8 +20,9 @@ tokens only. Existing tokens are immutable and remain `legacy_capped`.
    Safe and timelock addresses. Record the new factory, migrator and deployment
    block printed by the script.
 3. Verify the new factory and migrator bytecode and ownership on ArcScan.
-4. Add both old and new factory addresses to `TOKEN_FACTORY_ADDRESSES`.
-5. Add only the new address to `UNCAPPED_TOKEN_FACTORY_ADDRESSES` and
+4. Set `TOKEN_FACTORY_ADDRESSES` and `PUBLIC_TOKEN_FACTORY_ADDRESSES` to only
+   the new factory so old tokens remain preserved but hidden.
+5. Add the new address to `UNCAPPED_TOKEN_FACTORY_ADDRESSES` and
    `NEXT_PUBLIC_UNCAPPED_TOKEN_FACTORY_ADDRESSES`.
 6. Set `ARC_POLLER_REPLAY_FROM_BLOCK` to the new factory deployment block for
    the first API rollout. Event writes are idempotent, so replaying overlap is
@@ -37,9 +38,8 @@ tokens only. Existing tokens are immutable and remain `legacy_capped`.
 ## Rollback
 
 Pause the new factory through the Safe/timelock controls and restore the old
-factory as the launch target. Keep both factories in `TOKEN_FACTORY_ADDRESSES`
-so tokens launched before rollback remain indexed. Never relabel old tokens as
-uncapped and never remove the old factory from discovery.
+factory as the launch and visible target. Never relabel old tokens as uncapped
+or delete historical database evidence.
 
 No deployment, address change or traffic switch is performed by this document
 or by the deployment script unless an operator explicitly broadcasts it.
