@@ -73,6 +73,32 @@ persisted checkpoint `56629282` while the observed RPC head was `56629325`,
 and resumed its normal five-second head-following loop. The temporary
 `ARC_POLLER_REPLAY_FROM_BLOCK` override was then removed.
 
+## Hardened canary evidence
+
+The separately approved Arc testnet canary completed on 2026-08-13:
+
+| Item | Verified value |
+|---|---|
+| Token | `0x021db5505cf4511f766967e4bed37b952088c0bc` (`TestE2E073678` / `E2E416`) |
+| Bonding curve | `0xca3dad60810285e0c6c4ae4feb1dc6d22e95338c` |
+| Launch transaction | `0xb2a1768e1b5f50f7d42e612fe792a230201becf195877a38431929d500b3c9d2` |
+| Buy transaction | `0x3e559d001ab65db36cd811255d6c374b5d23b9f08e9cc661a213105deb985dd8` (2 USDC) |
+| Sell transaction | `0x90e64c1936427a050351f7541beba0b417e3e3453d1d7cc9f2f07166fdf25a6a` (half the purchased tokens) |
+| Factory | `0xF09FC443D4f0F217F1B65d112b5fB8928a4ff09E` |
+| Transfer policy | `legacy_capped` |
+
+The launch receipt contains the exact 5 USDC transfer to hardened Treasury
+`0xDC9471561269845249614cfB4e42cFdd73F2E828`. The buy and sell were confirmed
+and indexed, and token, trade, chart, holder, profile, position, statistics and
+activity endpoints returned HTTP 200. The production coin and trade pages also
+returned HTTP 200.
+
+The wallet received `494,832.99116643024361988` tokens against a
+`40,000,000` token pre-graduation maximum. A read-only over-cap transfer
+simulation reverted as required. All factory, curve-USDC and curve-token
+allowances were zero after execution. Receipt and log emitter enumeration found
+no address from the legacy stack.
+
 The public factory scope is an application visibility boundary. Legacy rows
 remain in PostgreSQL for audit and rollback, but public queries, direct token
 lookups, indexing, cache keys, WebSocket rooms and agent execution resolve only
