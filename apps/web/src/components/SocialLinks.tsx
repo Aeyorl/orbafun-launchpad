@@ -4,31 +4,39 @@ import { useState } from 'react';
 import { useAccount } from 'wagmi';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
+import {
+  DiscordLogo,
+  GlobeSimple,
+  PencilSimple,
+  TelegramLogo,
+  XLogo,
+} from '@phosphor-icons/react';
+
 import { api, TokenMetadata } from '@/lib/api';
 import { useAuth } from '@/lib/use-auth';
 
-/**
- * Sanitize a URL for safe use as an href attribute.
- * Only allows http:// and https:// schemes — rejects javascript:, data:, etc.
- * This is defense-in-depth; the API also validates URL schemes server-side.
- */
 function safeHref(url: string): string | null {
   if (!url) return null;
   try {
     const parsed = new URL(url);
     if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return url;
   } catch {
-    // Not a valid URL — could be a bare handle, check below
+    // Bare handles are normalized by the individual social link renderers.
   }
   return null;
 }
 
-/**
- * SocialLinks — displays a token's social links (website, twitter, telegram,
- * discord) and, if the connected wallet is the token creator, shows an "Edit"
- * button to add/update them via the off-chain metadata API.
- */
-export function SocialLinks({ tokenAddress, creatorWallet }: { tokenAddress: string; creatorWallet: string }) {
+export function SocialLinks({
+  tokenAddress,
+  creatorWallet,
+  variant = 'card',
+  hideTwitter = false,
+}: {
+  tokenAddress: string;
+  creatorWallet: string;
+  variant?: 'card' | 'inline';
+  hideTwitter?: boolean;
+}) {
   const { address } = useAccount();
   const { getAuthToken, authenticate } = useAuth();
   const queryClient = useQueryClient();
@@ -36,15 +44,14 @@ export function SocialLinks({ tokenAddress, creatorWallet }: { tokenAddress: str
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<Partial<TokenMetadata>>({});
 
-  const isCreator = address && address.toLowerCase() === creatorWallet.toLowerCase();
-
+  const isCreator = address?.toLowerCase() === creatorWallet.toLowerCase();
   const { data: meta } = useQuery({
     queryKey: ['token-metadata', tokenAddress],
     queryFn: () => api.getTokenMetadata(tokenAddress),
     staleTime: 30_000,
   });
 
-  const hasLinks = meta && (meta.website || meta.twitter || meta.telegram || meta.discord);
+  const hasLinks = Boolean(meta && (meta.website || meta.twitter || meta.telegram || meta.discord));
 
   const startEdit = () => {
     setForm({
@@ -59,7 +66,6 @@ export function SocialLinks({ tokenAddress, creatorWallet }: { tokenAddress: str
 
   const save = async () => {
     if (!address) return;
-    // Ensure authenticated
     let token = getAuthToken();
     if (!token) {
       try {
@@ -70,15 +76,16 @@ export function SocialLinks({ tokenAddress, creatorWallet }: { tokenAddress: str
         return;
       }
     }
+
     setSaving(true);
     try {
       await api.setTokenMetadata(tokenAddress, address, form, token);
       await queryClient.invalidateQueries({ queryKey: ['token-metadata', tokenAddress] });
       toast.success('Social links updated');
       setEditing(false);
-    } catch (err) {
+    } catch (error) {
       toast.error('Failed to update social links');
-      console.error(err);
+      console.error(error);
     } finally {
       setSaving(false);
     }
@@ -86,106 +93,53 @@ export function SocialLinks({ tokenAddress, creatorWallet }: { tokenAddress: str
 
   if (editing) {
     return (
-      <div className="card">
-        <h3 className="font-semibold mb-3">Edit Social Links</h3>
-        <div className="space-y-3">
-          <div>
-            <label htmlFor="social-website" className="text-xs text-text-muted block mb-1">Website</label>
-            <input
-              id="social-website"
-              className="input-field"
-              placeholder="https://example.com"
-              value={form.website || ''}
-              onChange={(e) => setForm({ ...form, website: e.target.value })}
-            />
-          </div>
-          <div>
-            <label htmlFor="social-twitter" className="text-xs text-text-muted block mb-1">Twitter / X</label>
-            <input
-              id="social-twitter"
-              className="input-field"
-              placeholder="handle (without @)"
-              value={form.twitter || ''}
-              onChange={(e) => setForm({ ...form, twitter: e.target.value })}
-            />
-          </div>
-          <div>
-            <label htmlFor="social-telegram" className="text-xs text-text-muted block mb-1">Telegram</label>
-            <input
-              id="social-telegram"
-              className="input-field"
-              placeholder="https://t.me/yourgroup"
-              value={form.telegram || ''}
-              onChange={(e) => setForm({ ...form, telegram: e.target.value })}
-            />
-          </div>
-          <div>
-            <label htmlFor="social-discord" className="text-xs text-text-muted block mb-1">Discord</label>
-            <input
-              id="social-discord"
-              className="input-field"
-              placeholder="https://discord.gg/invite"
-              value={form.discord || ''}
-              onChange={(e) => setForm({ ...form, discord: e.target.value })}
-            />
-          </div>
-          <div>
-            <label htmlFor="social-description" className="text-xs text-text-muted block mb-1">Description</label>
+      <div className={variant === 'inline' ? 'w-full rounded-lg border border-bg-border bg-bg-input p-4' : 'card'}>
+        <h3 className="mb-3 font-semibold">Edit token profile</h3>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SocialInput label="Website" value={form.website || ''} placeholder="https://example.com" onChange={(website) => setForm({ ...form, website })} />
+          <SocialInput label="X / Twitter" value={form.twitter || ''} placeholder="handle" onChange={(twitter) => setForm({ ...form, twitter })} />
+          <SocialInput label="Telegram" value={form.telegram || ''} placeholder="https://t.me/group" onChange={(telegram) => setForm({ ...form, telegram })} />
+          <SocialInput label="Discord" value={form.discord || ''} placeholder="https://discord.gg/invite" onChange={(discord) => setForm({ ...form, discord })} />
+          <label className="sm:col-span-2">
+            <span className="mb-1 block text-xs text-text-muted">About</span>
             <textarea
-              id="social-description"
               className="input-field"
               rows={3}
               maxLength={500}
-              placeholder="Tell people about your token"
+              placeholder="Tell people about this token"
               value={form.description || ''}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
+              onChange={(event) => setForm({ ...form, description: event.target.value })}
             />
-          </div>
-          <div className="flex gap-2">
-            <button onClick={save} disabled={saving} aria-disabled={saving} className="btn-primary text-sm flex-1">
-              {saving ? 'Saving…' : 'Save'}
-            </button>
-            <button onClick={() => setEditing(false)} className="btn-secondary text-sm">
-              Cancel
-            </button>
-          </div>
+          </label>
+        </div>
+        <div className="mt-3 flex gap-2">
+          <button type="button" onClick={save} disabled={saving} className="btn-primary text-sm">
+            {saving ? 'Saving…' : 'Save profile'}
+          </button>
+          <button type="button" onClick={() => setEditing(false)} className="btn-secondary text-sm">
+            Cancel
+          </button>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="card">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="font-semibold">Socials</h3>
-        {isCreator && (
-          <button onClick={startEdit} className="text-xs text-accent-green hover:underline">
-            {hasLinks ? 'Edit' : '+ Add'}
-          </button>
-        )}
-      </div>
+  const linkClass = variant === 'inline'
+    ? 'inline-flex items-center gap-1.5 text-xs font-medium text-text-secondary transition-colors hover:text-accent-blue'
+    : 'badge-blue hover:brightness-125 transition';
+
+  const content = (
+    <>
       {hasLinks ? (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {meta?.website && safeHref(meta.website) && (
-            <a
-              href={safeHref(meta.website)!}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="badge-blue hover:brightness-125 transition"
-              aria-label="Website (opens in new tab)"
-            >
-              🌐 Website <span className="sr-only">(opens in new tab)</span>
+            <a href={safeHref(meta.website)!} target="_blank" rel="noopener noreferrer" className={linkClass}>
+              <GlobeSimple size={15} weight="bold" aria-hidden="true" /> Website
             </a>
           )}
-          {meta?.twitter && (
-            <a
-              href={`https://x.com/${meta.twitter.replace(/^@/, '')}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="badge-blue hover:brightness-125 transition"
-              aria-label={`Twitter @${meta.twitter.replace(/^@/, '')} (opens in new tab)`}
-            >
-              𝕏 @{meta.twitter.replace(/^@/, '')} <span className="sr-only">(opens in new tab)</span>
+          {meta?.twitter && !hideTwitter && (
+            <a href={`https://x.com/${meta.twitter.replace(/^@/, '')}`} target="_blank" rel="noopener noreferrer" className={linkClass}>
+              <XLogo size={15} weight="bold" aria-hidden="true" /> X
             </a>
           )}
           {meta?.telegram && (
@@ -193,32 +147,61 @@ export function SocialLinks({ tokenAddress, creatorWallet }: { tokenAddress: str
               href={meta.telegram.startsWith('http') ? (safeHref(meta.telegram) || '#') : `https://t.me/${meta.telegram}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="badge-blue hover:brightness-125 transition"
-              aria-label="Telegram (opens in new tab)"
+              className={linkClass}
             >
-              ✈️ Telegram <span className="sr-only">(opens in new tab)</span>
+              <TelegramLogo size={15} weight="bold" aria-hidden="true" /> Telegram
             </a>
           )}
-          {meta?.discord && safeHref(meta.discord || '') && (
-            <a
-              href={safeHref(meta.discord!)!}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="badge-blue hover:brightness-125 transition"
-              aria-label="Discord (opens in new tab)"
-            >
-              🎮 Discord <span className="sr-only">(opens in new tab)</span>
+          {meta?.discord && safeHref(meta.discord) && (
+            <a href={safeHref(meta.discord)!} target="_blank" rel="noopener noreferrer" className={linkClass}>
+              <DiscordLogo size={15} weight="bold" aria-hidden="true" /> Discord
             </a>
           )}
         </div>
       ) : (
         <p className="text-xs text-text-muted">
-          {isCreator ? 'Add social links so people can verify and follow your token.' : 'No social links yet.'}
+          {isCreator ? 'Add links so traders can verify this token.' : 'No social links yet.'}
         </p>
       )}
-      {meta?.description && meta.description !== '' && (
-        <p className="text-sm text-text-secondary mt-3">{meta.description}</p>
+      {isCreator && (
+        <button type="button" onClick={startEdit} className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent-blue hover:underline">
+          <PencilSimple size={14} weight="bold" aria-hidden="true" />
+          {hasLinks ? 'Edit links' : 'Add links'}
+        </button>
       )}
+    </>
+  );
+
+  if (variant === 'inline') {
+    return <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">{content}</div>;
+  }
+
+  return (
+    <div className="card">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="font-semibold">Socials</h3>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">{content}</div>
+      {meta?.description && <p className="mt-3 text-sm text-text-secondary">{meta.description}</p>}
     </div>
+  );
+}
+
+function SocialInput({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label>
+      <span className="mb-1 block text-xs text-text-muted">{label}</span>
+      <input className="input-field" value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+    </label>
   );
 }

@@ -28,6 +28,7 @@ import {
   formatTokens,
   formatPrice,
   bondingCurveProgress,
+  ipfsToGateway,
 } from '@/lib/utils';
 import { Token } from '@/lib/api';
 import { useArcReceiptFallback } from '@/lib/use-arc-receipt';
@@ -498,7 +499,7 @@ export function TradePanel({ token }: { token: Token }) {
   const progress = bondingCurveProgress(token.market_cap);
 
   return (
-    <div className="card space-y-3.5 bg-bg-card border border-bg-border shadow-subtle-1">
+    <div className="flex h-full flex-col gap-3.5 overflow-y-auto bg-bg-card p-4 sm:p-5">
       {/* 1. SEGMENTED BUY / SELL CONTROL */}
       <div className="bg-bg-input p-1 rounded-xl flex gap-1 border border-bg-border/60" role="tablist">
         <button
@@ -607,8 +608,16 @@ export function TradePanel({ token }: { token: Token }) {
           <span className="w-full text-lg font-bold font-mono text-text-primary truncate">
             {quote && parsedAmount > 0n ? `≈ ${formattedQuote}` : '≈ 0.00'}
           </span>
-          <span className="text-xs font-bold text-text-secondary font-mono flex-shrink-0">
+          <span className="flex flex-shrink-0 items-center gap-2 text-xs font-bold text-text-secondary font-mono">
             {mode === 'buy' ? token.symbol : 'USDC'}
+            {mode === 'buy' && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={token.image ? ipfsToGateway(token.image) : '/orba-bloom-icon.svg'}
+                alt=""
+                className="h-6 w-6 rounded-full border border-bg-border object-cover"
+              />
+            )}
           </span>
         </div>
       </div>

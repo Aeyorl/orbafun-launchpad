@@ -5,6 +5,7 @@ import { OhlcvCandle, CandleTimeframe } from '@/lib/api';
 import { formatMarketCap, formatPrice } from '@/lib/utils';
 import { ChartToolbar, ChartType, MetricMode, ScaleType } from './ChartToolbar';
 import { ConnectionStatus } from '@/lib/useWebSocket';
+import { ChartLineUp, X } from '@phosphor-icons/react';
 
 // Dynamic imports for lightweight-charts (client-side only)
 let createChart: any;
@@ -56,7 +57,19 @@ export const TradingChart = memo(function TradingChart({
   const [metricMode, setMetricMode] = useState<MetricMode>(externalMode || 'price');
   const [scale, setScale] = useState<ScaleType>('linear');
   const [showMarkers, setShowMarkers] = useState(false);
+  const [isDark, setIsDark] = useState(
+    () => typeof document !== 'undefined' && document.documentElement.classList.contains('dark'),
+  );
   const hasCandles = candles.length > 0;
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const syncTheme = () => setIsDark(root.classList.contains('dark'));
+    syncTheme();
+    const observer = new MutationObserver(syncTheme);
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
 
   // Sync external mode
   useEffect(() => {
@@ -105,42 +118,40 @@ export const TradingChart = memo(function TradingChart({
       volumeSeriesRef.current = null;
     }
 
-    const isDark = typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : true;
-
     const chart = createChart(chartContainerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: isDark ? '#0a0e1a' : '#ffffff' },
-        textColor: isDark ? '#8b95a8' : '#101828',
+        background: { type: ColorType.Solid, color: isDark ? '#13182b' : '#fffdf6' },
+        textColor: isDark ? '#9aa4bf' : '#70778a',
         fontFamily: "'Inter', 'JetBrains Mono', system-ui, monospace",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: isDark ? 'rgba(39, 117, 202, 0.06)' : 'rgba(0, 0, 0, 0.04)', style: 1 },
-        horzLines: { color: isDark ? 'rgba(39, 117, 202, 0.06)' : 'rgba(0, 0, 0, 0.04)', style: 1 },
+        vertLines: { color: isDark ? 'rgba(126, 153, 255, 0.10)' : 'rgba(130, 116, 87, 0.13)', style: 1 },
+        horzLines: { color: isDark ? 'rgba(126, 153, 255, 0.10)' : 'rgba(130, 116, 87, 0.13)', style: 1 },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: {
-          color: isDark ? 'rgba(39, 117, 202, 0.4)' : '#5d2a1a',
+          color: isDark ? '#7e99ff' : '#2348df',
           width: 1,
           style: 3,
-          labelBackgroundColor: isDark ? '#1e2a44' : '#5d2a1a',
+          labelBackgroundColor: isDark ? '#313b65' : '#2348df',
         },
         horzLine: {
-          color: isDark ? 'rgba(39, 117, 202, 0.4)' : '#5d2a1a',
+          color: isDark ? '#7e99ff' : '#2348df',
           width: 1,
           style: 3,
-          labelBackgroundColor: isDark ? '#1e2a44' : '#5d2a1a',
+          labelBackgroundColor: isDark ? '#313b65' : '#2348df',
         },
       },
       rightPriceScale: {
-        borderColor: isDark ? '#1e2a44' : '#ececec',
+        borderColor: isDark ? '#3e4767' : '#ddd6c6',
         scaleMargins: { top: 0.1, bottom: 0.22 },
         mode: scale === 'log' ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
         autoScale: true,
       },
       timeScale: {
-        borderColor: isDark ? '#1e2a44' : '#ececec',
+        borderColor: isDark ? '#3e4767' : '#ddd6c6',
         timeVisible: true,
         secondsVisible: timeframe === '10s',
         rightOffset: 5,
@@ -180,10 +191,10 @@ export const TradingChart = memo(function TradingChart({
 
     if (chartType === 'candlestick') {
       mainSeries = chart.addSeries(CandlestickSeries, {
-        upColor: '#22c55e',
-        downColor: '#ef4444',
-        wickUpColor: '#22c55e',
-        wickDownColor: '#ef4444',
+        upColor: isDark ? '#62d29f' : '#4ca978',
+        downColor: isDark ? '#ff7162' : '#e86959',
+        wickUpColor: isDark ? '#62d29f' : '#4ca978',
+        wickDownColor: isDark ? '#ff7162' : '#e86959',
         borderVisible: false,
         priceFormat,
       });
@@ -284,7 +295,7 @@ export const TradingChart = memo(function TradingChart({
       mainSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [ready, hasCandles, chartType, scale, metricMode, timeframe, formatValue]);
+  }, [ready, hasCandles, chartType, scale, metricMode, timeframe, formatValue, isDark]);
 
   // Update series data when candles change without destroying chart
   useEffect(() => {
@@ -338,7 +349,7 @@ export const TradingChart = memo(function TradingChart({
       className={`flex flex-col bg-bg-card ${
         isFullscreen
           ? 'fixed inset-0 z-50 bg-bg-base'
-          : 'card !p-0 border border-bg-border'
+          : 'h-full overflow-hidden'
       }`}
     >
       {/* Toolbar */}
@@ -363,7 +374,7 @@ export const TradingChart = memo(function TradingChart({
       <div className="relative flex-1 min-h-0">
         {/* Dynamic Crosshair Hover Legend Overlay */}
         {hoverLegend && (
-          <div className="absolute top-2 left-2 z-10 bg-[#0a0e1a]/90 backdrop-blur-md border border-bg-border px-2.5 py-1 rounded text-[11px] font-mono flex items-center gap-3 text-text-secondary pointer-events-none">
+          <div className="pointer-events-none absolute left-2 top-2 z-10 flex items-center gap-3 rounded-md border border-bg-border bg-bg-card/90 px-2.5 py-1 font-mono text-[11px] text-text-secondary backdrop-blur-md">
             <span className="text-text-muted">{hoverLegend.time}</span>
             <span>
               <span className="text-text-muted mr-1">{metricMode === 'price' ? 'Price:' : 'MCap:'}</span>
@@ -380,14 +391,14 @@ export const TradingChart = memo(function TradingChart({
 
         <div
           ref={chartContainerRef}
-          className={`w-full ${isFullscreen ? 'h-full' : 'h-[340px] sm:h-[440px] lg:h-[520px]'}`}
+          className={`w-full ${isFullscreen ? 'h-full' : 'h-[420px] sm:h-[500px] lg:h-[460px]'}`}
         />
 
         {/* Empty state — no fake candles manufactured */}
         {candles.length === 0 && ready && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#0a0e1a]">
+          <div className="absolute inset-0 flex items-center justify-center bg-bg-card">
             <div className="text-center text-text-muted text-sm space-y-1">
-              <div className="text-2xl mb-1">📊</div>
+              <ChartLineUp size={28} weight="duotone" className="mx-auto mb-2 text-accent-blue" aria-hidden="true" />
               <div className="font-semibold text-text-primary">No trades in this timeframe</div>
               <div className="text-xs text-text-muted">
                 Select a longer interval or wait for the next trade.
@@ -398,7 +409,7 @@ export const TradingChart = memo(function TradingChart({
 
         {/* Loading state */}
         {!ready && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#0a0e1a]">
+          <div className="absolute inset-0 flex items-center justify-center bg-bg-card">
             <div className="w-6 h-6 border-2 border-accent-blue border-t-transparent rounded-full animate-spin" />
           </div>
         )}
@@ -412,9 +423,9 @@ export const TradingChart = memo(function TradingChart({
         {isFullscreen && (
           <button
             onClick={handleFullscreen}
-            className="absolute top-2 right-2 px-3 py-1 bg-bg-card text-text-primary text-xs border border-bg-border hover:bg-bg-hover transition-colors z-10"
+            className="absolute top-2 right-2 z-10 inline-flex items-center gap-1.5 border border-bg-border bg-bg-card px-3 py-1 text-xs text-text-primary transition-colors hover:bg-bg-hover"
           >
-            ✕ Exit
+            <X size={14} weight="bold" aria-hidden="true" /> Exit
           </button>
         )}
       </div>

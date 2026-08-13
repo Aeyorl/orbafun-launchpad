@@ -6,6 +6,7 @@ import { api, Trade } from '@/lib/api';
 import { formatUsdc, formatTokens, shortenAddress, timeAgo } from '@/lib/utils';
 import { ARC_EXPLORER_URL } from '@/lib/config';
 import { WalletBadge } from '@/components/WalletBadge';
+import { ArrowSquareOut } from '@phosphor-icons/react';
 
 const PAGE_SIZE = 50;
 const ARCSCAN_BASE = ARC_EXPLORER_URL;
@@ -25,9 +26,11 @@ type TradeFilter = 'all' | 'buy' | 'sell';
 export function TradeHistory({
   initialTrades,
   tokenAddress,
+  embedded = false,
 }: {
   initialTrades: Trade[];
   tokenAddress: string;
+  embedded?: boolean;
 }) {
   const [trades, setTrades] = useState<Trade[]>(initialTrades);
   const [offset, setOffset] = useState(initialTrades.length);
@@ -90,8 +93,8 @@ export function TradeHistory({
   const hasMore = totalTrades === null ? trades.length >= 100 : trades.length < totalTrades;
 
   return (
-    <div className="card">
-      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+    <div className={embedded ? '' : 'card'}>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-semibold">Transaction History</h3>
         <div className="flex items-center gap-2">
           {totalTrades !== null && (
@@ -132,13 +135,13 @@ export function TradeHistory({
         </div>
       ) : (
         <>
-          <div className="space-y-1 max-h-[28rem] overflow-y-auto pr-1">
+          <div className="max-h-[28rem] overflow-y-auto pr-1">
             {filteredTrades.map((trade) => (
               <div
                 key={`${trade.tx_hash}-${trade.log_index}`}
-                className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-bg-hover transition-colors text-sm group"
+                className="group grid gap-2 border-b border-bg-border px-1 py-3 text-sm transition-colors last:border-0 hover:bg-bg-hover/60 sm:grid-cols-[minmax(0,1.2fr)_minmax(230px,.8fr)] sm:items-center sm:px-3"
               >
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
                   <span
                     className={`badge ${
                       trade.type === 'buy' ? 'badge-green' : 'badge-red'
@@ -154,11 +157,11 @@ export function TradeHistory({
                     {formatTokens(trade.token_amount)}
                   </span>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-text-muted flex-shrink-0">
+                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 text-xs text-text-muted sm:justify-self-end">
                   {/* Wallet — links to both internal profile and ArcScan */}
                   <Link
                     href={`/profile/${trade.wallet}`}
-                    className="hover:text-accent-blue hover:underline transition-colors"
+                    className="truncate transition-colors hover:text-accent-blue hover:underline"
                     title={`View profile: ${trade.wallet}`}
                   >
                     {shortenAddress(trade.wallet)}
@@ -178,14 +181,10 @@ export function TradeHistory({
                     href={`${ARCSCAN_BASE}/tx/${trade.tx_hash}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="opacity-0 group-hover:opacity-100 transition-opacity text-text-muted hover:text-accent-blue"
+                    className="text-text-muted opacity-60 transition-opacity hover:text-accent-blue group-hover:opacity-100"
                     title="View on ArcScan"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                      <polyline points="15 3 21 3 21 9" />
-                      <line x1="10" y1="14" x2="21" y2="3" />
-                    </svg>
+                    <ArrowSquareOut size={13} weight="bold" aria-hidden="true" />
                   </a>
                 </div>
               </div>
