@@ -41,3 +41,20 @@ All six receipts succeeded.
 
 The factory uses the uncapped MemeToken implementation. Fixed one-billion-token
 supply and the 30-block pre-graduation cooldown remain unchanged.
+
+## Canary
+
+| Item | Value |
+|---|---|
+| Token | `0x8f77a0131cfb6b64240ff47848b3430a08c9274e` |
+| Curve | `0x0bfba16604a2027de4c55a5f3d92439007d29d4b` |
+| Launch transaction | `0x0b900621a3ddbdcdf3fb17b5ac30dcc0aa153731613a6a059663df10a1525dc4` |
+| Buy transaction | `0xccec5a343507693e7d8d74955436741842915d5b793dface338b97708eeb0f2b` |
+| Sell transaction | `0x3a3f74d0fa3496bbad237e2881050742f3455086e9e900bb68d7a6568da4993c` |
+| API policy | `uncapped` |
+
+The launch was indexed within five seconds. A 2 USDC buy and partial sell both
+succeeded and appeared in the public API. The token has no callable
+`maxWallet()` selector. Factory, curve-USDC, and curve-token allowances were all
+zero after the exact bounded approvals were consumed. The old hardened-token
+direct API request returned 404 while its database row remained intact.
