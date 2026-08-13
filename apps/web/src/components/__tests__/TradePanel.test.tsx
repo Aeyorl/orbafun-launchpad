@@ -159,6 +159,17 @@ describe('TradePanel', () => {
       expect(screen.getByText('Enter amount')).toBeInTheDocument();
     });
 
+    it('keeps the primary action outside the scrolling form region', () => {
+      renderWithProviders(<TradePanel token={createMockToken()} />);
+
+      const actionFooter = screen.getByTestId('trade-panel-action-footer');
+      const scrollRegion = screen.getByTestId('trade-panel-scroll-region');
+      const primaryAction = screen.getByRole('button', { name: 'Enter amount' });
+
+      expect(actionFooter).toContainElement(primaryAction);
+      expect(scrollRegion).not.toContainElement(primaryAction);
+    });
+
     it('shows price impact and fee information', () => {
       renderWithProviders(<TradePanel token={createMockToken()} />);
       expect(screen.getByText('Price impact')).toBeInTheDocument();
@@ -280,9 +291,9 @@ describe('TradePanel', () => {
       fireEvent.change(screen.getByPlaceholderText('0.00'), {
         target: { value: '10' },
       });
-      expect(
+      expect(screen.getByTestId('trade-panel-action-footer')).toContainElement(
         screen.getByText('Approve 10 USDC (1 of 2)'),
-      ).toBeInTheDocument();
+      );
     });
 
     it('shows the exact one-time token approval on sell with insufficient allowance', () => {
@@ -291,9 +302,9 @@ describe('TradePanel', () => {
       fireEvent.change(screen.getByPlaceholderText('0.00'), {
         target: { value: '1000' },
       });
-      expect(
+      expect(screen.getByTestId('trade-panel-action-footer')).toContainElement(
         screen.getByText('Approve 1000 ADOGE (1 of 2)'),
-      ).toBeInTheDocument();
+      );
     });
 
     it('explains the wallet spending-cap screen before opening it', () => {

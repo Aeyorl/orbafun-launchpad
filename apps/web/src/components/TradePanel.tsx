@@ -499,7 +499,11 @@ export function TradePanel({ token }: { token: Token }) {
   const progress = bondingCurveProgress(token.market_cap);
 
   return (
-    <div className="flex h-full flex-col gap-3.5 overflow-y-auto bg-bg-card p-4 sm:p-5">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-bg-card">
+      <div
+        data-testid="trade-panel-scroll-region"
+        className="min-h-0 flex-1 space-y-3.5 overflow-y-auto p-4 pb-3 sm:p-5 sm:pb-3"
+      >
       {/* 1. SEGMENTED BUY / SELL CONTROL */}
       <div className="bg-bg-input p-1 rounded-xl flex gap-1 border border-bg-border/60" role="tablist">
         <button
@@ -723,8 +727,14 @@ export function TradePanel({ token }: { token: Token }) {
         )}
       </div>
 
+      </div>
+
       {/* 6. PRIMARY ACTION CTA BUTTON WITH POLISHED STATES */}
-      {buyWouldExceedMaxWallet && (
+      <div
+        data-testid="trade-panel-action-footer"
+        className="shrink-0 space-y-2.5 border-t border-bg-border bg-bg-card p-4 pt-3 sm:px-5 sm:pb-5"
+      >
+        {buyWouldExceedMaxWallet && (
         <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-800 dark:text-amber-200">
           This legacy token limits a wallet to 4% of supply. You can receive at most{' '}
           <span className="font-mono font-bold">
@@ -733,7 +743,7 @@ export function TradePanel({ token }: { token: Token }) {
           . Reduce the buy amount.
         </div>
       )}
-      {!isConnected ? (
+        {!isConnected ? (
         <button
           onClick={() => connect({ connector: connectors[0] })}
           className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl shadow-sm"
@@ -826,17 +836,18 @@ export function TradePanel({ token }: { token: Token }) {
         </button>
       )}
 
-      {/* Confirmation indicator */}
-      {isConfirming && !txConfirmed && (
+        {/* Confirmation indicator */}
+        {isConfirming && !txConfirmed && (
         <p className="text-xs text-text-muted text-center animate-pulse">
           Confirming on Arc blockchain (~0.5s block time)…
         </p>
       )}
-      {tradeError && (
+        {tradeError && (
         <p role="alert" className="text-xs text-rose-500 font-medium text-center">
           {tradeError}
         </p>
-      )}
+        )}
+      </div>
     </div>
   );
 }
