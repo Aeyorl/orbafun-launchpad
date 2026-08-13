@@ -9,7 +9,7 @@ import { Token } from '@/lib/api';
  */
 export const TradeTerminal = memo(function TradeTerminal({ token }: { token: Token }) {
   return (
-    <div className="h-full bg-bg-card">
+    <div className="bg-bg-card lg:h-[500px] lg:min-h-0 lg:max-h-[500px] lg:overflow-hidden">
       <TradePanel token={token} />
     </div>
   );

@@ -129,8 +129,8 @@ export default function TradePage() {
       />
 
       <section className="overflow-hidden rounded-xl border border-bg-border bg-bg-card shadow-subtle">
-        <div className="grid min-w-0 lg:h-[500px] lg:grid-cols-[minmax(0,7fr)_minmax(340px,3fr)]">
-          <div className="min-w-0 border-b border-bg-border lg:border-b-0 lg:border-r">
+        <div className="grid min-w-0 lg:h-[500px] lg:min-h-0 lg:overflow-hidden lg:grid-cols-[minmax(0,7fr)_minmax(340px,3fr)]">
+          <div className="min-w-0 border-b border-bg-border lg:min-h-0 lg:border-b-0 lg:border-r">
             <AdvancedTradingChart
               candles={candles}
               tokenAddress={address}
@@ -144,7 +144,10 @@ export default function TradePage() {
               onMetricModeChange={setMetricMode}
             />
           </div>
-          <div id="trading-terminal-panel" className="min-w-0 scroll-mt-20">
+          <div
+            id="trading-terminal-panel"
+            className="min-w-0 scroll-mt-20 lg:h-[500px] lg:min-h-0 lg:max-h-[500px] lg:overflow-hidden"
+          >
             <TradeTerminal token={token} />
           </div>
         </div>
