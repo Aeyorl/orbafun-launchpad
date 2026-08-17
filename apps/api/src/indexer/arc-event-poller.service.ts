@@ -887,6 +887,6 @@ TOPIC_BUY_V2 = computeTopic('BuyV2(address,uint256,uint256,uint256,uint256,uint2
 TOPIC_SELL = computeTopic('Sell(address,uint256,uint256,uint256)');
 TOPIC_SELL_V2 = computeTopic('SellV2(address,uint256,uint256,uint256,uint256,uint256)');
 TOPIC_GRADUATED = computeTopic('Graduated(address,address,uint256,uint256)');
-TOPIC_SWAP = computeTopic('Swap(address,uint256,uint256,uint256,uint256,address)');
+TOPIC_SWAP = computeTopic('Swap(address,address,uint256,uint256,uint256,uint256)');
 TOPIC_TOKEN_MIGRATED = computeTopic('TokenMigrated(address,address,uint256)');
 TOPIC_TRANSFER = computeTopic('Transfer(address,address,uint256)');

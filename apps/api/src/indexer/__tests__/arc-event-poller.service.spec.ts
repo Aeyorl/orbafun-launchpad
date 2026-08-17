@@ -160,7 +160,7 @@ describe('ArcEventPollerService checkpoint safety', () => {
     await service.processLog({
       address: pair,
       topics: [
-        keccak256(toBytes('Swap(address,uint256,uint256,uint256,uint256,address)')),
+        keccak256(toBytes('Swap(address,address,uint256,uint256,uint256,uint256)')),
         topicAddress(router),
         topicAddress(trader),
       ],
