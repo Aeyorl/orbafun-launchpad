@@ -113,12 +113,18 @@ export class TokensService implements OnModuleInit {
       await this.db.query(
         `UPDATE tokens t
          SET volume_24h = COALESCE((
-           SELECT (SUM(tr.usdc_amount)::numeric / 1000000.0)::numeric(20,6)
-           FROM trades tr
-           WHERE tr.token_id = t.id
-             AND tr.timestamp > NOW() - INTERVAL '24 hours'
+           SELECT (SUM(volume_raw)::numeric / 1000000.0)::numeric(20,6)
+           FROM (
+             SELECT tr.usdc_amount AS volume_raw
+             FROM trades tr
+             WHERE tr.token_id = t.id AND tr.timestamp > NOW() - INTERVAL '24 hours'
+             UNION ALL
+             SELECT CASE WHEN swap.is_buy THEN swap.usdc_in ELSE swap.usdc_out END AS volume_raw
+             FROM amm_swaps swap
+             WHERE swap.token_id = t.id AND swap.timestamp > NOW() - INTERVAL '24 hours'
+           ) AS activity
          ), 0)
-         WHERE t.status = 'active' AND ${publicFactoryClause('t', 1)}`,
+         WHERE ${publicFactoryClause('t', 1)}`,
         [this.publicFactories()],
       );
       await this.redis.delPattern('tokens:list:*');
@@ -484,10 +490,19 @@ export class TokensService implements OnModuleInit {
         (SELECT COUNT(*)::int FROM tokens t WHERE ${publicFactoryClause('t', 1)}) AS total_tokens,
         (SELECT COUNT(*)::int FROM tokens t WHERE status = 'active' AND ${publicFactoryClause('t', 1)}) AS active_tokens,
         (SELECT COUNT(*)::int FROM tokens t WHERE status = 'graduated' AND ${publicFactoryClause('t', 1)}) AS graduated_tokens,
-        (SELECT COALESCE(SUM(tr.usdc_amount::bigint), 0)::text
-         FROM trades tr JOIN tokens t ON t.id = tr.token_id
-         WHERE tr.timestamp >= NOW() - INTERVAL '24 hours'
-           AND ${publicFactoryClause('t', 1)}) AS volume_24h_micro
+        (SELECT COALESCE(SUM(activity.volume_raw::numeric), 0)::text
+         FROM (
+           SELECT tr.usdc_amount AS volume_raw, tr.token_id
+           FROM trades tr
+           WHERE tr.timestamp >= NOW() - INTERVAL '24 hours'
+           UNION ALL
+           SELECT CASE WHEN swap.is_buy THEN swap.usdc_in ELSE swap.usdc_out END AS volume_raw,
+                  swap.token_id
+           FROM amm_swaps swap
+           WHERE swap.timestamp >= NOW() - INTERVAL '24 hours'
+         ) AS activity
+         JOIN tokens t ON t.id = activity.token_id
+         WHERE ${publicFactoryClause('t', 1)}) AS volume_24h_micro
     `, [this.publicFactories()]);
 
     const micro = BigInt(result.rows[0]?.volume_24h_micro || '0');

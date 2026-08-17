@@ -33,6 +33,7 @@ import { getIndexedFactoryAddresses, publicFactoryClause } from '../common/facto
  *   - BondingCurve.Buy → inserts trade, updates token aggregate state
  *   - BondingCurve.Sell → inserts trade, updates token aggregate state
  *   - BondingCurve.Graduated → records graduation details
+ *   - LiquidityMigration.TokenMigrated → records authoritative LP burn state
  *
  * Idempotency:
  *   - Tracks last synced block in indexer_sync_state (entity = 'ArcEventPoller')
@@ -48,6 +49,7 @@ export class ArcEventPollerService implements OnModuleInit {
   /** Curve addresses to watch for Buy/Sell/Graduated events (dynamic). */
   private curveAddresses: Set<string> = new Set();
   private ammPairAddresses: Set<string> = new Set();
+  private readonly migratorAddresses: Set<string>;
 
   /** Last block we've fully processed. */
   private lastBlock = 0n;
@@ -104,6 +106,24 @@ export class ArcEventPollerService implements OnModuleInit {
 
     this.rpcUrls = envUrls;
     this.rpcUrl = this.rpcUrls[0]; // kept for backward-compat logging
+    this.migratorAddresses = this.getMigratorAddresses();
+  }
+
+  private getMigratorAddresses(): Set<string> {
+    const addresses = (process.env.ARC_MIGRATOR_ADDRESS || '')
+      .split(',')
+      .map((address) => address.trim().toLowerCase())
+      .filter(Boolean);
+    if (addresses.length === 0) {
+      if (process.env.NODE_ENV === 'test') return new Set();
+      throw new Error('ARC_MIGRATOR_ADDRESS is required for authoritative graduation indexing');
+    }
+    for (const address of addresses) {
+      if (!/^0x[0-9a-f]{40}$/.test(address)) {
+        throw new Error('ARC_MIGRATOR_ADDRESS contains an invalid address');
+      }
+    }
+    return new Set(addresses);
   }
 
   private getFactoryAddresses(): string[] {
@@ -266,12 +286,20 @@ export class ArcEventPollerService implements OnModuleInit {
     for (let i = 0; i < pairs.length; i += 50) {
       ammLogs = ammLogs.concat(await this.getLogsSafe(pairs.slice(i, i + 50), fromBlock, toBlock));
     }
+    const migratorLogs = this.migratorAddresses.size > 0
+      ? await this.getLogsSafe(Array.from(this.migratorAddresses), fromBlock, toBlock)
+      : [];
 
     // 3. Decode and process only factory-address and registered-curve logs,
     // deduplicated by txHash + logIndex.
     // and sorted by block + logIndex for correct ordering.
     const seen = new Set<string>();
-    const allLogs = [...factoryLogs.filter((log) => log.topics[0] !== TOPIC_TOKEN_CREATED), ...curveLogs, ...ammLogs]
+    const allLogs = [
+      ...factoryLogs.filter((log) => log.topics[0] !== TOPIC_TOKEN_CREATED),
+      ...curveLogs,
+      ...ammLogs,
+      ...migratorLogs,
+    ]
       .filter((log) => {
         const key = `${log.transactionHash}-${log.logIndex}`;
         if (seen.has(key)) return false;
@@ -287,7 +315,7 @@ export class ArcEventPollerService implements OnModuleInit {
     if (allLogs.length > 0) {
       this.logger.log(
         `Processed ${allLogs.length} events from blocks ${fromBlock}-${toBlock} ` +
-          `(${factoryLogs.length} factory, ${curveLogs.length} curve, ${ammLogs.length} AMM)`,
+          `(${factoryLogs.length} factory, ${curveLogs.length} curve, ${ammLogs.length} AMM, ${migratorLogs.length} migration)`,
       );
     }
   }
@@ -323,6 +351,10 @@ export class ArcEventPollerService implements OnModuleInit {
       return;
     }
     if (topic === TOPIC_SWAP && !this.ammPairAddresses.has(address)) return;
+    if (topic === TOPIC_TOKEN_MIGRATED && !this.migratorAddresses.has(address)) {
+      this.logger.warn(`Ignored migration event from untrusted emitter ${address} (tx ${txHash})`);
+      return;
+    }
 
     try {
       if (topic === TOPIC_TOKEN_CREATED) {
@@ -466,6 +498,19 @@ export class ArcEventPollerService implements OnModuleInit {
           ammPair,
           lpUsdc: '0',
           lpTokens: '0',
+        } as any);
+      } else if (topic === TOPIC_TOKEN_MIGRATED) {
+        // TokenMigrated(address indexed token, address indexed ammPair, uint256 lpBurned)
+        const decoded = decodeUintData(log.data);
+        if (decoded.length < 1) throw new Error('Malformed TokenMigrated log');
+        await this.indexerService.processEvent({
+          type: 'TokenMigrated',
+          txHash,
+          blockNumber: Number(blockNumber),
+          logIndex,
+          token: topicToAddress(log.topics[1]),
+          ammPair: topicToAddress(log.topics[2]),
+          lpBurned: decoded[0],
         } as any);
       } else if (topic === TOPIC_SWAP) {
         const decoded = decodeUintData(log.data);
@@ -766,6 +811,7 @@ let TOPIC_SELL = '';
 let TOPIC_SELL_V2 = '';
 let TOPIC_GRADUATED = '';
 let TOPIC_SWAP = '';
+let TOPIC_TOKEN_MIGRATED = '';
 
 // Compute topics at module load using viem's keccak256.
 // We import only the keccak256 function (no complex types).
@@ -785,3 +831,4 @@ TOPIC_SELL = computeTopic('Sell(address,uint256,uint256,uint256)');
 TOPIC_SELL_V2 = computeTopic('SellV2(address,uint256,uint256,uint256,uint256,uint256)');
 TOPIC_GRADUATED = computeTopic('Graduated(address,address,uint256,uint256)');
 TOPIC_SWAP = computeTopic('Swap(address,uint256,uint256,uint256,uint256,address)');
+TOPIC_TOKEN_MIGRATED = computeTopic('TokenMigrated(address,address,uint256)');

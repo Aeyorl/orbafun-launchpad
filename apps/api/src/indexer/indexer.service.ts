@@ -558,12 +558,20 @@ export class IndexerService {
         return;
       }
       const tokenId = tokenResult.rows[0].id;
-      const graduationInsert = await client.query(
+      await client.query(
         `INSERT INTO graduations (
            token_id, amm_pair_address, lp_usdc, lp_tokens, lp_burned,
            tx_hash, block_number, timestamp
          ) VALUES ($1, $2, $3, $4, 0, $5, $6, NOW())
-         ON CONFLICT (token_id) DO NOTHING
+         ON CONFLICT (token_id) DO UPDATE SET
+           amm_pair_address = EXCLUDED.amm_pair_address,
+           lp_usdc = CASE WHEN EXCLUDED.lp_usdc::numeric > 0 THEN EXCLUDED.lp_usdc ELSE graduations.lp_usdc END,
+           lp_tokens = CASE WHEN EXCLUDED.lp_tokens::numeric > 0 THEN EXCLUDED.lp_tokens ELSE graduations.lp_tokens END,
+           tx_hash = CASE
+             WHEN EXCLUDED.lp_usdc::numeric > 0 OR EXCLUDED.lp_tokens::numeric > 0 THEN EXCLUDED.tx_hash
+             ELSE graduations.tx_hash
+           END,
+           block_number = GREATEST(graduations.block_number, EXCLUDED.block_number)
          RETURNING id`,
         [
           tokenId,
@@ -574,11 +582,6 @@ export class IndexerService {
           event.blockNumber.toString(),
         ],
       );
-      if (graduationInsert.rowCount !== 1) {
-        await client.query('ROLLBACK');
-        return;
-      }
-
       await client.query(
         `UPDATE tokens SET
            status = 'graduated',

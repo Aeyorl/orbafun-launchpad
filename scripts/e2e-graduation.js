@@ -17,7 +17,8 @@
  *   node scripts/e2e-graduation.js                  # launch + graduate a new token
  *   node scripts/e2e-graduation.js --token=0x...    # graduate an existing token
  *
- * Requires: DEPLOYER_PRIVATE_KEY env var, API running on :4000, Docker (pg+redis)
+ * Requires: DEPLOYER_PRIVATE_KEY, ARC_TOKEN_FACTORY_ADDRESS,
+ * ARC_MIGRATOR_ADDRESS, ARC_AMM_FACTORY_ADDRESS, and E2E_API_URL.
  */
 require('dotenv').config();
 const { createWalletClient, http, fallback, parseUnits, formatUnits, createPublicClient } = require('viem');
@@ -31,10 +32,16 @@ const RPC_URLS = (process.env.ARC_RPC_URLS ||
 ).split(',').map(u => u.trim()).filter(Boolean);
 
 const USDC = '0x3600000000000000000000000000000000000000';
-const TOKEN_FACTORY = '0x26Ab49011AAf73c373e462CbD5445588Ff69b7A6';
-const MIGRATOR = '0x664A37fED62192b9B29c66572198524e2CC8A6A6';
-const AMM_FACTORY = '0x05188D467dC4Ff29Df531563a160eaA7c59e2ec1';
-const API = 'http://localhost:4000';
+function requiredEnv(name) {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`${name} is required; refusing to use stale deployment defaults`);
+  return value;
+}
+
+const TOKEN_FACTORY = requiredEnv('ARC_TOKEN_FACTORY_ADDRESS');
+const MIGRATOR = requiredEnv('ARC_MIGRATOR_ADDRESS');
+const AMM_FACTORY = requiredEnv('ARC_AMM_FACTORY_ADDRESS');
+const API = requiredEnv('E2E_API_URL').replace(/\/$/, '');
 const BURN_ADDRESS = '0x000000000000000000000000000000000000dEaD';
 
 // Parse --token=0x... arg
@@ -145,6 +152,28 @@ const MIGRATOR_ABI = [
     stateMutability: 'nonpayable',
     inputs: [{ name: 'tokenAddress', type: 'address' }],
     outputs: [],
+  },
+  {
+    name: 'getAmmPair',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'tokenAddress', type: 'address' }],
+    outputs: [{ name: '', type: 'address' }],
+  },
+];
+
+const MEME_TOKEN_ABI = [
+  {
+    name: 'graduated', type: 'function', stateMutability: 'view', inputs: [],
+    outputs: [{ name: '', type: 'bool' }],
+  },
+  {
+    name: 'owner', type: 'function', stateMutability: 'view', inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+  },
+  {
+    name: 'bondingCurve', type: 'function', stateMutability: 'view', inputs: [],
+    outputs: [{ name: '', type: 'address' }],
   },
 ];
 
@@ -565,6 +594,35 @@ async function main() {
   if (ammPair === '0x0000000000000000000000000000000000000000') {
     throw new Error('AMM pair address is zero');
   }
+  const migratorPair = await readRetry(publicClient, {
+    address: MIGRATOR,
+    abi: MIGRATOR_ABI,
+    functionName: 'getAmmPair',
+    args: [tokenAddress],
+  }, 'migratorPair');
+  if (migratorPair.toLowerCase() !== ammPair.toLowerCase()) {
+    throw new Error('Migrator pair record does not match AMM factory pair');
+  }
+
+  const factoryToken = await readRetry(publicClient, {
+    address: TOKEN_FACTORY,
+    abi: TOKEN_FACTORY_ABI,
+    functionName: 'getToken',
+    args: [tokenAddress],
+  }, 'factoryToken');
+  if (!factoryToken.graduated) throw new Error('Factory did not mark token graduated');
+  const [tokenGraduated, tokenOwner, tokenBondingCurve] = await Promise.all([
+    readRetry(publicClient, { address: tokenAddress, abi: MEME_TOKEN_ABI, functionName: 'graduated' }, 'tokenGraduated'),
+    readRetry(publicClient, { address: tokenAddress, abi: MEME_TOKEN_ABI, functionName: 'owner' }, 'tokenOwner'),
+    readRetry(publicClient, { address: tokenAddress, abi: MEME_TOKEN_ABI, functionName: 'bondingCurve' }, 'tokenBondingCurve'),
+  ]);
+  if (!tokenGraduated) throw new Error('MemeToken did not mark itself graduated');
+  if (tokenOwner !== '0x0000000000000000000000000000000000000000') {
+    throw new Error('MemeToken ownership was not renounced on graduation');
+  }
+  if (tokenBondingCurve !== '0x0000000000000000000000000000000000000000') {
+    throw new Error('MemeToken bonding curve was not cleared on graduation');
+  }
 
   // 5b. Check AMM pair reserves
   const [reserve0, reserve1] = await readRetry(publicClient, {
@@ -594,12 +652,9 @@ async function main() {
   if (burnedLp === 0n) {
     throw new Error('No LP tokens burned to dead address');
   }
-  // Most LP should be burned (the migration burns all LP to 0x...dEaD)
-  const burnPct = (Number(burnedLp) / Number(lpTotalSupply)) * 100;
+  if (burnedLp !== lpTotalSupply) throw new Error('Migration did not burn the full LP supply');
+  const burnPct = 100;
   console.log(`  Burn percentage: ${burnPct.toFixed(2)}%`);
-  if (burnPct < 99) {
-    console.log(`  ⚠ Less than 99% of LP burned (expected ~100%)`);
-  }
 
   // 5d. (curve graduated already verified in 5a)
 
