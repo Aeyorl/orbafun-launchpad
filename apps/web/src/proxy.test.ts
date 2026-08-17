@@ -10,6 +10,18 @@ afterEach(() => {
 });
 
 describe('token route visibility boundary', () => {
+  it('permits the Reown services required by WalletConnect', async () => {
+    const response = await proxy(new NextRequest('https://www.orba.fun/'));
+    const csp = response.headers.get('Content-Security-Policy');
+
+    expect(csp).toContain('https://fonts.reown.com');
+    expect(csp).toContain('wss://relay.walletconnect.com');
+    expect(csp).toContain('wss://relay.walletconnect.org');
+    expect(csp).toContain('https://pulse.walletconnect.org');
+    expect(csp).toContain('https://api.web3modal.org');
+    expect(csp).toContain('https://verify.walletconnect.org');
+  });
+
   it.each(['coin', 'trade'])('returns 404 for a hidden token on /%s', async (route) => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 404 }));
     vi.stubGlobal('fetch', fetchMock);
