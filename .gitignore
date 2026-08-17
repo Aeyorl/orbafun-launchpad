@@ -53,3 +53,4 @@ output/backups/
 
 # Stray file from a misformatted command redirect
 -w
+.vercel
