@@ -96,7 +96,7 @@ export class CandlesService {
       `SELECT
          COUNT(*)::text AS count,
          MIN(activity.timestamp)::text AS min_ts,
-         (array_agg(${valueColumn}::numeric ORDER BY activity.timestamp ASC, activity.log_index ASC))[1]::text AS first_val
+         (array_agg(activity.${valueColumn}::numeric ORDER BY activity.timestamp ASC, activity.log_index ASC))[1]::text AS first_val
        FROM (SELECT tr.token_id, tr.timestamp, tr.log_index, tr.price, tr.market_cap_after AS market_cap, tr.usdc_amount AS volume_raw FROM trades tr UNION ALL SELECT s.token_id, s.timestamp, s.log_index, s.price_after, (s.price_after * 1000000000)::numeric, CASE WHEN s.is_buy THEN s.usdc_in ELSE s.usdc_out END FROM amm_swaps s) activity
        JOIN tokens t ON activity.token_id = t.id
        WHERE t.contract_address = $1

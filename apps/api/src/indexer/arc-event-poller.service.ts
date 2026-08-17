@@ -515,7 +515,16 @@ export class ArcEventPollerService implements OnModuleInit {
       } else if (topic === TOPIC_SWAP) {
         const decoded = decodeUintData(log.data);
         if (decoded.length < 4) throw new Error('Malformed AMM Swap log');
-        await this.indexerService.processEvent({ type: 'Swap', txHash, blockNumber: Number(blockNumber), logIndex, ammPairAddress: address, sender: topicToAddress(log.topics[1]), to: topicToAddress(log.topics[2]), amount0In: decoded[0], amount1In: decoded[1], amount0Out: decoded[2], amount1Out: decoded[3] } as any);
+        let [amount0In, amount1In] = decoded;
+        const [, , amount0Out, amount1Out] = decoded;
+        let trader: string | undefined;
+        if (amount0In === '0' && amount1In === '0') {
+          const inferred = await this.inferRouterSwapInput(log, amount0Out, amount1Out);
+          amount0In = inferred.amount0In;
+          amount1In = inferred.amount1In;
+          trader = inferred.trader;
+        }
+        await this.indexerService.processEvent({ type: 'Swap', txHash, blockNumber: Number(blockNumber), logIndex, ammPairAddress: address, sender: topicToAddress(log.topics[1]), trader, to: topicToAddress(log.topics[2]), amount0In, amount1In, amount0Out, amount1Out } as any);
       }
     } catch (err) {
       this.logger.error(
@@ -528,6 +537,49 @@ export class ArcEventPollerService implements OnModuleInit {
       // idempotent, so replaying the range is safe.
       throw err;
     }
+  }
+
+  /**
+   * AMMPair emits zero input fields, while the router transfers input into the
+   * pair in the same transaction. Recover the exact input amount and trader
+   * from that ERC-20 Transfer log. Output0 implies input1 and vice versa.
+   */
+  private async inferRouterSwapInput(
+    swapLog: RpcLog,
+    amount0Out: string,
+    amount1Out: string,
+  ): Promise<{ amount0In: string; amount1In: string; trader: string }> {
+    const receipt = await this.rpcCall<RpcTransactionReceipt>(
+      'eth_getTransactionReceipt',
+      [swapLog.transactionHash],
+    );
+    const swapIndex = hexToBigInt(swapLog.logIndex);
+    const transfer = receipt?.logs
+      ?.filter((candidate) =>
+        candidate.topics[0] === TOPIC_TRANSFER
+        && candidate.topics.length >= 3
+        && topicToAddress(candidate.topics[2]) === swapLog.address.toLowerCase()
+        && hexToBigInt(candidate.logIndex) < swapIndex,
+      )
+      .sort(compareLogs)
+      .at(-1);
+    if (!transfer) {
+      throw new Error(`Unable to infer AMM input transfer for ${swapLog.transactionHash}`);
+    }
+    const inputAmount = decodeUintData(transfer.data)[0];
+    if (!inputAmount || inputAmount === '0') {
+      throw new Error(`Invalid AMM input transfer for ${swapLog.transactionHash}`);
+    }
+    const output0 = BigInt(amount0Out);
+    const output1 = BigInt(amount1Out);
+    if ((output0 === 0n) === (output1 === 0n)) {
+      throw new Error(`Ambiguous AMM output for ${swapLog.transactionHash}`);
+    }
+    return {
+      amount0In: output1 > 0n ? inputAmount : '0',
+      amount1In: output0 > 0n ? inputAmount : '0',
+      trader: topicToAddress(transfer.topics[1]),
+    };
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -799,6 +851,10 @@ interface RpcLog {
   logIndex: string;
 }
 
+interface RpcTransactionReceipt {
+  logs: RpcLog[];
+}
+
 // ─── Pre-computed event topic hashes (keccak256 of event signatures) ────────
 // These are the first 32 bytes of keccak256(EventSignature).
 // Computed once at module load to avoid runtime hashing.
@@ -812,6 +868,7 @@ let TOPIC_SELL_V2 = '';
 let TOPIC_GRADUATED = '';
 let TOPIC_SWAP = '';
 let TOPIC_TOKEN_MIGRATED = '';
+let TOPIC_TRANSFER = '';
 
 // Compute topics at module load using viem's keccak256.
 // We import only the keccak256 function (no complex types).
@@ -832,3 +889,4 @@ TOPIC_SELL_V2 = computeTopic('SellV2(address,uint256,uint256,uint256,uint256,uin
 TOPIC_GRADUATED = computeTopic('Graduated(address,address,uint256,uint256)');
 TOPIC_SWAP = computeTopic('Swap(address,uint256,uint256,uint256,uint256,address)');
 TOPIC_TOKEN_MIGRATED = computeTopic('TokenMigrated(address,address,uint256)');
+TOPIC_TRANSFER = computeTopic('Transfer(address,address,uint256)');

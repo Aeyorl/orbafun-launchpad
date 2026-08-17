@@ -272,6 +272,7 @@ const AMM_ROUTER_ABI = [
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const fetchApi = (path) => fetch(`${API}${path}`, { signal: AbortSignal.timeout(15_000) });
 
 async function waitForReceipt(publicClient, hash, label = 'tx') {
   for (let attempt = 0; attempt < 60; attempt++) {
@@ -376,7 +377,7 @@ async function main() {
     console.log(`Step 1: Using existing token ${tokenAddress}`);
     // Get curve address from the API (avoids ABI struct decoding issues
     // with the getToken() return type that includes strings + uint256).
-    const res = await fetch(`${API}/tokens/${tokenAddress.toLowerCase()}`);
+    const res = await fetchApi(`/tokens/${tokenAddress.toLowerCase()}`);
     if (!res.ok) {
       throw new Error(`Token not found in API: ${res.status}`);
     }
@@ -720,10 +721,10 @@ async function main() {
   for (let i = 0; i < 36; i++) {
     try {
       const [tokenRes, activityRes, candlesRes, statsRes] = await Promise.all([
-        fetch(`${API}/tokens/${tokenAddress.toLowerCase()}`),
-        fetch(`${API}/tokens/activity/recent?limit=50`),
-        fetch(`${API}/tokens/${tokenAddress.toLowerCase()}/candles?timeframe=10s&mode=price&limit=100`),
-        fetch(`${API}/tokens/stats`),
+        fetchApi(`/tokens/${tokenAddress.toLowerCase()}`),
+        fetchApi('/tokens/activity/recent?limit=50'),
+        fetchApi(`/tokens/${tokenAddress.toLowerCase()}/candles?timeframe=10s&mode=price&limit=100`),
+        fetchApi('/tokens/stats'),
       ]);
       if (tokenRes.ok && activityRes.ok && candlesRes.ok && statsRes.ok) {
         apiToken = await tokenRes.json();

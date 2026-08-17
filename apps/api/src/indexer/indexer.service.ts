@@ -743,7 +743,7 @@ export class IndexerService {
       );
       const positionWallet = isBuy
         ? event.to.toLowerCase()
-        : event.sender.toLowerCase();
+        : (event.trader || event.sender).toLowerCase();
 
       // 1. Insert swap record and stop before side effects on replay.
       const swapInsert = await client.query(
@@ -758,7 +758,7 @@ export class IndexerService {
         [
           tokenId,
           event.ammPairAddress.toLowerCase(),
-          event.sender.toLowerCase(),
+          (event.trader || event.sender).toLowerCase(),
           event.to.toLowerCase(),
           isBuy,
           usdcIn.toString(),
@@ -860,7 +860,7 @@ export class IndexerService {
     if (tokenAddr2) {
       const positionWallet = isBuy
         ? event.to.toLowerCase()
-        : event.sender.toLowerCase();
+        : (event.trader || event.sender).toLowerCase();
       await this.refreshWalletDerivedData(positionWallet);
       await this.redis.publishTokenEvent(
         tokenAddr2.contract_address.toLowerCase(),
@@ -1045,6 +1045,7 @@ interface SwapEvent extends IndexerEvent {
   type: 'Swap';
   ammPairAddress: string;
   sender: string;
+  trader?: string;
   to: string;
   amount0In: string;
   amount1In: string;
