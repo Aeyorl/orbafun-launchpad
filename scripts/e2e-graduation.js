@@ -46,6 +46,7 @@ const AMM_FACTORY = requiredEnv('ARC_AMM_FACTORY_ADDRESS');
 const AMM_ROUTER = requiredEnv('ARC_AMM_ROUTER_ADDRESS');
 const API = requiredEnv('E2E_API_URL').replace(/\/$/, '');
 const BURN_ADDRESS = '0x000000000000000000000000000000000000dEaD';
+const MINIMUM_LIQUIDITY = 1000n;
 
 // Parse --token=0x... arg
 const existingToken = process.argv
@@ -637,8 +638,12 @@ async function main() {
   if (burnedLp === 0n) {
     throw new Error('No LP tokens burned to dead address');
   }
-  if (burnedLp !== lpTotalSupply) throw new Error('Migration did not burn the full LP supply');
-  const burnPct = 100;
+  // AMMPair permanently locks its 1,000-wei MINIMUM_LIQUIDITY at address(0).
+  // Every redeemable LP token minted to the migrator must be at 0x...dEaD.
+  if (burnedLp + MINIMUM_LIQUIDITY !== lpTotalSupply) {
+    throw new Error('Migration did not burn all redeemable LP supply');
+  }
+  const burnPct = Number(burnedLp * 10000n / lpTotalSupply) / 100;
   console.log(`  Burn percentage: ${burnPct.toFixed(2)}%`);
 
   // ─── Step 6: Execute an AMM router buy and sell ──────────────────────
