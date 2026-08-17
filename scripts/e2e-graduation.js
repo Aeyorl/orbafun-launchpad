@@ -4,7 +4,8 @@
  * This script:
  *   1. Launches a new token (or reuses an existing one via --token=0x...)
  *   2. Buys tokens in chunks until market cap reaches $25,000 (graduation threshold)
- *   3. Calls LiquidityMigration.checkAndMigrate(tokenAddress)
+ *   3. Verifies automatic migration from the threshold-crossing buy (and
+ *      supports the legacy manual migration path for already-deployed curves)
  *   4. Verifies:
  *      - AMM pair was created
  *      - Liquidity was added (reserves > 0)
@@ -515,32 +516,38 @@ async function main() {
     }
   }
 
-  // ─── Step 4: Migrate (call checkAndMigrate) ───────────────────────────
+  // ─── Step 4: Verify automatic migration / support legacy curves ───────
   console.log('');
-  console.log('Step 4: Calling LiquidityMigration.checkAndMigrate...');
-  const migrateHash = await writeRetry(walletClient, {
-    address: MIGRATOR,
-    abi: MIGRATOR_ABI,
-    functionName: 'checkAndMigrate',
-    args: [tokenAddress],
-  }, 'migrate');
-  const migrateReceipt = await waitForReceipt(publicClient, migrateHash, 'migrate');
-
-  if (migrateReceipt.status !== 'success') {
-    throw new Error('Migration transaction failed on-chain');
+  let curveGraduated = await readRetry(publicClient, {
+    address: curveAddress,
+    abi: BONDING_CURVE_ABI,
+    functionName: 'graduated',
+  }, 'curveGraduated');
+  if (curveGraduated) {
+    console.log('Step 4: ✓ Threshold-crossing buy migrated automatically.');
+  } else {
+    console.log('Step 4: Legacy curve detected; calling permissionless migration...');
+    const migrateHash = await writeRetry(walletClient, {
+      address: MIGRATOR,
+      abi: MIGRATOR_ABI,
+      functionName: 'checkAndMigrate',
+      args: [tokenAddress],
+    }, 'migrate');
+    const migrateReceipt = await waitForReceipt(publicClient, migrateHash, 'migrate');
+    if (migrateReceipt.status !== 'success') throw new Error('Migration transaction failed on-chain');
+    console.log(`  ✓ Legacy migration tx confirmed: ${migrateHash}`);
+    curveGraduated = await readRetry(publicClient, {
+      address: curveAddress,
+      abi: BONDING_CURVE_ABI,
+      functionName: 'graduated',
+    }, 'curveGraduatedAfterLegacyMigration');
   }
-  console.log(`  ✓ Migration tx confirmed: ${migrateHash}`);
 
   // ─── Step 5: Verify on-chain ──────────────────────────────────────────
   console.log('');
   console.log('Step 5: Verifying graduation on-chain...');
 
   // 5a. Check token is marked graduated via the curve's `graduated` public var
-  const curveGraduated = await readRetry(publicClient, {
-    address: curveAddress,
-    abi: BONDING_CURVE_ABI,
-    functionName: 'graduated',
-  }, 'curveGraduated');
   const graduated = curveGraduated;
   console.log(`  Token graduated (curve): ${graduated}`);
   if (!graduated) {
@@ -645,4 +652,3 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
-

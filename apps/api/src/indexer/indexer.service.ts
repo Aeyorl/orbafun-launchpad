@@ -802,6 +802,10 @@ export class IndexerService {
          SET total_volume_usdc = users.total_volume_usdc + $2`,
         [positionWallet, (isBuy ? usdcIn : usdcOut).toString()],
       );
+      await client.query(
+        `UPDATE tokens SET volume_24h = COALESCE((SELECT SUM(volume_raw)::numeric / 1000000.0 FROM (SELECT usdc_amount AS volume_raw FROM trades WHERE token_id = $1 AND timestamp > NOW() - INTERVAL '24 hours' UNION ALL SELECT CASE WHEN is_buy THEN usdc_in ELSE usdc_out END FROM amm_swaps WHERE token_id = $1 AND timestamp > NOW() - INTERVAL '24 hours') volumes), 0) WHERE id = $1`,
+        [tokenId],
+      );
 
       // 2. Update token price and market cap (for AMM, use swap output as price).
       // Only update if price is non-zero.

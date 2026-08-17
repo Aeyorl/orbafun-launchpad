@@ -9,6 +9,7 @@ import {TokenFactory} from "../src/TokenFactory.sol";
 import {Treasury} from "../src/Treasury.sol";
 import {AMMFactory} from "../src/AMMFactory.sol";
 import {AMMPair} from "../src/AMMPair.sol";
+import {AMMRouter} from "../src/AMMRouter.sol";
 import {LiquidityMigration} from "../src/LiquidityMigration.sol";
 
 /// @title BondingCurveTest
@@ -25,6 +26,7 @@ contract BondingCurveTest is Test {
     TokenFactory factory;
     AMMFactory ammFactory;
     LiquidityMigration migrator;
+    AMMRouter router;
 
     address owner = address(this);
     address creator = address(0xC0FFEE);
@@ -52,6 +54,7 @@ contract BondingCurveTest is Test {
         factory = new TokenFactory(address(treasury));
         ammFactory = new AMMFactory();
         migrator = new LiquidityMigration(address(factory), address(ammFactory));
+        router = new AMMRouter(address(ammFactory));
 
         // Wire migrator into factory (so new curves get the migrator address).
         factory.setMigrator(address(migrator));
@@ -368,9 +371,6 @@ contract BondingCurveTest is Test {
             vm.stopPrank();
         }
 
-        // Trigger graduation via migrator.
-        migrator.checkAndMigrate(token);
-
         assertEq(usdc.balanceOf(address(migrator)), donatedUsdc, "donated USDC preserved");
         assertEq(tokenContract.balanceOf(address(migrator)), donatedTokens, "donated tokens preserved");
 
@@ -392,6 +392,52 @@ contract BondingCurveTest is Test {
         // Verify token marked graduated in factory.
         TokenFactory.LaunchToken memory lt = factory.getToken(token);
         assertTrue(lt.graduated, "factory marked graduated");
+    }
+
+    /// @notice Deterministic local graduation canary. It proves the entire
+    /// lifecycle without a funded testnet account: threshold buy automatically
+    /// migrates, LP is burned, and a post-graduation router trade succeeds.
+    function test_AutomaticGraduationCanary_AndPostGraduationRouterTrade() public {
+        launchToken();
+
+        for (uint256 i = 0; i < 100 && !curveContract.graduated(); i++) {
+            address buyer = address(uint160(0x30000 + i));
+            usdc.mint(buyer, 200 * 10 ** 6);
+            buy(buyer, 100 * 10 ** 6);
+        }
+
+        assertTrue(curveContract.graduated(), "threshold buy automatically migrates curve");
+        assertTrue(tokenContract.graduated(), "token graduated");
+        assertEq(tokenContract.owner(), address(0), "token ownership renounced");
+        TokenFactory.LaunchToken memory launched = factory.getToken(token);
+        assertTrue(launched.graduated, "factory lifecycle state graduated");
+
+        address pair = migrator.getAmmPair(token);
+        assertTrue(pair != address(0), "AMM pair created");
+        assertGt(
+            AMMPair(pair).balanceOf(0x000000000000000000000000000000000000dEaD),
+            0,
+            "LP burned"
+        );
+        vm.prank(address(0xBEEF));
+        vm.expectRevert(BondingCurve.AlreadyGraduated.selector);
+        curveContract.buy(1 * 10 ** 6, 0);
+
+        address trader = address(0xCAFE);
+        usdc.mint(trader, 10 * 10 ** 6);
+        vm.startPrank(trader);
+        usdc.approve(address(router), type(uint256).max);
+        uint256 tokensOut = router.swapExactUSDCForTokens(
+            1 * 10 ** 6, 0, block.timestamp, pair, trader
+        );
+        tokenContract.approve(address(router), tokensOut);
+        uint256 usdcOut = router.swapExactTokensForUSDC(
+            tokensOut, 0, block.timestamp, pair, trader
+        );
+        vm.stopPrank();
+
+        assertGt(tokensOut, 0, "router buy succeeds");
+        assertGt(usdcOut, 0, "router sell succeeds");
     }
 
     /// @notice Test: migration reverts on non-graduated token.

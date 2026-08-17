@@ -319,7 +319,7 @@ export default function LaunchPage() {
       const t = setTimeout(() => router.push(destination), 1000);
       return () => clearTimeout(t);
     }
-  }, [launchConfirmed, router, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [launchConfirmed, router, queryClient]);
 
   // Step progression state
   const stepStatus = useMemo(() => {

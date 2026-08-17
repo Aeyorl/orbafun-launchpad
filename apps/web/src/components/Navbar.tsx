@@ -192,11 +192,16 @@ function ConnectButton() {
 
   if (mounted && isConnected) return null;
 
+  const walletConnectConnector = connectors.find((connector) => connector.type === 'walletConnect');
+  const injectedConnector = connectors.find((connector) => connector.type === 'injected');
+  const preferredConnector = walletConnectConnector ?? injectedConnector ?? connectors[0];
+
   return (
     <button
-      onClick={() => connectors[0] && connect({ connector: connectors[0] })}
-      disabled={connectors.length === 0}
+      onClick={() => preferredConnector && connect({ connector: preferredConnector })}
+      disabled={!preferredConnector}
       className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm"
+      title={walletConnectConnector ? 'Connect a mobile wallet with WalletConnect' : undefined}
     >
       <Wallet size={17} aria-hidden="true" />
       <span className="hidden sm:inline">Connect Wallet</span>

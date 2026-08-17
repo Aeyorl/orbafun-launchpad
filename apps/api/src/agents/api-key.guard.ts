@@ -7,7 +7,6 @@ import {
 import { Request } from 'express';
 import { createHash } from 'crypto';
 import { DatabaseService } from '../database/database.service';
-import { isValidEvmAddress } from '../common/utils';
 
 /**
  * ApiKeyGuard — authenticates AI agents via API keys.

@@ -4,6 +4,7 @@ import { createConfig, http, fallback } from 'wagmi';
 import { defineChain } from 'viem';
 import { arc, arcTestnet } from 'viem/chains';
 import { injected } from '@wagmi/connectors/injected';
+import { walletConnect } from '@wagmi/connectors/walletConnect';
 
 const requestedNetwork = (process.env.NEXT_PUBLIC_ARC_NETWORK || 'testnet').toLowerCase();
 
@@ -83,9 +84,32 @@ const activeTransport = fallback(
   }
 );
 
+const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim();
+
+// WalletConnect opens a native-wallet handoff on phones instead of relying on
+// an injected browser extension. Keep it opt-in until an operator supplies a
+// Cloud project ID with the deployed Orba origins allowlisted.
+const connectors = [
+  injected(),
+  ...(walletConnectProjectId
+    ? [
+        walletConnect({
+          projectId: walletConnectProjectId,
+          metadata: {
+            name: 'Orba',
+            description: 'USDC-native memecoin launchpad on Arc',
+            url: process.env.NEXT_PUBLIC_SITE_URL || 'https://orba.fun',
+            icons: [`${process.env.NEXT_PUBLIC_SITE_URL || 'https://orba.fun'}/orba-icon-192.png`],
+          },
+          showQrModal: true,
+        }),
+      ]
+    : []),
+];
+
 export const config = createConfig({
   chains: [ARC_CHAIN],
-  connectors: [injected()],
+  connectors,
   transports: {
     [arcTestnet.id]: activeTransport,
     [arc.id]: activeTransport,
@@ -95,6 +119,10 @@ export const config = createConfig({
 function requiredAddress(value: string | undefined, name: string) {
   if (!value) throw new Error(`Orba requires ${name}`);
   return value as `0x${string}`;
+}
+
+function optionalAddress(value: string | undefined) {
+  return value ? value as `0x${string}` : undefined;
 }
 
 function requiredMainnetAddress(value: string | undefined, fallbackAddress: string, name: string) {
@@ -110,6 +138,9 @@ export const CONTRACTS = {
   TREASURY: requiredAddress(process.env.NEXT_PUBLIC_TREASURY_ADDRESS, 'NEXT_PUBLIC_TREASURY_ADDRESS'),
   MIGRATOR: requiredAddress(process.env.NEXT_PUBLIC_MIGRATOR_ADDRESS, 'NEXT_PUBLIC_MIGRATOR_ADDRESS'),
   AMM_FACTORY: requiredAddress(process.env.NEXT_PUBLIC_AMM_FACTORY_ADDRESS, 'NEXT_PUBLIC_AMM_FACTORY_ADDRESS'),
+  // The router is deployed separately from the initial launch stack. Keep
+  // pre-graduation trading available until a verified router is configured.
+  AMM_ROUTER: optionalAddress(process.env.NEXT_PUBLIC_AMM_ROUTER_ADDRESS),
 } as const;
 
 // API URLs

@@ -220,33 +220,22 @@ describe('TradePanel', () => {
   });
 
   describe('Graduated state', () => {
-    it('shows graduated message for graduated tokens', () => {
+    it('keeps the buy and sell terminal available for graduated tokens', () => {
       const token = createMockToken({
         status: 'graduated',
         amm_pair_address: '0xammpair1234567890',
       });
       renderWithProviders(<TradePanel token={token} />);
-      expect(screen.getByText('Token Graduated to DEX')).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'BUY' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'SELL' })).toBeInTheDocument();
     });
 
-    it('shows AMM pair link to ArcScan', () => {
-      const token = createMockToken({
-        status: 'graduated',
-        amm_pair_address: '0xammpair1234567890',
-      });
-      renderWithProviders(<TradePanel token={token} />);
-      const link = screen.getByText(/View AMM Pair on ArcScan/);
-      expect(link.closest('a')).toHaveAttribute(
-        'href',
-        'https://testnet.arcscan.app/address/0xammpair1234567890',
-      );
-    });
-
-    it('does not show buy/sell UI for graduated tokens', () => {
+    it('does not replace the terminal with the legacy explorer-only graduation card', () => {
       renderWithProviders(
         <TradePanel token={createMockToken({ status: 'graduated' })} />,
       );
-      expect(screen.queryByRole('tab', { name: /BUY/i })).not.toBeInTheDocument();
+      expect(screen.queryByText('Token Graduated to DEX')).not.toBeInTheDocument();
+      expect(screen.queryByText(/View AMM Pair on ArcScan/)).not.toBeInTheDocument();
     });
   });
 

@@ -1,6 +1,5 @@
 import { DeployerService } from '../deployer.service';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { encodeAbiParameters, keccak256, toBytes } = require('viem');
 
 const TX_HASH = `0x${'ab'.repeat(32)}`;

@@ -29,6 +29,10 @@ interface IMemeToken {
     function totalSupply() external view returns (uint256);
 }
 
+interface ILiquidityMigration {
+    function checkAndMigrate(address tokenAddress) external;
+}
+
 contract TestBondingCurve is ReentrancyGuard {
     // ─── Economics constants (DECISION_LOG D20) ─────────────────────────────
     /// @notice Total token supply: 1,000,000,000 (1B) with 18 decimals.
@@ -378,21 +382,6 @@ contract TestBondingCurve is ReentrancyGuard {
     // ─── Internal ───────────────────────────────────────────────────────────
     /// @dev Triggers graduation. Called after buys that cross the threshold.
     function _triggerGraduation() internal {
-        // Graduation is handled by the factory's LiquidityMigration contract.
-        // We just emit an event here; the factory/indexer watches for it and
-        // calls graduateToAmm() via the migration contract.
-        // In a single-tx flow, the factory's buy() wrapper would call this.
-        // For now, graduation is triggered externally by the migrator after
-        // observing the market cap cross threshold.
-        //
-        // Note: This is a design choice — graduation could be auto-triggered
-        // in the same tx as the threshold-crossing buy, but that requires the
-        // BondingCurve to know the AMM factory address (circular dependency).
-        // Instead, the factory/migrator watches and triggers graduation in a
-        // separate tx, or the buy() function calls back to the factory.
-        //
-        // For v1 simplicity: graduation is triggered by anyone calling the
-        // LiquidityMigration contract's checkAndMigrate() after observing the
-        // threshold cross. This is gas-efficient and avoids circular deps.
+        ILiquidityMigration(migrator).checkAndMigrate(address(token));
     }
 }

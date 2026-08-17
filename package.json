@@ -15,6 +15,7 @@
     "build": "npm run build --workspaces",
     "lint": "npm run lint --workspaces",
     "test": "npm run test --workspaces",
+    "test:graduation-canary": "node scripts/graduation-canary.js",
     "mainnet:check": "node scripts/validate-mainnet-readiness.js"
   },
   "engines": {
@@ -28,8 +29,8 @@
     "@nestjs/common": "11.1.28",
     "@nestjs/core": "11.1.28",
     "axios": "1.19.0",
-    "postcss": "8.5.25",
-    "nanoid": "3.3.17",
+    "postcss": "8.5.26",
+    "nanoid": "3.3.18",
     "uuid": "11.1.1",
     "ws": "8.21.1"
   }

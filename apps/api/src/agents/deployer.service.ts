@@ -33,7 +33,6 @@ import { createAwsKmsAccount } from './aws-kms-account';
  * type instantiation errors from the ox dependency. The e2e scripts use the
  * same pattern.
  */
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const {
   createWalletClient,
   createPublicClient,
@@ -63,9 +62,7 @@ export interface TransactionInspectionContext {
   operation: 'launch' | 'buy' | 'sell';
   payload: Record<string, unknown>;
 }
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { privateKeyToAccount } = require('viem/accounts');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { arc, arcTestnet } = require('viem/chains');
 
 const ARC_CHAIN_ID = Number(process.env.ARC_CHAIN_ID || arcTestnet.id);

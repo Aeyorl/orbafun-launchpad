@@ -47,6 +47,7 @@ export class ArcEventPollerService implements OnModuleInit {
 
   /** Curve addresses to watch for Buy/Sell/Graduated events (dynamic). */
   private curveAddresses: Set<string> = new Set();
+  private ammPairAddresses: Set<string> = new Set();
 
   /** Last block we've fully processed. */
   private lastBlock = 0n;
@@ -235,6 +236,13 @@ export class ArcEventPollerService implements OnModuleInit {
       fromBlock,
       toBlock,
     );
+    // Register curves created in this exact range before collecting curve logs,
+    // so a same-block first buy is never skipped.
+    for (const log of factoryLogs.filter((log) => log.topics[0] === TOPIC_TOKEN_CREATED).sort(compareLogs)) {
+      await this.processLog(log);
+    }
+    await this.loadCurveAddresses();
+    await this.loadAmmPairAddresses();
 
     // Small delay between RPC calls.
     await sleep(200);
@@ -253,24 +261,24 @@ export class ArcEventPollerService implements OnModuleInit {
         if (i + batchSize < curveAddresses.length) await sleep(200);
       }
     }
+    let ammLogs: RpcLog[] = [];
+    const pairs = Array.from(this.ammPairAddresses);
+    for (let i = 0; i < pairs.length; i += 50) {
+      ammLogs = ammLogs.concat(await this.getLogsSafe(pairs.slice(i, i + 50), fromBlock, toBlock));
+    }
 
     // 3. Decode and process only factory-address and registered-curve logs,
     // deduplicated by txHash + logIndex.
     // and sorted by block + logIndex for correct ordering.
     const seen = new Set<string>();
-    const allLogs = [...factoryLogs, ...curveLogs]
+    const allLogs = [...factoryLogs.filter((log) => log.topics[0] !== TOPIC_TOKEN_CREATED), ...curveLogs, ...ammLogs]
       .filter((log) => {
         const key = `${log.transactionHash}-${log.logIndex}`;
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
       })
-      .sort((a, b) => {
-        const aBlock = hexToBigInt(a.blockNumber);
-        const bBlock = hexToBigInt(b.blockNumber);
-        if (aBlock !== bBlock) return aBlock > bBlock ? 1 : -1;
-        return hexToBigInt(a.logIndex) > hexToBigInt(b.logIndex) ? 1 : -1;
-      });
+      .sort(compareLogs);
 
     for (const log of allLogs) {
       await this.processLog(log);
@@ -279,7 +287,7 @@ export class ArcEventPollerService implements OnModuleInit {
     if (allLogs.length > 0) {
       this.logger.log(
         `Processed ${allLogs.length} events from blocks ${fromBlock}-${toBlock} ` +
-          `(${factoryLogs.length} factory, ${curveLogs.length} curve)`,
+          `(${factoryLogs.length} factory, ${curveLogs.length} curve, ${ammLogs.length} AMM)`,
       );
     }
   }
@@ -314,6 +322,7 @@ export class ArcEventPollerService implements OnModuleInit {
       );
       return;
     }
+    if (topic === TOPIC_SWAP && !this.ammPairAddresses.has(address)) return;
 
     try {
       if (topic === TOPIC_TOKEN_CREATED) {
@@ -458,6 +467,10 @@ export class ArcEventPollerService implements OnModuleInit {
           lpUsdc: '0',
           lpTokens: '0',
         } as any);
+      } else if (topic === TOPIC_SWAP) {
+        const decoded = decodeUintData(log.data);
+        if (decoded.length < 4) throw new Error('Malformed AMM Swap log');
+        await this.indexerService.processEvent({ type: 'Swap', txHash, blockNumber: Number(blockNumber), logIndex, ammPairAddress: address, sender: topicToAddress(log.topics[1]), to: topicToAddress(log.topics[2]), amount0In: decoded[0], amount1In: decoded[1], amount0Out: decoded[2], amount1Out: decoded[3] } as any);
       }
     } catch (err) {
       this.logger.error(
@@ -626,6 +639,10 @@ export class ArcEventPollerService implements OnModuleInit {
       this.curveAddresses.add(row.curve_address.toLowerCase());
     }
   }
+  private async loadAmmPairAddresses(): Promise<void> {
+    const rows = await this.db.queryRows<{ amm_pair_address: string }>(`SELECT amm_pair_address FROM graduations WHERE amm_pair_address IS NOT NULL`);
+    for (const row of rows) this.ammPairAddresses.add(row.amm_pair_address.toLowerCase());
+  }
 
   private async loadLastBlock(): Promise<void> {
     const row = await this.db.queryOne<{ last_block: string }>(
@@ -655,6 +672,12 @@ function sleep(ms: number): Promise<void> {
 function hexToBigInt(hex: string): bigint {
   if (!hex || hex === '0x') return 0n;
   return BigInt(hex);
+}
+function compareLogs(a: RpcLog, b: RpcLog): number {
+  const aBlock = hexToBigInt(a.blockNumber); const bBlock = hexToBigInt(b.blockNumber);
+  if (aBlock !== bBlock) return aBlock > bBlock ? 1 : -1;
+  const aIndex = hexToBigInt(a.logIndex); const bIndex = hexToBigInt(b.logIndex);
+  return aIndex === bIndex ? 0 : aIndex > bIndex ? 1 : -1;
 }
 
 /** Extract a 20-byte address from a 32-byte topic. */
@@ -742,10 +765,10 @@ let TOPIC_BUY_V2 = '';
 let TOPIC_SELL = '';
 let TOPIC_SELL_V2 = '';
 let TOPIC_GRADUATED = '';
+let TOPIC_SWAP = '';
 
 // Compute topics at module load using viem's keccak256.
 // We import only the keccak256 function (no complex types).
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { keccak256, toBytes } = require('viem');
 
 function computeTopic(sig: string): string {
@@ -761,3 +784,4 @@ TOPIC_BUY_V2 = computeTopic('BuyV2(address,uint256,uint256,uint256,uint256,uint2
 TOPIC_SELL = computeTopic('Sell(address,uint256,uint256,uint256)');
 TOPIC_SELL_V2 = computeTopic('SellV2(address,uint256,uint256,uint256,uint256,uint256)');
 TOPIC_GRADUATED = computeTopic('Graduated(address,address,uint256,uint256)');
+TOPIC_SWAP = computeTopic('Swap(address,uint256,uint256,uint256,uint256,address)');

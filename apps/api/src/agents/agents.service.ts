@@ -935,7 +935,7 @@ export class AgentsService {
       await client.query('COMMIT');
       return reservationId;
     } catch (err) {
-      try { await client.query('ROLLBACK'); } catch {}
+      try { await client.query('ROLLBACK'); } catch { /* best-effort rollback */ }
       throw err;
     } finally {
       client.release();
@@ -1104,7 +1104,7 @@ export class AgentsService {
       await client.query('COMMIT');
       return reservationId;
     } catch (err) {
-      try { await client.query('ROLLBACK'); } catch {}
+      try { await client.query('ROLLBACK'); } catch { /* best-effort rollback */ }
       throw err;
     } finally {
       client.release();

@@ -8,7 +8,8 @@
  *   2. Set test factory's migrator
  *   3. Approve USDC + launch a token via test factory
  *   4. Buy ~$120 of tokens (pushes MC from $4,000 to $4,150+)
- *   5. Call LiquidityMigration.checkAndMigrate(tokenAddress)
+ *   5. Verify the threshold-crossing buy migrated automatically (or migrate
+ *      legacy test curves through the permissionless fallback)
  *   6. Verify anti-rug mechanics:
  *      - AMM pair created with liquidity (reserves > 0)
  *      - LP tokens burned to 0x...dEaD
@@ -505,19 +506,33 @@ async function main() {
     process.exit(1);
   }
 
-  // ─── Step 6: Graduate (call LiquidityMigration.checkAndMigrate) ────────
-  console.log('\n--- Step 6: Graduate token ---');
-  console.log(`  Calling checkAndMigrate(${tokenAddress})...`);
-  const migrateHash = await writeRetry(
-    walletClient,
-    { address: migratorAddress, abi: MIGRATOR_ABI, functionName: 'checkAndMigrate', args: [tokenAddress] },
-    'migrate',
+  // ─── Step 6: Verify automatic graduation / support legacy test curves ──
+  console.log('\n--- Step 6: Verify graduation ---');
+  let curveGraduated = await readRetry(
+    publicClient,
+    { address: curveAddress, abi: BONDING_CURVE_ABI, functionName: 'graduated' },
+    'curveGraduated',
   );
-  const migrateReceipt = await waitForReceipt(publicClient, migrateHash, 'migrate');
-  console.log(`  Migration confirmed in block ${migrateReceipt.blockNumber} (status ${migrateReceipt.status})`);
-  if (migrateReceipt.status !== 'success') {
-    console.error('  ✗ Migration transaction reverted!');
-    process.exit(1);
+  if (curveGraduated) {
+    console.log('  ✓ Threshold-crossing buy migrated automatically');
+  } else {
+    console.log(`  Legacy curve detected; calling checkAndMigrate(${tokenAddress})...`);
+    const migrateHash = await writeRetry(
+      walletClient,
+      { address: migratorAddress, abi: MIGRATOR_ABI, functionName: 'checkAndMigrate', args: [tokenAddress] },
+      'migrate',
+    );
+    const migrateReceipt = await waitForReceipt(publicClient, migrateHash, 'migrate');
+    console.log(`  Legacy migration confirmed in block ${migrateReceipt.blockNumber} (status ${migrateReceipt.status})`);
+    if (migrateReceipt.status !== 'success') {
+      console.error('  ✗ Migration transaction reverted!');
+      process.exit(1);
+    }
+    curveGraduated = await readRetry(
+      publicClient,
+      { address: curveAddress, abi: BONDING_CURVE_ABI, functionName: 'graduated' },
+      'curveGraduatedAfterLegacyMigration',
+    );
   }
 
   // ─── Step 7: Verify anti-rug mechanics ─────────────────────────────────
@@ -621,7 +636,7 @@ async function main() {
 
   // 7f. Curve marked as graduated
   console.log('\n  [6] Curve marked as graduated');
-  const curveGraduated = await readRetry(
+  curveGraduated = await readRetry(
     publicClient,
     { address: curveAddress, abi: BONDING_CURVE_ABI, functionName: 'graduated' },
     'curveGraduated',

@@ -32,7 +32,6 @@ import {
 } from '@/lib/utils';
 import { Token } from '@/lib/api';
 import { useArcReceiptFallback } from '@/lib/use-arc-receipt';
-import { GraduationCap } from '@phosphor-icons/react';
 
 // BondingCurve ABI (minimal view & trade functions)
 const BONDING_CURVE_ABI = [
@@ -81,6 +80,14 @@ const LEGACY_MEME_TOKEN_ABI = [
     outputs: [{ name: '', type: 'uint256' }],
   },
 ] as const;
+const AMM_PAIR_ABI = [
+  { name: 'token0', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'address' }] },
+  { name: 'getReserves', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint112' }, { type: 'uint112' }, { type: 'uint32' }] },
+] as const;
+const AMM_ROUTER_ABI = [
+  { name: 'swapExactUSDCForTokens', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'address' }, { type: 'address' }], outputs: [{ type: 'uint256' }] },
+  { name: 'swapExactTokensForUSDC', type: 'function', stateMutability: 'nonpayable', inputs: [{ type: 'uint256' }, { type: 'uint256' }, { type: 'uint256' }, { type: 'address' }, { type: 'address' }], outputs: [{ type: 'uint256' }] },
+] as const;
 
 const ARC_ERC20_TO_NATIVE_FACTOR = 10n ** 12n;
 const ARC_GAS_RESERVE_NATIVE = 10n ** 16n; // Keep $0.01 USDC for gas.
@@ -103,6 +110,11 @@ export function TradePanel({ token }: { token: Token }) {
   const { connect } = useConnect();
 
   const wrongNetwork = isConnected && chainId !== ARC_CHAIN_ID;
+  const walletConnectConnector = connectors.find((connector) => connector.type === 'walletConnect');
+  const injectedConnector = connectors.find((connector) => connector.type === 'injected');
+  const preferredConnector = walletConnectConnector ?? injectedConnector ?? connectors[0];
+  const isAmmTrade = token.status === 'graduated';
+  const ammRouter = CONTRACTS.AMM_ROUTER;
   // Treat pre-versioning API responses as legacy-capped for safety.
   const isLegacyCapped = token.transfer_policy !== 'uncapped';
 
@@ -171,18 +183,18 @@ export function TradePanel({ token }: { token: Token }) {
     address: CONTRACTS.USDC,
     abi: erc20Abi,
     functionName: 'allowance',
-    args: [address!, token.curve_address as `0x${string}`],
+    args: [address!, (isAmmTrade ? ammRouter : token.curve_address) as `0x${string}`],
     chainId: ARC_CHAIN_ID,
-    query: { enabled: !!address },
+    query: { enabled: !!address && (!isAmmTrade || !!ammRouter) },
   });
 
   const { data: tokenAllowance, refetch: refetchTokenAllowance } = useReadContract({
     address: token.contract_address as `0x${string}`,
     abi: erc20Abi,
     functionName: 'allowance',
-    args: [address!, token.curve_address as `0x${string}`],
+    args: [address!, (isAmmTrade ? ammRouter : token.curve_address) as `0x${string}`],
     chainId: ARC_CHAIN_ID,
-    query: { enabled: !!address && mode === 'sell' },
+    query: { enabled: !!address && mode === 'sell' && (!isAmmTrade || !!ammRouter) },
   });
 
   // Notifications & refetches on tx resolution
@@ -239,7 +251,7 @@ export function TradePanel({ token }: { token: Token }) {
       }, 3000);
       return () => clearTimeout(timer);
     }
-  }, [txConfirmed, txAction]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [txConfirmed, txAction]);
 
   // Parse input amount
   const parsedAmount = useMemo(() => {
@@ -253,15 +265,25 @@ export function TradePanel({ token }: { token: Token }) {
     }
   }, [amount, mode]);
 
-  // Quote lookup
-  const { data: quote } = useReadContract({
+  const { data: curveQuote } = useReadContract({
     address: token.curve_address as `0x${string}`,
     abi: BONDING_CURVE_ABI,
     functionName: mode === 'buy' ? 'quoteBuy' : 'quoteSell',
     args: [parsedAmount],
     chainId: ARC_CHAIN_ID,
-    query: { enabled: parsedAmount > 0n },
+    query: { enabled: !isAmmTrade && parsedAmount > 0n },
   });
+  const { data: pairToken0 } = useReadContract({ address: token.amm_pair_address as `0x${string}`, abi: AMM_PAIR_ABI, functionName: 'token0', chainId: ARC_CHAIN_ID, query: { enabled: isAmmTrade && !!token.amm_pair_address } });
+  const { data: reserves } = useReadContract({ address: token.amm_pair_address as `0x${string}`, abi: AMM_PAIR_ABI, functionName: 'getReserves', chainId: ARC_CHAIN_ID, query: { enabled: isAmmTrade && !!token.amm_pair_address } });
+  const quote = useMemo(() => {
+    if (!isAmmTrade) return curveQuote;
+    if (!reserves || !pairToken0 || parsedAmount === 0n) return undefined;
+    const [reserve0, reserve1] = reserves;
+    const usdcIsToken0 = pairToken0.toLowerCase() === CONTRACTS.USDC.toLowerCase();
+    const reserveIn = mode === 'buy' ? (usdcIsToken0 ? reserve0 : reserve1) : (usdcIsToken0 ? reserve1 : reserve0);
+    const reserveOut = mode === 'buy' ? (usdcIsToken0 ? reserve1 : reserve0) : (usdcIsToken0 ? reserve0 : reserve1);
+    return reserveIn > 0n && reserveOut > 0n ? (parsedAmount * reserveOut) / (reserveIn + parsedAmount) : undefined;
+  }, [isAmmTrade, curveQuote, reserves, pairToken0, parsedAmount, mode]);
 
   // Calculate Price Impact & Minimum Out
   const { priceImpactPct, minOut, formattedQuote } = useMemo(() => {
@@ -304,7 +326,7 @@ export function TradePanel({ token }: { token: Token }) {
       : (!tokenAllowanceLoaded || tokenAllowance !== parsedAmount));
 
   const buyWouldExceedMaxWallet =
-    isLegacyCapped &&
+    !isAmmTrade && isLegacyCapped &&
     mode === 'buy' &&
     quote !== undefined &&
     tokenBalance !== undefined &&
@@ -341,7 +363,15 @@ export function TradePanel({ token }: { token: Token }) {
     setIsAdvancingToTrade(false);
     setTxAction('trade');
 
-    if (trade.mode === 'buy') {
+    if (isAmmTrade) {
+      if (!token.amm_pair_address || !address || !ammRouter) {
+        setTradeError('AMM trading is not configured for this network yet.');
+        setTxAction(null);
+        return;
+      }
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
+      writeContract({ address: ammRouter, abi: AMM_ROUTER_ABI, functionName: trade.mode === 'buy' ? 'swapExactUSDCForTokens' : 'swapExactTokensForUSDC', args: [trade.parsedAmount, trade.minOut, deadline, token.amm_pair_address as `0x${string}`, address], chainId: ARC_CHAIN_ID });
+    } else if (trade.mode === 'buy') {
       writeContract({
         address: token.curve_address as `0x${string}`,
         abi: BONDING_CURVE_ABI,
@@ -376,7 +406,7 @@ export function TradePanel({ token }: { token: Token }) {
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [isAdvancingToTrade]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isAdvancingToTrade]);
 
   // Execute trade
   const handleTrade = async () => {
@@ -390,6 +420,10 @@ export function TradePanel({ token }: { token: Token }) {
   // Approve only the amount used by this trade.
   const handleApprove = async () => {
     if (!address || parsedAmount === 0n) return;
+    if (isAmmTrade && !ammRouter) {
+      setTradeError('AMM trading is not configured for this network yet.');
+      return;
+    }
     setTradeError(null);
     const trade = createTradeIntent();
     pendingTradeRef.current = trade;
@@ -399,7 +433,7 @@ export function TradePanel({ token }: { token: Token }) {
         address: CONTRACTS.USDC,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [token.curve_address as `0x${string}`, trade.parsedAmount],
+        args: [(isAmmTrade ? ammRouter : token.curve_address) as `0x${string}`, trade.parsedAmount],
         chainId: ARC_CHAIN_ID,
       });
     } else {
@@ -407,7 +441,7 @@ export function TradePanel({ token }: { token: Token }) {
         address: token.contract_address as `0x${string}`,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [token.curve_address as `0x${string}`, trade.parsedAmount],
+        args: [(isAmmTrade ? ammRouter : token.curve_address) as `0x${string}`, trade.parsedAmount],
         chainId: ARC_CHAIN_ID,
       });
     }
@@ -471,30 +505,6 @@ export function TradePanel({ token }: { token: Token }) {
       setAmount(formatUnits(target, TOKEN_DECIMALS));
     }
   };
-
-  // Graduated state
-  if (token.status === 'graduated') {
-    return (
-      <div className="card text-center py-6 space-y-3">
-        <GraduationCap size={32} weight="fill" className="mx-auto text-accent-purple" aria-hidden="true" />
-        <h3 className="font-bold text-base text-text-primary">Token Graduated to DEX</h3>
-        <p className="text-xs text-text-muted max-w-xs mx-auto">
-          This token reached the $30,000 graduation threshold and now trades freely on the Orba AMM pair with liquidity permanently burned.
-        </p>
-        {token.amm_pair_address && (
-          <a
-            href={`${ARC_EXPLORER_URL}/address/${token.amm_pair_address}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-primary inline-flex items-center gap-1.5 text-xs px-4 py-2 rounded-full font-bold"
-          >
-            <span>View AMM Pair on ArcScan</span>
-            <span>↗</span>
-          </a>
-        )}
-      </div>
-    );
-  }
 
   const progress = bondingCurveProgress(token.market_cap);
 
@@ -745,7 +755,8 @@ export function TradePanel({ token }: { token: Token }) {
       )}
         {!isConnected ? (
         <button
-          onClick={() => connect({ connector: connectors[0] })}
+          onClick={() => preferredConnector && connect({ connector: preferredConnector })}
+          disabled={!preferredConnector}
           className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl shadow-sm"
         >
           Connect Wallet
@@ -791,18 +802,18 @@ export function TradePanel({ token }: { token: Token }) {
               <span className="font-mono font-bold text-text-primary">
                 {approvalAmount} {approvalAsset}
               </span>{' '}
-              for this token&apos;s bonding curve. Orba opens the actual trade confirmation next.
+              for this token&apos;s {isAmmTrade ? 'AMM router' : 'bonding curve'}. Orba opens the actual trade confirmation next.
             </p>
             <div className="flex items-center justify-between gap-3 text-[11px] text-text-muted">
               <span>Approved spender</span>
               <a
-                href={`${ARC_EXPLORER_URL}/address/${token.curve_address}`}
+                href={`${ARC_EXPLORER_URL}/address/${isAmmTrade ? ammRouter : token.curve_address}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="font-mono text-accent-blue hover:underline"
-                title={token.curve_address}
+                title={isAmmTrade ? ammRouter : token.curve_address}
               >
-                Bonding curve {curveLabel} ↗
+                {isAmmTrade ? 'AMM router' : `Bonding curve ${curveLabel}`} ↗
               </a>
             </div>
             <p className="text-[11px] font-medium text-text-secondary">
@@ -811,7 +822,7 @@ export function TradePanel({ token }: { token: Token }) {
           </div>
           <button
             onClick={handleApprove}
-            disabled={isPending}
+            disabled={isPending || (isAmmTrade && !ammRouter)}
             className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl shadow-sm"
           >
             {isPending
@@ -825,7 +836,7 @@ export function TradePanel({ token }: { token: Token }) {
       ) : (
         <button
           onClick={handleTrade}
-          disabled={isPending || !quote}
+          disabled={isPending || !quote || (isAmmTrade && !ammRouter)}
           className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl shadow-sm"
         >
           {isPending

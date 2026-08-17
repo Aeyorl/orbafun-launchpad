@@ -6,7 +6,7 @@ export function safeAlertError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return message
     .replace(/(?:https?|rediss?):\/\/\S+/gi, '[redacted-url]')
-    .replace(/[A-Za-z0-9_:\/-]{48,}/g, '[redacted-value]')
+    .replace(/[A-Za-z0-9_:/-]{48,}/g, '[redacted-value]')
     .slice(0, 300);
 }
 

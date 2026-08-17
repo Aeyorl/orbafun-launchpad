@@ -56,7 +56,6 @@ export function TradeHistory({
       setTrades([]);
       setOffset(0);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [firstKey]);
 
   const loadMore = useCallback(async () => {
