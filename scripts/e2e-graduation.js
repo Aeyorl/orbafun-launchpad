@@ -1,24 +1,26 @@
 /**
- * Graduation E2E test: LAUNCH → BUY until $25K MC → MIGRATE → VERIFY
+ * Graduation E2E test: LAUNCH → BUY → MIGRATE → AMM SWAPS → VERIFY
  *
  * This script:
  *   1. Launches a new token (or reuses an existing one via --token=0x...)
  *   2. Buys tokens in chunks until market cap reaches $25,000 (graduation threshold)
  *   3. Verifies automatic migration from the threshold-crossing buy (and
  *      supports the legacy manual migration path for already-deployed curves)
- *   4. Verifies:
+ *   4. Buys and sells through the AMM router
+ *   5. Verifies:
  *      - AMM pair was created
  *      - Liquidity was added (reserves > 0)
  *      - LP tokens were burned to 0x...dEaD
  *      - Token is marked as graduated in the factory
- *      - API reflects the graduated status
+ *      - API reflects graduation, LP burn, swaps, candles, and volume
  *
  * Usage:
  *   node scripts/e2e-graduation.js                  # launch + graduate a new token
  *   node scripts/e2e-graduation.js --token=0x...    # graduate an existing token
  *
  * Requires: DEPLOYER_PRIVATE_KEY, ARC_TOKEN_FACTORY_ADDRESS,
- * ARC_MIGRATOR_ADDRESS, ARC_AMM_FACTORY_ADDRESS, and E2E_API_URL.
+ * ARC_MIGRATOR_ADDRESS, ARC_AMM_FACTORY_ADDRESS, ARC_AMM_ROUTER_ADDRESS,
+ * and E2E_API_URL. E2E_BUY_USDC defaults to 1000 for the uncapped factory.
  */
 require('dotenv').config();
 const { createWalletClient, http, fallback, parseUnits, formatUnits, createPublicClient } = require('viem');
@@ -41,6 +43,7 @@ function requiredEnv(name) {
 const TOKEN_FACTORY = requiredEnv('ARC_TOKEN_FACTORY_ADDRESS');
 const MIGRATOR = requiredEnv('ARC_MIGRATOR_ADDRESS');
 const AMM_FACTORY = requiredEnv('ARC_AMM_FACTORY_ADDRESS');
+const AMM_ROUTER = requiredEnv('ARC_AMM_ROUTER_ADDRESS');
 const API = requiredEnv('E2E_API_URL').replace(/\/$/, '');
 const BURN_ADDRESS = '0x000000000000000000000000000000000000dEaD';
 
@@ -232,6 +235,35 @@ const AMM_FACTORY_ABI = [
   },
 ];
 
+const AMM_ROUTER_ABI = [
+  {
+    name: 'swapExactUSDCForTokens',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'amountIn', type: 'uint256' },
+      { name: 'amountOutMin', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' },
+      { name: 'pair', type: 'address' },
+      { name: 'to', type: 'address' },
+    ],
+    outputs: [{ name: 'amountOut', type: 'uint256' }],
+  },
+  {
+    name: 'swapExactTokensForUSDC',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'amountIn', type: 'uint256' },
+      { name: 'amountOutMin', type: 'uint256' },
+      { name: 'deadline', type: 'uint256' },
+      { name: 'pair', type: 'address' },
+      { name: 'to', type: 'address' },
+    ],
+    outputs: [{ name: 'amountOut', type: 'uint256' }],
+  },
+];
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function waitForReceipt(publicClient, hash, label = 'tx') {
@@ -304,12 +336,28 @@ async function main() {
   const transport = fallback(RPC_URLS.map(url => http(url, { pollingInterval: 4_000 })), { rank: false });
   const publicClient = createPublicClient({ chain: arcTestnet, transport });
   const walletClient = createWalletClient({ chain: arcTestnet, transport, account });
+  const buyChunkText = process.env.E2E_BUY_USDC?.trim() || '1000';
+  const buyChunk = parseUnits(buyChunkText, 6);
+  if (buyChunk <= 0n || buyChunk > parseUnits('2000', 6)) {
+    throw new Error('E2E_BUY_USDC must be greater than 0 and no more than 2000 USDC');
+  }
+  const startingBalance = await publicClient.readContract({
+    address: USDC,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [account.address],
+  });
+  if (!existingToken && startingBalance < parseUnits('9200', 6)) {
+    throw new Error(`Funded canary requires at least 9200 USDC; wallet has ${formatUnits(startingBalance, 6)}`);
+  }
 
   console.log('========================================');
   console.log('  Orba Graduation E2E Test');
   console.log('  LAUNCH → BUY to $25K MC → MIGRATE → VERIFY');
   console.log('========================================');
   console.log(`Wallet: ${account.address}`);
+  console.log(`Starting balance: ${formatUnits(startingBalance, 6)} USDC`);
+  console.log(`Bonding-curve buy chunk: ${buyChunkText} USDC (maximum 2000)`);
   console.log(`Mode: ${existingToken ? 'existing token' : 'new token'}`);
   console.log('');
 
@@ -403,80 +451,20 @@ async function main() {
     console.log('');
     console.log('Step 3: Buying tokens to reach graduation threshold...');
 
-    // The MemeToken enforces a 4% max-wallet limit (40M tokens) pre-graduation.
-    // So we can't buy more than 40M tokens per wallet. To work around this,
-    // we buy, transfer tokens to a throwaway address, wait for the cooldown
-    // (30 blocks ≈ 15s on Arc), then buy again. Repeat until MC >= $25K.
-    //
-    // We need ~$8800 in real USDC buys to push MC from $4K to $25K (computed
-    // from the constant-product formula). Each buy is $100 (gives ~24M tokens
-    // at start, fewer as price rises — always under the 40M limit). ~80-100
-    // cycles total, ~20-25 min.
-    const COOLDOWN_BLOCKS = 30n;
+    // This canary targets the uncapped factory. Use bounded chunks so it tests
+    // multiple price steps without the legacy max-wallet transfer workaround.
     let buyCount = 0;
     let currentMc = marketCap;
-    const BUY_USDC = parseUnits('100', 6); // $100 per buy — safe under max wallet
-
-    // Read the MemeToken address (from the curve) so we can transfer tokens.
-    const CURVE_TOKEN_ABI = [
-      { name: 'token', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ name: '', type: 'address' }] },
-    ];
-    const memeTokenAddress = await readRetry(publicClient, {
-      address: curveAddress,
-      abi: CURVE_TOKEN_ABI,
-      functionName: 'token',
-    }, 'curve.token()');
-
-    const MEME_TOKEN_ABI = [
-      { name: 'balanceOf', type: 'function', stateMutability: 'view', inputs: [{ name: 'owner', type: 'address' }], outputs: [{ name: '', type: 'uint256' }] },
-      { name: 'transfer', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ name: '', type: 'bool' }] },
-    ];
-
-    while (currentMc < threshold && buyCount < 120) {
+    while (currentMc < threshold && buyCount < 12) {
       buyCount++;
-
-      // Check deployer's current token balance — if we have tokens from
-      // a previous buy, transfer them to a throwaway address first.
-      const myBalance = await readRetry(publicClient, {
-        address: memeTokenAddress,
-        abi: MEME_TOKEN_ABI,
-        functionName: 'balanceOf',
-        args: [account.address],
-      }, `balanceBefore${buyCount}`);
-
-      if (myBalance > 0n) {
-        // Transfer existing tokens to a throwaway address to clear our balance.
-        const throwaway = '0x' + (buyCount + 0x1000).toString(16).padStart(40, '0');
-        console.log(`  Cycle ${buyCount}: transferring ${formatUnits(myBalance, 18)} tokens to ${throwaway.slice(0, 10)}...`);
-
-        // Wait for cooldown (30 blocks ≈ 15s) before transfer.
-        // The cooldown applies to user-to-user transfers (msg.sender = deployer).
-        // Buys from the curve are exempt (msg.sender = curve).
-        if (buyCount > 1) {
-          console.log(`  Waiting for cooldown (30 blocks ≈ 15s)...`);
-          await sleep(16000);
-        }
-
-        const transferHash = await writeRetry(walletClient, {
-          address: memeTokenAddress,
-          abi: MEME_TOKEN_ABI,
-          functionName: 'transfer',
-          args: [throwaway, myBalance],
-        }, `transfer${buyCount}`);
-        const transferReceipt = await waitForReceipt(publicClient, transferHash, `transfer${buyCount}`);
-        if (transferReceipt.status !== 'success') {
-          console.log(`  ⚠ Transfer failed, continuing with buy anyway...`);
-        }
-      }
-
-      console.log(`  Buy #${buyCount}: 100 USDC (MC: $${formatUnits(currentMc, 6)})`);
+      console.log(`  Buy #${buyCount}: ${buyChunkText} USDC max (MC: $${formatUnits(currentMc, 6)})`);
 
       // Approve USDC for the curve
       const approveHash = await writeRetry(walletClient, {
         address: USDC,
         abi: erc20Abi,
         functionName: 'approve',
-        args: [curveAddress, BUY_USDC],
+        args: [curveAddress, buyChunk],
       }, `approveBuy${buyCount}`);
       await waitForReceipt(publicClient, approveHash, `approveBuy${buyCount}`);
 
@@ -485,31 +473,12 @@ async function main() {
         address: curveAddress,
         abi: BONDING_CURVE_ABI,
         functionName: 'buy',
-        args: [BUY_USDC, 0n],
+        args: [buyChunk, 0n],
       }, `buy${buyCount}`);
       const buyReceipt = await waitForReceipt(publicClient, buyHash, `buy${buyCount}`);
 
       if (buyReceipt.status !== 'success') {
-        console.log(`  ⚠ Buy #${buyCount} failed, trying $50...`);
-        const smallBuy = parseUnits('50', 6);
-        const approveHash2 = await writeRetry(walletClient, {
-          address: USDC,
-          abi: erc20Abi,
-          functionName: 'approve',
-          args: [curveAddress, smallBuy],
-        }, `approveRetry${buyCount}`);
-        await waitForReceipt(publicClient, approveHash2, `approveRetry${buyCount}`);
-        const buyHash2 = await writeRetry(walletClient, {
-          address: curveAddress,
-          abi: BONDING_CURVE_ABI,
-          functionName: 'buy',
-          args: [smallBuy, 0n],
-        }, `buyRetry${buyCount}`);
-        const buyReceipt2 = await waitForReceipt(publicClient, buyHash2, `buyRetry${buyCount}`);
-        if (buyReceipt2.status !== 'success') {
-          console.log(`  ⚠ Retry also failed, skipping cycle ${buyCount}`);
-          continue;
-        }
+        throw new Error(`Bonding-curve buy #${buyCount} failed on-chain`);
       }
 
       // Read new market cap
@@ -630,7 +599,17 @@ async function main() {
     abi: AMM_PAIR_ABI,
     functionName: 'getReserves',
   }, 'getReserves');
-  console.log(`  AMM reserves: ${formatUnits(reserve0, 18)} / ${formatUnits(reserve1, 6)}`);
+  const [pairToken0, pairToken1] = await Promise.all([
+    readRetry(publicClient, { address: ammPair, abi: AMM_PAIR_ABI, functionName: 'token0' }, 'pairToken0'),
+    readRetry(publicClient, { address: ammPair, abi: AMM_PAIR_ABI, functionName: 'token1' }, 'pairToken1'),
+  ]);
+  const usdcIsToken0 = pairToken0.toLowerCase() === USDC.toLowerCase();
+  if (!usdcIsToken0 && pairToken1.toLowerCase() !== USDC.toLowerCase()) {
+    throw new Error('AMM pair does not contain Arc USDC');
+  }
+  const usdcReserve = usdcIsToken0 ? reserve0 : reserve1;
+  const tokenReserve = usdcIsToken0 ? reserve1 : reserve0;
+  console.log(`  AMM reserves: ${formatUnits(tokenReserve, 18)} tokens / ${formatUnits(usdcReserve, 6)} USDC`);
   if (reserve0 === 0n || reserve1 === 0n) {
     throw new Error('AMM pair has zero reserves — liquidity not added');
   }
@@ -656,23 +635,107 @@ async function main() {
   const burnPct = 100;
   console.log(`  Burn percentage: ${burnPct.toFixed(2)}%`);
 
-  // 5d. (curve graduated already verified in 5a)
-
-  // ─── Step 6: Verify API reflects graduation ───────────────────────────
+  // ─── Step 6: Execute an AMM router buy and sell ──────────────────────
   console.log('');
-  console.log('Step 6: Waiting for API to index graduation...');
+  console.log('Step 6: Executing AMM router buy and sell...');
+  const routerBuyAmount = parseUnits('1', 6);
+  const tokenBalanceBefore = await readRetry(publicClient, {
+    address: tokenAddress,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [account.address],
+  }, 'tokenBalanceBeforeRouterBuy');
+  const approveRouterUsdcHash = await writeRetry(walletClient, {
+    address: USDC,
+    abi: erc20Abi,
+    functionName: 'approve',
+    args: [AMM_ROUTER, routerBuyAmount],
+  }, 'approveRouterUsdc');
+  await waitForReceipt(publicClient, approveRouterUsdcHash, 'approveRouterUsdc');
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
+  const routerBuyHash = await writeRetry(walletClient, {
+    address: AMM_ROUTER,
+    abi: AMM_ROUTER_ABI,
+    functionName: 'swapExactUSDCForTokens',
+    args: [routerBuyAmount, 1n, deadline, ammPair, account.address],
+  }, 'routerBuy');
+  const routerBuyReceipt = await waitForReceipt(publicClient, routerBuyHash, 'routerBuy');
+  if (routerBuyReceipt.status !== 'success') throw new Error('AMM router buy failed on-chain');
+  const tokenBalanceAfter = await readRetry(publicClient, {
+    address: tokenAddress,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [account.address],
+  }, 'tokenBalanceAfterRouterBuy');
+  const routerTokensOut = tokenBalanceAfter - tokenBalanceBefore;
+  if (routerTokensOut <= 0n) throw new Error('AMM router buy returned no tokens');
+  console.log(`  ✓ Router buy: ${routerBuyHash} (${formatUnits(routerTokensOut, 18)} tokens)`);
+
+  const approveRouterTokenHash = await writeRetry(walletClient, {
+    address: tokenAddress,
+    abi: erc20Abi,
+    functionName: 'approve',
+    args: [AMM_ROUTER, routerTokensOut],
+  }, 'approveRouterToken');
+  await waitForReceipt(publicClient, approveRouterTokenHash, 'approveRouterToken');
+  const usdcBalanceBeforeSell = await readRetry(publicClient, {
+    address: USDC,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [account.address],
+  }, 'usdcBalanceBeforeRouterSell');
+  const routerSellHash = await writeRetry(walletClient, {
+    address: AMM_ROUTER,
+    abi: AMM_ROUTER_ABI,
+    functionName: 'swapExactTokensForUSDC',
+    args: [routerTokensOut, 1n, deadline, ammPair, account.address],
+  }, 'routerSell');
+  const routerSellReceipt = await waitForReceipt(publicClient, routerSellHash, 'routerSell');
+  if (routerSellReceipt.status !== 'success') throw new Error('AMM router sell failed on-chain');
+  const usdcBalanceAfterSell = await readRetry(publicClient, {
+    address: USDC,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [account.address],
+  }, 'usdcBalanceAfterRouterSell');
+  if (usdcBalanceAfterSell <= usdcBalanceBeforeSell) throw new Error('AMM router sell returned no USDC');
+  console.log(`  ✓ Router sell: ${routerSellHash} (${formatUnits(usdcBalanceAfterSell - usdcBalanceBeforeSell, 6)} USDC)`);
+
+  // ─── Step 7: Verify indexed graduation, swaps, candles, and volume ───
+  console.log('');
+  console.log('Step 7: Waiting for API lifecycle data...');
   let apiToken = null;
+  let apiEvidence = null;
   for (let i = 0; i < 36; i++) {
     try {
-      const res = await fetch(`${API}/tokens/${tokenAddress.toLowerCase()}`);
-      if (res.ok) {
-        apiToken = await res.json();
-        if (apiToken.status === 'graduated') {
-          console.log(`  ✓ API shows token as graduated (after ${(i + 1) * 5}s)`);
-          console.log(`    AMM pair in API: ${apiToken.amm_pair_address}`);
+      const [tokenRes, activityRes, candlesRes, statsRes] = await Promise.all([
+        fetch(`${API}/tokens/${tokenAddress.toLowerCase()}`),
+        fetch(`${API}/tokens/activity/recent?limit=50`),
+        fetch(`${API}/tokens/${tokenAddress.toLowerCase()}/candles?timeframe=10s&mode=price&limit=100`),
+        fetch(`${API}/tokens/stats`),
+      ]);
+      if (tokenRes.ok && activityRes.ok && candlesRes.ok && statsRes.ok) {
+        apiToken = await tokenRes.json();
+        const activityBody = await activityRes.json();
+        const candles = await candlesRes.json();
+        const stats = await statsRes.json();
+        const activity = activityBody.activity || [];
+        const indexedHashes = new Set(activity.map((item) => item.tx_hash?.toLowerCase()));
+        const buyIndexed = indexedHashes.has(routerBuyHash.toLowerCase());
+        const sellIndexed = indexedHashes.has(routerSellHash.toLowerCase());
+        const candlesReady = Array.isArray(candles) && candles.length > 0
+          && candles.some((candle) => Number(candle.volume) > 0);
+        const tokenVolumeReady = Number(apiToken.volume_24h) > 0;
+        const globalVolumeReady = Number(stats.volume_24h) > 0;
+        const graduationReady = apiToken.status === 'graduated'
+          && apiToken.amm_pair_address?.toLowerCase() === ammPair.toLowerCase()
+          && BigInt(apiToken.lp_burned || '0') === burnedLp;
+        if (graduationReady && buyIndexed && sellIndexed && candlesReady && tokenVolumeReady && globalVolumeReady) {
+          apiEvidence = { candles: candles.length, tokenVolume: apiToken.volume_24h, globalVolume: stats.volume_24h };
+          console.log(`  ✓ Full API lifecycle indexed after ${(i + 1) * 5}s`);
           break;
         }
-        console.log(`  [${i + 1}] API status: ${apiToken.status} (waiting for graduated...)`);
+        console.log(`  [${i + 1}] graduation=${graduationReady} ammBuy=${buyIndexed} ammSell=${sellIndexed} candles=${candlesReady} tokenVolume=${tokenVolumeReady} globalVolume=${globalVolumeReady}`);
       }
     } catch (e) {
       console.log(`  [${i + 1}] API error: ${e.message}`);
@@ -680,10 +743,14 @@ async function main() {
     await sleep(5000);
   }
 
-  if (!apiToken || apiToken.status !== 'graduated') {
-    console.log('  ⚠ API did not reflect graduated status within 180s');
-    console.log('  (This may be normal if the indexer poller interval is long)');
-  }
+  if (!apiEvidence) throw new Error('API did not index the full lifecycle within 180s');
+
+  const endingBalance = await readRetry(publicClient, {
+    address: USDC,
+    abi: erc20Abi,
+    functionName: 'balanceOf',
+    args: [account.address],
+  }, 'endingBalance');
 
   // ─── Summary ──────────────────────────────────────────────────────────
   console.log('');
@@ -695,7 +762,11 @@ async function main() {
   console.log(`  AMM Pair:   ${ammPair}`);
   console.log(`  Graduated:  ${graduated}`);
   console.log(`  LP Burned:  ${burnPct.toFixed(2)}% to 0x...dEaD`);
-  console.log(`  Reserves:   ${formatUnits(reserve0, 18)} tokens / ${formatUnits(reserve1, 6)} USDC`);
+  console.log(`  Router buy: ${routerBuyHash}`);
+  console.log(`  Router sell:${routerSellHash}`);
+  console.log(`  Reserves:   ${formatUnits(tokenReserve, 18)} tokens / ${formatUnits(usdcReserve, 6)} USDC`);
+  console.log(`  API candles:${apiEvidence.candles}, token volume: $${apiEvidence.tokenVolume}, global volume: $${apiEvidence.globalVolume}`);
+  console.log(`  End balance:${formatUnits(endingBalance, 6)} USDC (spent ${formatUnits(startingBalance - endingBalance, 6)} USDC)`);
   console.log('========================================');
 }
 
