@@ -81,14 +81,20 @@ const TOKEN_FACTORY_ABI = [
     stateMutability: 'view',
     inputs: [{ name: 'tokenAddress', type: 'address' }],
     outputs: [
-      { name: 'token', type: 'address' },
-      { name: 'curve', type: 'address' },
-      { name: 'creator', type: 'address' },
-      { name: 'name', type: 'string' },
-      { name: 'symbol', type: 'string' },
-      { name: 'image', type: 'string' },
-      { name: 'createdAt', type: 'uint256' },
-      { name: 'graduated', type: 'bool' },
+      {
+        name: '',
+        type: 'tuple',
+        components: [
+          { name: 'token', type: 'address' },
+          { name: 'curve', type: 'address' },
+          { name: 'creator', type: 'address' },
+          { name: 'name', type: 'string' },
+          { name: 'symbol', type: 'string' },
+          { name: 'image', type: 'string' },
+          { name: 'createdAt', type: 'uint256' },
+          { name: 'graduated', type: 'bool' },
+        ],
+      },
     ],
   },
 ];
