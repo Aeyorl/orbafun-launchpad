@@ -16,7 +16,6 @@ import { parseUnits, formatUnits, erc20Abi } from 'viem';
 import toast from 'react-hot-toast';
 import {
   ARC_CHAIN_ID,
-  ARC_EXPLORER_URL,
   ARC_NETWORK_NAME,
   CONTRACTS,
   USDC_DECIMALS,
@@ -453,7 +452,6 @@ export function TradePanel({ token }: { token: Token }) {
     parsedAmount,
     mode === 'buy' ? USDC_DECIMALS : TOKEN_DECIMALS,
   );
-  const curveLabel = `${token.curve_address.slice(0, 6)}…${token.curve_address.slice(-4)}`;
 
   useEffect(() => {
     if (!isWriteError) return;
@@ -795,31 +793,6 @@ export function TradePanel({ token }: { token: Token }) {
         </button>
       ) : needsApproval ? (
         <div className="space-y-2.5">
-          <div className="rounded-xl border border-accent-blue/25 bg-accent-blue/5 p-3 text-xs space-y-2">
-            <div className="font-bold text-text-primary">Why your wallet says “Spending cap”</div>
-            <p className="text-text-secondary leading-relaxed">
-              This is the secure approval step, not the purchase. It authorizes exactly{' '}
-              <span className="font-mono font-bold text-text-primary">
-                {approvalAmount} {approvalAsset}
-              </span>{' '}
-              for this token&apos;s {isAmmTrade ? 'AMM router' : 'bonding curve'}. Orba opens the actual trade confirmation next.
-            </p>
-            <div className="flex items-center justify-between gap-3 text-[11px] text-text-muted">
-              <span>Approved spender</span>
-              <a
-                href={`${ARC_EXPLORER_URL}/address/${isAmmTrade ? ammRouter : token.curve_address}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-mono text-accent-blue hover:underline"
-                title={isAmmTrade ? ammRouter : token.curve_address}
-              >
-                {isAmmTrade ? 'AMM router' : `Bonding curve ${curveLabel}`} ↗
-              </a>
-            </div>
-            <p className="text-[11px] font-medium text-text-secondary">
-              Keep the wallet cap unchanged. Orba never requests unlimited approval.
-            </p>
-          </div>
           <button
             onClick={handleApprove}
             disabled={isPending || (isAmmTrade && !ammRouter)}

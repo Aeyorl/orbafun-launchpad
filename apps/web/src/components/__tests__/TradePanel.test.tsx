@@ -296,16 +296,13 @@ describe('TradePanel', () => {
       );
     });
 
-    it('explains the wallet spending-cap screen before opening it', () => {
+    it('keeps the approval action concise', () => {
       renderWithProviders(<TradePanel token={createMockToken()} />);
       fireEvent.change(screen.getByPlaceholderText('0.00'), {
         target: { value: '10' },
       });
-      expect(
-        screen.getByText(/Why your wallet says “Spending cap”/),
-      ).toBeInTheDocument();
-      expect(screen.getByText(/authorizes exactly/)).toHaveTextContent('10 USDC');
-      expect(screen.getByText(/never requests unlimited approval/)).toBeInTheDocument();
+      expect(screen.getByText('Approve 10 USDC (1 of 2)')).toBeInTheDocument();
+      expect(screen.queryByText(/Why your wallet says/)).not.toBeInTheDocument();
     });
 
     it('shows Approving in wallet… when approval tx is pending', () => {
