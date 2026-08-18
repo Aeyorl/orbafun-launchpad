@@ -1,14 +1,15 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { api, Token, SortOption } from '@/lib/api';
 import { TokenGrid } from '@/components/TokenGrid';
 import { AgentBadge } from '@/components/AgentBadge';
+import { SunnySpotlight } from '@/components/SunnySpotlight';
 import { useTokenEvents } from '@/lib/useWebSocket';
 import { formatUsdDirect, formatMarketCap, tokenEmoji, ipfsToGateway } from '@/lib/utils';
-import { ArrowRight, ArrowUpRight, Robot, Sparkle, UsersThree } from '@phosphor-icons/react';
+import { ArrowRight, ArrowUpRight, Robot, Sparkle } from '@phosphor-icons/react';
 
 type Tab = 'newest' | 'market_cap' | 'volume' | 'graduated';
 
@@ -48,6 +49,13 @@ export default function LandingPage() {
     refetchInterval: 15_000,
   });
 
+  // The daily spotlight is earned by current activity, never paid placement.
+  const { data: spotlightData, isLoading: isSpotlightLoading } = useQuery({
+    queryKey: ['sunny-spotlight-token', 'all'],
+    queryFn: () => api.listTokens({ sort: 'volume', status: 'all', limit: 1 }),
+    refetchInterval: 30_000,
+  });
+
   // Fetch recently agent-launched tokens for the AI section
   const { data: agentTokensData } = useQuery({
     queryKey: ['agent-tokens-homepage'],
@@ -80,8 +88,8 @@ export default function LandingPage() {
 
   return (
     <div className="space-y-14">
-      <section className="grid min-h-[680px] gap-10 border-b border-bg-border py-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:py-20 animate-fade-in">
-        <div>
+      <section className="grid min-h-[680px] gap-10 border-b border-bg-border py-12 xl:grid-cols-[1.05fr_0.95fr] xl:items-center xl:py-20 animate-fade-in">
+        <div className="min-w-0">
           <div className="mb-6 flex items-center gap-2 text-[11px] font-extrabold tracking-[0.14em] text-accent-green">
             <Sparkle size={17} weight="fill" />
             <span>A BRIGHTER KIND OF LAUNCHPAD</span>
@@ -106,20 +114,7 @@ export default function LandingPage() {
             </div>
           )}
         </div>
-        <div className="relative min-h-[500px] rotate-[1deg] overflow-hidden rounded-3xl border border-text-primary bg-accent-peach p-6 shadow-[14px_14px_0_rgb(var(--color-accent-blue))]">
-          <div className="flex items-center justify-between font-mono text-[9px] font-bold tracking-[0.14em] text-accent-sienna"><span>TODAY&apos;S SUNNY ONE</span><span>68% GROWN</span></div>
-          <div className="absolute left-1/2 top-[43%] h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-text-primary bg-accent-green shadow-[10px_10px_0_rgba(23,33,60,.18)]" />
-          <div className="absolute left-1/2 top-[43%] grid h-44 w-44 -translate-x-1/2 -translate-y-1/2 place-content-center text-6xl">☀</div>
-          <svg viewBox="0 0 620 380" className="absolute inset-x-[5%] bottom-[7%] h-[76%] w-[90%]" fill="none" aria-hidden="true">
-            <path d="M18 340 C175 336 226 304 294 228 C369 145 452 92 602 28" stroke="rgb(var(--color-accent-blue))" strokeWidth="4" />
-          </svg>
-          <span className="absolute left-[8%] top-[25%] -rotate-3 rounded-md border border-text-primary bg-[#9fe2c2] px-3 py-2 font-mono text-[9px] font-bold text-[#17213c] shadow-[4px_4px_0_#17213c]">184 BELIEVERS</span>
-          <span className="absolute bottom-[20%] right-[8%] rotate-3 rounded-md border border-text-primary bg-accent-blue px-3 py-2 font-mono text-[9px] font-bold text-white shadow-[4px_4px_0_#17213c]">+38% TODAY</span>
-          <div className="absolute inset-x-6 bottom-5 flex items-center justify-between rounded-xl border border-text-primary bg-bg-card px-5 py-4 text-text-primary">
-            <div><strong className="block font-serif text-2xl font-normal text-accent-blue">Sundae Club</strong><span className="font-mono text-[9px] text-text-muted">$SUN · ARC</span></div>
-            <span className="flex items-center gap-2 text-sm font-bold">Meet the community <UsersThree size={19} /></span>
-          </div>
-        </div>
+        <SunnySpotlight token={spotlightData?.tokens[0]} isLoading={isSpotlightLoading} />
       </section>
 
       {/* Compact platform pulse. */}

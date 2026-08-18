@@ -153,7 +153,7 @@ export default function TradePage() {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-xl border border-bg-border bg-bg-card shadow-subtle">
+      <section id="community" className="scroll-mt-20 overflow-hidden rounded-xl border border-bg-border bg-bg-card shadow-subtle">
         <div className="grid lg:grid-cols-[minmax(320px,0.78fr)_minmax(0,1.72fr)]">
           <AboutPanel tokenName={token.name} description={about} />
 
