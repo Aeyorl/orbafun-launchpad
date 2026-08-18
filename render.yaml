@@ -56,8 +56,6 @@ services:
         value: "0x33E4bd4561EE669012ff83b4eE5609122838bDcB"
       - key: ARC_POLLER_ENABLED
         value: "true"
-      - key: ARC_POLLER_REPLAY_FROM_BLOCK
-        value: "57533864"
       - key: AUTH_ALLOW_INSECURE
         value: "false"
       - key: AUTH_SIWE_DOMAINS
