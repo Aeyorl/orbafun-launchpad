@@ -112,7 +112,7 @@ export function TradePanel({ token }: { token: Token }) {
   const wrongNetwork = isConnected && chainId !== ARC_CHAIN_ID;
   const walletConnectConnector = connectors.find((connector) => connector.type === 'walletConnect');
   const injectedConnector = connectors.find((connector) => connector.type === 'injected');
-  const preferredConnector = walletConnectConnector ?? injectedConnector ?? connectors[0];
+  const preferredConnector = injectedConnector ?? walletConnectConnector ?? connectors[0];
   const isAmmTrade = token.status === 'graduated';
   const ammRouter = CONTRACTS.AMM_ROUTER;
   // Treat pre-versioning API responses as legacy-capped for safety.

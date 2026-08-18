@@ -3,7 +3,7 @@
 import { List, MagnifyingGlass, UserCircle, Wallet, X } from '@phosphor-icons/react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   useAccount,
   useBalance,
@@ -130,9 +130,12 @@ export function Navbar() {
               )}
               <button
                 onClick={() => disconnect()}
-                className="hidden rounded border border-bg-border bg-bg-card px-3 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover lg:inline-flex"
+                className="inline-flex items-center gap-2 rounded border border-bg-border bg-bg-card px-3 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-bg-hover"
+                aria-label={`Disconnect wallet ${shortenAddress(address!)}`}
+                title="Disconnect wallet"
               >
-                {shortenAddress(address!)}
+                <Wallet size={17} aria-hidden="true" />
+                <span className="hidden sm:inline">{shortenAddress(address!)}</span>
               </button>
             </>
           )}
@@ -187,25 +190,80 @@ function ConnectButton() {
   const connectors = useConnectors();
   const { connect } = useConnect();
   const [mounted, setMounted] = useState(false);
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsideClick = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
 
   if (mounted && isConnected) return null;
 
-  const walletConnectConnector = connectors.find((connector) => connector.type === 'walletConnect');
-  const injectedConnector = connectors.find((connector) => connector.type === 'injected');
-  const preferredConnector = walletConnectConnector ?? injectedConnector ?? connectors[0];
-
   return (
-    <button
-      onClick={() => preferredConnector && connect({ connector: preferredConnector })}
-      disabled={!preferredConnector}
-      className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm"
-      title={walletConnectConnector ? 'Connect a mobile wallet with WalletConnect' : undefined}
-    >
-      <Wallet size={17} aria-hidden="true" />
-      <span className="hidden sm:inline">Connect Wallet</span>
-      <span className="sm:hidden">Connect</span>
-    </button>
+    <div className="relative" ref={menuRef}>
+      <button
+        onClick={() => setOpen((value) => !value)}
+        disabled={connectors.length === 0}
+        className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm"
+        aria-expanded={open}
+        aria-haspopup="menu"
+      >
+        <Wallet size={17} aria-hidden="true" />
+        <span className="hidden sm:inline">Connect Wallet</span>
+        <span className="sm:hidden">Connect</span>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          aria-label="Choose a wallet"
+          className="absolute right-0 top-full z-[70] mt-2 w-64 rounded-xl border border-bg-border bg-bg-base p-2 shadow-subtle-3"
+        >
+          <p className="px-3 pb-2 pt-1 text-xs font-semibold uppercase tracking-wide text-text-muted">
+            Choose a wallet
+          </p>
+          {connectors.map((connector) => {
+            const isWalletConnect = connector.type === 'walletConnect';
+            const label = isWalletConnect
+              ? 'WalletConnect'
+              : connector.name === 'Injected'
+                ? 'Browser wallet'
+                : connector.name;
+            return (
+              <button
+                key={connector.uid}
+                role="menuitem"
+                onClick={() => {
+                  connect({ connector });
+                  setOpen(false);
+                }}
+                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-bg-hover"
+              >
+                <Wallet size={20} className="shrink-0 text-accent-blue" aria-hidden="true" />
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-text-primary">{label}</span>
+                  <span className="block text-xs text-text-muted">
+                    {isWalletConnect ? 'QR code or another device' : 'Browser extension or in-app wallet'}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
