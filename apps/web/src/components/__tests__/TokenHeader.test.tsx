@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { Token } from '@/lib/api';
@@ -56,7 +56,7 @@ describe('TokenHeader', () => {
     cleanup();
   });
 
-  it('toggles the primary metric between market cap and price', () => {
+  it('shows market cap and token price together', () => {
     render(
       <TokenHeader
         token={token}
@@ -65,13 +65,8 @@ describe('TokenHeader', () => {
       />,
     );
 
-    expect(screen.getByRole('button', { name: 'Show price' })).toBeInTheDocument();
-    expect(screen.getByText('$4.00K')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show price' }));
-
-    expect(screen.getByRole('button', { name: 'Show market cap' })).toBeInTheDocument();
-    expect(screen.getByText('$4.0000e-6')).toBeInTheDocument();
+    expect(screen.getAllByText('$4K')).toHaveLength(2);
+    expect(screen.getAllByText('$4.0000e-6')).toHaveLength(2);
   });
 
   it('places the token X profile in the metadata pill when one is configured', () => {

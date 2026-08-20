@@ -2,12 +2,13 @@
 
 import { memo, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
-import { Token } from '@/lib/api';
+import { Token, api } from '@/lib/api';
 import { FavoriteButton } from '@/components/FavoriteButton';
 import { AgentBadge } from '@/components/AgentBadge';
 import { TokenArtwork } from '@/components/TokenArtwork';
-import { Copy } from '@phosphor-icons/react';
+import { Copy, XLogo } from '@phosphor-icons/react';
 import {
   formatMarketCap,
   formatPrice,
@@ -49,6 +50,12 @@ export const TokenHeader = memo(function TokenHeader({
   const progress = bondingCurveProgress(token.market_cap);
   const isGraduated = token.status === 'graduated';
   const isPaused = token.status === 'paused';
+  const { data: tokenMetadata } = useQuery({
+    queryKey: ['token-metadata', token.contract_address],
+    queryFn: () => api.getTokenMetadata(token.contract_address),
+    staleTime: 30_000,
+  });
+  const xProfile = getXProfile(tokenMetadata?.twitter);
 
   // Dynamic lifecycle status derivation
   let statusText = 'Bonding';
@@ -123,7 +130,18 @@ export const TokenHeader = memo(function TokenHeader({
                 <div className="flex items-center gap-2 text-xs text-text-muted pt-0.5">
                   <span>
                     by{' '}
-                    {token.is_agent === 'true' && token.agent_uuid ? (
+                    {xProfile ? (
+                      <a
+                        href={xProfile.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 font-semibold text-text-primary hover:text-accent-blue"
+                        aria-label={`Open ${xProfile.label} on X`}
+                      >
+                        <XLogo size={12} weight="bold" aria-hidden="true" />
+                        {xProfile.label}
+                      </a>
+                    ) : token.is_agent === 'true' && token.agent_uuid ? (
                       <Link
                         href={`/agents/${token.agent_uuid}`}
                         className="font-mono text-indigo-500 hover:text-indigo-400 hover:underline"
@@ -262,7 +280,18 @@ export const TokenHeader = memo(function TokenHeader({
                   </span>
                   <span className="text-[10px] text-text-muted truncate">
                     by{' '}
-                    {token.is_agent === 'true' && token.agent_uuid ? (
+                    {xProfile ? (
+                      <a
+                        href={xProfile.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 hover:text-text-primary transition-colors"
+                        aria-label={`Open ${xProfile.label} on X (mobile)`}
+                      >
+                        <XLogo size={11} weight="bold" aria-hidden="true" />
+                        {xProfile.label}
+                      </a>
+                    ) : token.is_agent === 'true' && token.agent_uuid ? (
                       <Link
                         href={`/agents/${token.agent_uuid}`}
                         className="text-indigo-500 hover:text-indigo-400 transition-colors"
@@ -381,3 +410,23 @@ export const TokenHeader = memo(function TokenHeader({
     </>
   );
 });
+
+function getXProfile(value?: string | null): { href: string; label: string } | null {
+  const input = value?.trim();
+  if (!input) return null;
+
+  let handle = input.replace(/^@/, '');
+  if (/^https?:\/\//i.test(input)) {
+    try {
+      const url = new URL(input);
+      if (!['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com'].includes(url.hostname.toLowerCase())) return null;
+      handle = url.pathname.split('/').filter(Boolean)[0] || '';
+    } catch {
+      return null;
+    }
+  }
+
+  handle = handle.split(/[/?#]/)[0];
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(handle)) return null;
+  return { href: `https://x.com/${handle}`, label: `@${handle}` };
+}
