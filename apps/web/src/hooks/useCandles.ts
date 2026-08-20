@@ -22,6 +22,46 @@ const TIMEFRAME_SECONDS: Record<CandleTimeframe, number> = {
 };
 
 /**
+ * Reconcile a background history response with the bars already updated by
+ * WebSocket events. History is authoritative for older buckets, but a cached
+ * response must never roll the active candle backwards or make the chart snap.
+ */
+export function reconcileCandles(
+  historical: OhlcvCandle[],
+  live: OhlcvCandle[],
+): OhlcvCandle[] {
+  if (live.length === 0) return [...historical];
+
+  const liveByTimestamp = new Map(live.map((candle) => [candle.timestamp, candle]));
+  const reconciled = new Map<number, OhlcvCandle>();
+
+  for (const candle of historical) {
+    const liveCandle = liveByTimestamp.get(candle.timestamp);
+    if (!liveCandle) {
+      reconciled.set(candle.timestamp, candle);
+      continue;
+    }
+
+    const liveIsNewer = liveCandle.volume >= candle.volume;
+    reconciled.set(candle.timestamp, {
+      timestamp: candle.timestamp,
+      open: candle.open,
+      high: Math.max(candle.high, liveCandle.high),
+      low: Math.min(candle.low, liveCandle.low),
+      close: liveIsNewer ? liveCandle.close : candle.close,
+      volume: Math.max(candle.volume, liveCandle.volume),
+    });
+    liveByTimestamp.delete(candle.timestamp);
+  }
+
+  for (const candle of liveByTimestamp.values()) {
+    reconciled.set(candle.timestamp, candle);
+  }
+
+  return [...reconciled.values()].sort((a, b) => a.timestamp - b.timestamp);
+}
+
+/**
  * useCandles — fetches historical OHLCV candles from the API and
  * incrementally updates the current candle from WebSocket trade events.
  *
@@ -38,6 +78,7 @@ export function useCandles(
 ) {
   const queryClient = useQueryClient();
   const candlesRef = useRef<OhlcvCandle[]>([]);
+  const seriesKeyRef = useRef(`${tokenAddress}:${timeframe}:${mode}`);
   const [liveCandles, setLiveCandles] = useState<OhlcvCandle[]>([]);
   const [latestMove, setLatestMove] = useState<LiveMarketMove | null>(null);
 
@@ -49,11 +90,23 @@ export function useCandles(
     staleTime: 10_000,
   });
 
-  // Sync historical data to ref + state
+  // Bars from different tokens, resolutions, or metric modes cannot be merged.
+  useEffect(() => {
+    const seriesKey = `${tokenAddress}:${timeframe}:${mode}`;
+    if (seriesKeyRef.current === seriesKey) return;
+    seriesKeyRef.current = seriesKey;
+    candlesRef.current = [];
+    setLiveCandles([]);
+  }, [mode, timeframe, tokenAddress]);
+
+  // Reconcile history without replacing newer bars received over WebSocket.
   useEffect(() => {
     if (historicalCandles) {
-      candlesRef.current = [...historicalCandles];
-      setLiveCandles([...historicalCandles]);
+      setLiveCandles((current) => {
+        const next = reconcileCandles(historicalCandles, current);
+        candlesRef.current = next;
+        return next;
+      });
     }
   }, [historicalCandles]);
 
