@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import toast from 'react-hot-toast';
-import { LinkSimple } from '@phosphor-icons/react';
+import { ShareNetwork } from '@phosphor-icons/react';
 
 /**
  * ShareButton — copies the current coin page URL to clipboard and offers
@@ -49,11 +49,12 @@ export function ShareButton({ tokenName, tokenSymbol }: { tokenName: string; tok
     <div className="relative inline-block">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="btn-secondary text-sm px-2 py-1"
+        className="btn-secondary inline-flex h-9 w-9 items-center justify-center rounded-full p-0 text-sm"
         aria-label="Share this token"
         aria-expanded={open}
+        title="Share token"
       >
-        <LinkSimple size={16} aria-hidden="true" />
+        <ShareNetwork size={17} weight="bold" aria-hidden="true" />
       </button>
       {open && (
         <>

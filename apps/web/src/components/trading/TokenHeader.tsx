@@ -1,15 +1,15 @@
 'use client';
 
-import { memo, useState, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
-import { Token } from '@/lib/api';
+import { Copy, DiscordLogo, Globe, TelegramLogo, XLogo } from '@phosphor-icons/react';
+import { Token, TokenMetadata } from '@/lib/api';
 import { FavoriteButton } from '@/components/FavoriteButton';
+import { ShareButton } from '@/components/ShareButton';
 import { AgentBadge } from '@/components/AgentBadge';
 import { TokenArtwork } from '@/components/TokenArtwork';
-import { Copy } from '@phosphor-icons/react';
 import {
-  formatMarketCap,
   formatPrice,
   formatUsdCompact,
   formatUsdDirect,
@@ -19,27 +19,69 @@ import {
 
 interface TokenHeaderProps {
   token: Token;
+  metadata?: TokenMetadata;
   change24h: { diff: number; pct: number; isPositive: boolean };
   totalHolders: number;
 }
 
-export const TokenHeader = memo(function TokenHeader({
-  token,
-  change24h,
-  totalHolders,
-}: TokenHeaderProps) {
+function safeHttpUrl(value?: string | null, allowBareDomain = false): string | null {
+  if (!value) return null;
+  const candidate = allowBareDomain && !/^https?:\/\//i.test(value) ? `https://${value}` : value;
+
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function socialProfileUrl(value: string | null | undefined, baseUrl: string): string | null {
+  if (!value) return null;
+  const directUrl = safeHttpUrl(value);
+  if (directUrl) return directUrl;
+
+  const handle = value.trim().replace(/^@/, '').replace(/^\/+|\/+$/g, '');
+  return handle ? `${baseUrl}${handle}` : null;
+}
+
+function SocialAction({ href, label, children }: { href: string; label: string; children: ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`${label} (opens in new tab)`}
+      title={label}
+      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-bg-border bg-bg-base/75 text-text-secondary transition-colors hover:border-accent-blue/50 hover:text-accent-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue/40"
+    >
+      {children}
+    </a>
+  );
+}
+
+function DisabledSocialAction({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <span
+      aria-disabled="true"
+      aria-label={`${label} not provided`}
+      title={`${label} not provided`}
+      className="inline-flex h-9 w-9 cursor-not-allowed items-center justify-center rounded-full border border-bg-border bg-bg-base/45 text-text-muted/45"
+    >
+      {children}
+    </span>
+  );
+}
+
+export const TokenHeader = memo(function TokenHeader({ token, metadata, change24h, totalHolders }: TokenHeaderProps) {
   const [copiedCa, setCopiedCa] = useState(false);
   const [isSticky, setIsSticky] = useState(false);
-
   const headerRef = useRef<HTMLDivElement>(null);
 
-  // Monitor scroll position to toggle collapsed sticky header
   useEffect(() => {
     const handleScroll = () => {
       if (!headerRef.current) return;
-      const rect = headerRef.current.getBoundingClientRect();
-      // Activate sticky bar when main header scrolls out of top view
-      setIsSticky(rect.bottom < 60);
+      setIsSticky(headerRef.current.getBoundingClientRect().bottom < 60);
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -49,8 +91,8 @@ export const TokenHeader = memo(function TokenHeader({
   const progress = bondingCurveProgress(token.market_cap);
   const isGraduated = token.status === 'graduated';
   const isPaused = token.status === 'paused';
+  const displaySymbol = token.symbol.replace(/^\$+/, '');
 
-  // Dynamic lifecycle status derivation
   let statusText = 'Bonding';
   let statusBadgeStyle = 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20';
   let statusDotStyle = 'bg-emerald-500';
@@ -73,6 +115,11 @@ export const TokenHeader = memo(function TokenHeader({
     statusDotStyle = 'bg-blue-500';
   }
 
+  const websiteHref = safeHttpUrl(metadata?.website, true);
+  const twitterHref = socialProfileUrl(metadata?.twitter, 'https://x.com/');
+  const telegramHref = socialProfileUrl(metadata?.telegram, 'https://t.me/');
+  const discordHref = safeHttpUrl(metadata?.discord);
+
   const copyContract = async () => {
     try {
       await navigator.clipboard.writeText(token.contract_address);
@@ -85,296 +132,208 @@ export const TokenHeader = memo(function TokenHeader({
   };
 
   const scrollToTradeTerminal = () => {
-    const el = document.getElementById('trading-terminal-panel');
-    el?.scrollIntoView({ behavior: 'smooth' });
+    document.getElementById('trading-terminal-panel')?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  const socialActions = (
+    <>
+      {twitterHref ? (
+        <SocialAction href={twitterHref} label="X / Twitter">
+          <XLogo size={17} weight="bold" aria-hidden="true" />
+        </SocialAction>
+      ) : (
+        <DisabledSocialAction label="X / Twitter">
+          <XLogo size={17} weight="bold" aria-hidden="true" />
+        </DisabledSocialAction>
+      )}
+      {telegramHref && (
+        <SocialAction href={telegramHref} label="Telegram">
+          <TelegramLogo size={18} weight="fill" aria-hidden="true" />
+        </SocialAction>
+      )}
+      {discordHref && (
+        <SocialAction href={discordHref} label="Discord">
+          <DiscordLogo size={18} weight="fill" aria-hidden="true" />
+        </SocialAction>
+      )}
+      {websiteHref ? (
+        <SocialAction href={websiteHref} label="Website">
+          <Globe size={18} weight="bold" aria-hidden="true" />
+        </SocialAction>
+      ) : (
+        <DisabledSocialAction label="Website">
+          <Globe size={18} weight="bold" aria-hidden="true" />
+        </DisabledSocialAction>
+      )}
+    </>
+  );
 
   return (
     <>
-      {/* Primary Header Card */}
-      <div
-        ref={headerRef}
-        className="card !p-4 sm:!p-5 space-y-4 bg-bg-card border border-bg-border shadow-subtle-1 relative overflow-hidden"
-      >
-        {/* DESKTOP LAYOUT (md and up) */}
-        <div className="hidden md:block space-y-4">
-          {/* ROW 1: Identity + Bonding Progress + Actions */}
-          <div className="flex items-center justify-between gap-4">
-            {/* Token Identity */}
-            <div className="flex items-center gap-3.5">
-              <TokenArtwork src={token.image} alt={token.name} className="w-12 h-12 rounded-2xl flex-shrink-0 shadow-sm" />
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <h1 className="font-bold text-lg text-text-primary tracking-tight leading-none">
-                    {token.name}
-                  </h1>
+      <div ref={headerRef} className="card !p-3 sm:!p-4 bg-bg-card border border-bg-border shadow-subtle-1 relative overflow-hidden">
+        <div className="hidden md:block">
+          <div className="flex items-center justify-between gap-5">
+            <div className="flex min-w-0 items-center gap-3.5">
+              <TokenArtwork src={token.image} alt={token.name} className="h-14 w-14 flex-shrink-0 rounded-2xl shadow-sm" />
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="truncate text-xl font-bold leading-none tracking-tight text-text-primary">{token.name}</h1>
                   <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} />
-                  <span className="text-xs font-semibold text-text-muted">
-                    ${token.symbol}
-                  </span>
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium border ${statusBadgeStyle}`}
-                  >
-                    <span className={`w-1.5 h-1.5 rounded-full ${statusDotStyle}`} />
+                  <span className="text-xs font-semibold text-text-muted">${displaySymbol}</span>
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${statusBadgeStyle}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${statusDotStyle}`} />
                     {statusText}
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2 text-xs text-text-muted pt-0.5">
+                <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-text-muted">
                   <span>
                     by{' '}
                     {token.is_agent === 'true' && token.agent_uuid ? (
-                      <Link
-                        href={`/agents/${token.agent_uuid}`}
-                        className="font-mono text-indigo-500 hover:text-indigo-400 hover:underline"
-                      >
+                      <Link href={`/agents/${token.agent_uuid}`} className="font-mono text-indigo-500 hover:underline">
                         {token.agent_name || 'AI Agent'}
                       </Link>
                     ) : (
-                      <Link
-                        href={`/profile/${token.creator_wallet}`}
-                        className="font-mono text-accent-sienna hover:underline"
-                      >
+                      <Link href={`/profile/${token.creator_wallet}`} className="font-mono text-accent-sienna hover:underline">
                         {shortenAddress(token.creator_wallet)}
                       </Link>
                     )}
                   </span>
                   <span>·</span>
                   <span className="font-medium text-text-secondary">Arc · USDC</span>
+                  <span>·</span>
+                  <span className="tabular-nums">{totalHolders.toLocaleString()} holders</span>
                 </div>
               </div>
             </div>
 
-            {/* Bonding Curve Header Status Indicator */}
-            <div className="flex items-center gap-4 bg-bg-base/70 px-3.5 py-2 rounded-xl border border-bg-border">
+            <div className="flex flex-shrink-0 items-center gap-4 xl:gap-6">
               <div className="text-right">
-                <div className="text-[11px] font-medium text-text-muted">
-                  {isGraduated ? 'DEX Liquidity' : 'Bonding Status'}
-                </div>
-                <div className="text-xs font-bold text-text-primary tabular-nums">
-                  {isGraduated ? 'Graduated ✓' : `Bonding ${progress.toFixed(0)}%`}
-                </div>
+                <div className="mb-0.5 text-[11px] font-medium text-text-muted">Price</div>
+                <div className="font-mono text-3xl font-bold tracking-tight text-text-primary tabular-nums xl:text-4xl">{formatPrice(token.price)}</div>
               </div>
 
-              {!isGraduated && (
-                <div className="w-24 h-2 bg-bg-border rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-accent-blue transition-all duration-500 rounded-full"
-                    style={{ width: `${Math.min(100, progress)}%` }}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Actions: Copy and Watch */}
-            <div className="flex items-center gap-2">
-              {/* Copy Contract */}
-              <button
-                onClick={copyContract}
-                className="btn-secondary text-xs px-3 py-1.5 flex items-center gap-1.5 font-medium rounded-full"
-                title="Copy contract address"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
+              <div className="flex max-w-[250px] flex-wrap items-center justify-end gap-2">
+                <ShareButton tokenName={token.name} tokenSymbol={displaySymbol} />
+                <button
+                  onClick={copyContract}
+                  className="btn-secondary flex h-9 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium"
+                  title="Copy contract address"
+                  aria-label="Copy contract address"
                 >
-                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
-                <span>{copiedCa ? 'Copied!' : 'Copy'}</span>
-              </button>
-
-              {/* Watchlist Star */}
-              <FavoriteButton tokenAddress={token.contract_address} />
+                  <Copy size={15} aria-hidden="true" />
+                  <span className="font-mono">{copiedCa ? 'Copied!' : shortenAddress(token.contract_address)}</span>
+                </button>
+                <FavoriteButton tokenAddress={token.contract_address} />
+                {socialActions}
+              </div>
             </div>
           </div>
 
-          {/* ROW 2: Market cap as Hero Metric + Inline Supporting Data */}
-          <div className="pt-2 flex items-baseline justify-between gap-6 border-t border-bg-border/60">
-            {/* Market Cap Hero */}
+          <div className="mt-3 grid grid-cols-[auto_auto_auto_minmax(180px,1fr)] items-center gap-5 border-t border-bg-border/70 pt-3 text-xs">
             <div>
-              <div className="mb-0.5 text-xs font-medium text-text-muted">Market cap.</div>
-              <div className="flex items-baseline gap-3">
-                <span className="text-3xl font-extrabold tracking-tight text-text-primary tabular-nums">
-                  {formatUsdCompact(token.market_cap)}
-                </span>
-                <span
-                  className={`text-sm font-semibold tabular-nums ${
-                    change24h.isPositive ? 'text-emerald-500' : 'text-rose-500'
-                  }`}
-                >
-                  {change24h.isPositive ? '+' : '-'}
-                  {formatUsdCompact(Math.abs(change24h.diff))} ({change24h.isPositive ? '+' : '-'}
-                  {Math.abs(change24h.pct).toFixed(2)}%) <span className="text-text-muted">/ 24hr</span>
-                </span>
-              </div>
+              <span className="block text-[10px] font-semibold uppercase text-text-muted">Market cap</span>
+              <span className="font-bold text-text-primary tabular-nums">{formatUsdCompact(token.market_cap)}</span>
+              <span className={`ml-2 font-semibold tabular-nums ${change24h.isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {change24h.isPositive ? '+' : '-'}{Math.abs(change24h.pct).toFixed(2)}%
+              </span>
             </div>
-
-            {/* Supporting Metrics Inline */}
-            <div className="flex items-center gap-6 text-xs text-text-muted">
-              <div>
-                <span className="block text-[10px] uppercase font-semibold text-text-muted">Token Price</span>
-                <span className="font-mono font-bold text-sm text-text-primary tabular-nums">
-                  {formatPrice(token.price)}
-                </span>
-              </div>
-              <div className="h-6 w-px bg-bg-border" />
-              <div>
-                <span className="block text-[10px] uppercase font-semibold text-text-muted">24h Volume</span>
-                <span className="font-bold text-sm text-text-primary tabular-nums">
-                  {formatUsdDirect(token.volume_24h)}
-                </span>
-              </div>
-              <div className="h-6 w-px bg-bg-border" />
-              <div>
-                <span className="block text-[10px] uppercase font-semibold text-text-muted">Holders</span>
-                <span className="font-bold text-sm text-text-primary tabular-nums">
-                  {totalHolders}
-                </span>
+            <div>
+              <span className="block text-[10px] font-semibold uppercase text-text-muted">24h volume</span>
+              <span className="font-bold text-text-primary tabular-nums">{formatUsdDirect(token.volume_24h)}</span>
+            </div>
+            <div>
+              <span className="block text-[10px] font-semibold uppercase text-text-muted">24h move</span>
+              <span className={`font-semibold tabular-nums ${change24h.isPositive ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {change24h.isPositive ? '+' : '-'}{formatUsdCompact(Math.abs(change24h.diff))}
+              </span>
+            </div>
+            <div className="ml-auto flex w-full max-w-sm items-center gap-3">
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase text-text-muted">
+                  <span>{isGraduated ? 'DEX liquidity' : 'Bonding progress'}</span>
+                  <span className="text-text-primary tabular-nums">{isGraduated ? 'Graduated' : `${progress.toFixed(0)}%`}</span>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-bg-border">
+                  <div className="h-full rounded-full bg-accent-blue transition-all duration-500" style={{ width: `${isGraduated ? 100 : Math.min(100, progress)}%` }} />
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* MOBILE LAYOUT (sm and down) */}
-        <div className="md:hidden space-y-3">
-          {/* Top Identity Row */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <TokenArtwork src={token.image} alt={token.name} className="w-10 h-10 rounded-xl flex-shrink-0" />
+        <div className="space-y-3 md:hidden">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <TokenArtwork src={token.image} alt={token.name} className="h-11 w-11 flex-shrink-0 rounded-xl" />
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5 truncate">
-                  <span className="font-bold text-base text-text-primary truncate">{token.name}</span>
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <h1 className="truncate text-base font-bold text-text-primary">{token.name}</h1>
                   <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} />
-                  <span className="text-xs text-text-muted font-medium flex-shrink-0">${token.symbol}</span>
+                  <span className="flex-shrink-0 text-[11px] font-semibold text-text-muted">${displaySymbol}</span>
                 </div>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-medium border ${statusBadgeStyle}`}>
-                    <span className={`w-1 h-1 rounded-full ${statusDotStyle}`} />
+                <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-text-muted">
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-medium ${statusBadgeStyle}`}>
+                    <span className={`h-1 w-1 rounded-full ${statusDotStyle}`} />
                     {statusText}
                   </span>
-                  <span className="text-[10px] text-text-muted truncate">
-                    by{' '}
-                    {token.is_agent === 'true' && token.agent_uuid ? (
-                      <Link
-                        href={`/agents/${token.agent_uuid}`}
-                        className="text-indigo-500 hover:text-indigo-400 transition-colors"
-                      >
-                        {token.agent_name || 'AI Agent'}
-                      </Link>
-                    ) : (
-                      <Link
-                        href={`/profile/${token.creator_wallet}`}
-                        className="hover:text-text-primary transition-colors"
-                      >
-                        {shortenAddress(token.creator_wallet)}
-                      </Link>
-                    )}
-                  </span>
+                  <span>·</span>
+                  <span className="tabular-nums">{totalHolders.toLocaleString()} holders</span>
                 </div>
               </div>
             </div>
 
-            {/* Mobile Action */}
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              <button
-                onClick={copyContract}
-                className="btn-secondary text-xs p-2 rounded-full"
-                title="Copy contract"
-              >
-                <Copy size={14} aria-hidden="true" />
+            <div className="flex flex-shrink-0 items-center gap-1.5">
+              <ShareButton tokenName={token.name} tokenSymbol={displaySymbol} />
+              <button onClick={copyContract} className="btn-secondary inline-flex h-9 w-9 items-center justify-center rounded-full p-0" title="Copy contract address" aria-label="Copy contract address">
+                <Copy size={15} aria-hidden="true" />
               </button>
             </div>
           </div>
 
-          {/* Market Cap Block */}
-          <div className="flex items-baseline justify-between gap-2 pt-1 border-t border-bg-border/60">
+          <div className="flex items-end justify-between gap-3 border-t border-bg-border/70 pt-3">
             <div>
-              <div className="text-[10px] font-medium text-text-muted">Market cap.</div>
-              <div className="text-2xl font-extrabold text-text-primary tabular-nums">
-                {formatUsdCompact(token.market_cap)}
-              </div>
-              <div
-                className={`text-xs font-semibold tabular-nums inline-block ${
-                  change24h.isPositive ? 'text-emerald-600' : 'text-rose-600'
-                }`}
-              >
-                {change24h.isPositive ? '+' : '-'}
-                {formatUsdCompact(Math.abs(change24h.diff))} ({change24h.isPositive ? '+' : '-'}
-                {Math.abs(change24h.pct).toFixed(2)}%) / 24hr
-              </div>
+              <div className="text-[10px] font-medium text-text-muted">Price</div>
+              <div className="font-mono text-2xl font-bold tracking-tight text-text-primary tabular-nums">{formatPrice(token.price)}</div>
             </div>
-
-            <div className="text-right text-xs">
-              <div className="text-text-muted text-[10px]">Price / Vol</div>
-              <div className="font-mono font-bold text-text-primary tabular-nums">
-                {formatPrice(token.price)}
-              </div>
-              <div className="text-text-muted text-[11px] tabular-nums">
-                Vol {formatUsdDirect(token.volume_24h)}
-              </div>
-            </div>
+            <div className="flex items-center gap-1.5">{socialActions}</div>
           </div>
 
-          {/* Bonding curve status bar */}
-          <div className="bg-bg-base p-2.5 rounded-xl border border-bg-border space-y-1.5">
-            <div className="flex justify-between items-center text-xs">
-              <span className="font-medium text-text-muted">Bonding Curve</span>
-              <span className="font-bold text-accent-blue tabular-nums">
-                {isGraduated ? '100% (Graduated)' : `${progress.toFixed(1)}%`}
-              </span>
+          <div className="grid grid-cols-3 gap-2 border-t border-bg-border/60 pt-2.5 text-xs">
+            <div>
+              <span className="block text-[9px] font-semibold uppercase text-text-muted">Market cap</span>
+              <span className="font-bold text-text-primary tabular-nums">{formatUsdCompact(token.market_cap)}</span>
             </div>
-            <div className="w-full h-2 bg-bg-border rounded-full overflow-hidden">
-              <div
-                className="h-full bg-accent-blue transition-all duration-500 rounded-full"
-                style={{ width: `${isGraduated ? 100 : progress}%` }}
-              />
+            <div>
+              <span className="block text-[9px] font-semibold uppercase text-text-muted">24h volume</span>
+              <span className="font-bold text-text-primary tabular-nums">{formatUsdDirect(token.volume_24h)}</span>
+            </div>
+            <div className="text-right">
+              <span className="block text-[9px] font-semibold uppercase text-text-muted">Bonding</span>
+              <span className="font-bold text-text-primary tabular-nums">{isGraduated ? '100%' : `${progress.toFixed(0)}%`}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* COLLAPSED STICKY HEADER (Appears on scroll) */}
       {isSticky && (
-        <div className="fixed top-0 left-0 right-0 z-40 bg-bg-base/95 backdrop-blur-md border-b border-bg-border py-2.5 px-4 shadow-subtle-2 transition-all duration-300 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <TokenArtwork src={token.image} alt={token.name} className="w-7 h-7 rounded-lg flex-shrink-0" />
-            <div className="flex items-baseline gap-2">
-              <span className="font-bold text-sm text-text-primary">${token.symbol}</span>
-              <span className="text-sm font-extrabold text-text-primary tabular-nums">
-                {formatUsdCompact(token.market_cap)} MC
-              </span>
-              <span
-                className={`text-xs font-semibold tabular-nums hidden sm:inline ${
-                  change24h.isPositive ? 'text-emerald-600' : 'text-rose-600'
-                }`}
-              >
-                {change24h.isPositive ? '+' : ''}
-                {change24h.pct.toFixed(2)}%
-              </span>
+        <div className="fixed left-0 right-0 top-0 z-40 flex items-center justify-between border-b border-bg-border bg-bg-base/95 px-4 py-2.5 shadow-subtle-2 backdrop-blur-md transition-all duration-300">
+          <div className="flex min-w-0 items-center gap-3">
+            <TokenArtwork src={token.image} alt={token.name} className="h-8 w-8 flex-shrink-0 rounded-lg" />
+            <div className="min-w-0">
+              <div className="truncate text-xs font-semibold text-text-muted">{token.name} · ${displaySymbol}</div>
+              <div className="font-mono text-sm font-bold text-text-primary tabular-nums">{formatPrice(token.price)}</div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={copyContract}
-              className="btn-secondary text-xs px-2.5 py-1 rounded-full hidden sm:flex items-center gap-1"
-            >
-              <Copy size={14} aria-hidden="true" /> Copy
-            </button>
-            <button
-              onClick={scrollToTradeTerminal}
-              className="btn-primary text-xs px-3.5 py-1 font-bold rounded-full"
-            >
-              Trade
-            </button>
+            <div className="hidden items-center gap-1.5 sm:flex">
+              <ShareButton tokenName={token.name} tokenSymbol={displaySymbol} />
+              <button onClick={copyContract} className="btn-secondary inline-flex h-8 items-center gap-1 rounded-full px-2.5 py-1 text-xs">
+                <Copy size={14} aria-hidden="true" /> Copy
+              </button>
+            </div>
+            <button onClick={scrollToTradeTerminal} className="btn-primary rounded-full px-3.5 py-1 text-xs font-bold">Trade</button>
           </div>
         </div>
       )}
