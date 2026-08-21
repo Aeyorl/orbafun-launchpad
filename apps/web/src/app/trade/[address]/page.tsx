@@ -13,7 +13,6 @@ import { TokenHeader } from '@/components/trading/TokenHeader';
 import { AdvancedTradingChart } from '@/components/trading/AdvancedTradingChart';
 import { TradeTerminal } from '@/components/trading/TradeTerminal';
 import { MarketFlowCard } from '@/components/trading/MarketFlowCard';
-import { CompactTradeTape } from '@/components/trading/CompactTradeTape';
 import { RelatedMarkets } from '@/components/trading/RelatedMarkets';
 
 import { TradeHistory } from '@/components/TradeHistory';
@@ -160,28 +159,96 @@ export default function TradePage() {
         totalHolders={totalHolders}
       />
 
-      {/* Main Terminal Section: chart + first-viewport tape + execution rail */}
+      {/* Main terminal: chart and details + execution rail */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
-        <div className="lg:col-span-8 xl:col-span-9">
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-9">
-            <div className="xl:col-span-7">
-              <AdvancedTradingChart
-                candles={candles}
-                tokenAddress={address}
-                tokenName={token.name}
-                tokenSymbol={token.symbol}
-                timeframe={timeframe}
-                isConnected={isConnected}
-                connectionStatus={connectionStatus}
-                onTimeframeChange={setTimeframe}
-                metricMode={metricMode}
-                onMetricModeChange={setMetricMode}
-                latestMove={latestMove}
-              />
+        <div className="space-y-3 lg:col-span-8 xl:col-span-9">
+          <AdvancedTradingChart
+            candles={candles}
+            tokenAddress={address}
+            tokenName={token.name}
+            tokenSymbol={token.symbol}
+            timeframe={timeframe}
+            isConnected={isConnected}
+            connectionStatus={connectionStatus}
+            onTimeframeChange={setTimeframe}
+            metricMode={metricMode}
+            onMetricModeChange={setMetricMode}
+            latestMove={latestMove}
+          />
+
+          {/* Detail Tabs: Trades / Holders / Info / Chat */}
+          <div className="card space-y-4">
+            <div className="flex items-center gap-1 border-b border-bg-border pb-2 overflow-x-auto text-sm">
+              <button
+                onClick={() => setActiveTab('trades')}
+                className={`tab ${activeTab === 'trades' ? 'tab-active' : ''}`}
+              >
+                Trades ({totalTrades})
+              </button>
+              <button
+                onClick={() => setActiveTab('holders')}
+                className={`tab ${activeTab === 'holders' ? 'tab-active' : ''}`}
+              >
+                Holders ({totalHolders})
+              </button>
+              <button
+                onClick={() => setActiveTab('info')}
+                className={`tab ${activeTab === 'info' ? 'tab-active' : ''}`}
+              >
+                Token Info & About
+              </button>
+              <button
+                onClick={() => setActiveTab('chat')}
+                className={`tab ${activeTab === 'chat' ? 'tab-active' : ''}`}
+              >
+                Agent Chat
+              </button>
             </div>
-            <div className="xl:col-span-2">
-              <CompactTradeTape trades={trades} symbol={token.symbol} />
-            </div>
+
+            {activeTab === 'trades' && (
+              <TradeHistory initialTrades={trades} tokenAddress={address} />
+            )}
+
+            {activeTab === 'holders' && (
+              <HoldersPanel tokenAddress={address} currentPrice={Number(token.price)} />
+            )}
+
+            {activeTab === 'info' && (
+              <div className="grid md:grid-cols-2 gap-6 pt-2">
+                <div className="space-y-3">
+                  <h3 className="font-semibold text-base">Token Details</h3>
+                  <div className="space-y-2 text-sm">
+                    <InfoRow label="Contract Address" value={shortenAddress(token.contract_address)} copyValue={token.contract_address} />
+                    <InfoRow label="Bonding Curve" value={shortenAddress(token.curve_address)} copyValue={token.curve_address} />
+                    {token.amm_pair_address && (
+                      <InfoRow label="AMM Pair (DEX)" value={shortenAddress(token.amm_pair_address)} copyValue={token.amm_pair_address} />
+                    )}
+                    <InfoRow label="USDC in Curve" value={formatUsdc(token.real_usdc)} />
+                    <InfoRow label="Tokens Sold" value={formatTokens(token.tokens_sold)} />
+                    <InfoRow label="Creator Fees Accrued" value={formatUsdc(token.creator_fees_accrued)} />
+                    <InfoRow label="Protocol Fees Accrued" value={formatUsdc(token.protocol_fees_accrued)} />
+                    {token.lp_burned && (
+                      <InfoRow label="LP Burned" value={`${formatTokens(token.lp_burned)} LP`} />
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {token.description && (
+                    <div>
+                      <h3 className="font-semibold text-base mb-2">About {token.name}</h3>
+                      <p className="text-sm text-text-secondary leading-relaxed">{token.description}</p>
+                    </div>
+                  )}
+
+                  <SocialLinks tokenAddress={address} creatorWallet={token.creator_wallet} />
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'chat' && (
+              <TokenChat tokenAddress={address} />
+            )}
           </div>
         </div>
 
@@ -190,7 +257,6 @@ export default function TradePage() {
           <TradeTerminal token={token} />
           <MarketFlowCard tokenAddress={address} />
 
-          {/* Dedicated Bonding Curve Progress Card */}
           <div className="card space-y-2.5">
             <div className="flex items-center justify-between text-xs">
               <span className="font-semibold text-text-primary">Bonding Curve Progress</span>
@@ -218,83 +284,6 @@ export default function TradePage() {
             )}
           </div>
         </div>
-      </div>
-
-      {/* Bottom Tabs Section: Trades / Holders / Info / Chat */}
-      <div className="card space-y-4">
-        {/* Navigation Tabs */}
-        <div className="flex items-center gap-1 border-b border-bg-border pb-2 overflow-x-auto text-sm">
-          <button
-            onClick={() => setActiveTab('trades')}
-            className={`tab ${activeTab === 'trades' ? 'tab-active' : ''}`}
-          >
-            Trades ({totalTrades})
-          </button>
-          <button
-            onClick={() => setActiveTab('holders')}
-            className={`tab ${activeTab === 'holders' ? 'tab-active' : ''}`}
-          >
-            Holders ({totalHolders})
-          </button>
-          <button
-            onClick={() => setActiveTab('info')}
-            className={`tab ${activeTab === 'info' ? 'tab-active' : ''}`}
-          >
-            Token Info & About
-          </button>
-          <button
-            onClick={() => setActiveTab('chat')}
-            className={`tab ${activeTab === 'chat' ? 'tab-active' : ''}`}
-          >
-            Agent Chat
-          </button>
-        </div>
-
-        {/* Tab Content */}
-        {activeTab === 'trades' && (
-          <TradeHistory initialTrades={trades} tokenAddress={address} />
-        )}
-
-        {activeTab === 'holders' && (
-          <HoldersPanel tokenAddress={address} currentPrice={Number(token.price)} />
-        )}
-
-        {activeTab === 'info' && (
-          <div className="grid md:grid-cols-2 gap-6 pt-2">
-            <div className="space-y-3">
-              <h3 className="font-semibold text-base">Token Details</h3>
-              <div className="space-y-2 text-sm">
-                <InfoRow label="Contract Address" value={shortenAddress(token.contract_address)} copyValue={token.contract_address} />
-                <InfoRow label="Bonding Curve" value={shortenAddress(token.curve_address)} copyValue={token.curve_address} />
-                {token.amm_pair_address && (
-                  <InfoRow label="AMM Pair (DEX)" value={shortenAddress(token.amm_pair_address)} copyValue={token.amm_pair_address} />
-                )}
-                <InfoRow label="USDC in Curve" value={formatUsdc(token.real_usdc)} />
-                <InfoRow label="Tokens Sold" value={formatTokens(token.tokens_sold)} />
-                <InfoRow label="Creator Fees Accrued" value={formatUsdc(token.creator_fees_accrued)} />
-                <InfoRow label="Protocol Fees Accrued" value={formatUsdc(token.protocol_fees_accrued)} />
-                {token.lp_burned && (
-                  <InfoRow label="LP Burned" value={`${formatTokens(token.lp_burned)} LP`} />
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              {token.description && (
-                <div>
-                  <h3 className="font-semibold text-base mb-2">About {token.name}</h3>
-                  <p className="text-sm text-text-secondary leading-relaxed">{token.description}</p>
-                </div>
-              )}
-
-              <SocialLinks tokenAddress={address} creatorWallet={token.creator_wallet} />
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'chat' && (
-          <TokenChat tokenAddress={address} />
-        )}
       </div>
 
       <RelatedMarkets token={token} />

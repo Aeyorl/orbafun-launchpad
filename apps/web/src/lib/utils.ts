@@ -85,9 +85,7 @@ export function formatTokens(amount: string | number | bigint): string {
 export function formatPrice(price: string | number): string {
   const num = Number(price);
   if (isNaN(num)) return '$0';
-  if (num >= 1) return `$${num.toFixed(4)}`;
-  if (num >= 0.01) return `$${num.toFixed(6)}`;
-  return `$${num.toExponential(4)}`;
+  return `$${num.toFixed(8)}`;
 }
 
 /** Format market cap for display.

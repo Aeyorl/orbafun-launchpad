@@ -1,4 +1,4 @@
-import { createPublicClient, http, parseAbi } from 'viem';
+import { createPublicClient, formatUnits, http, parseAbi } from 'viem';
 import { API_URL, ARC_CHAIN, ARC_RPC_URLS } from './config';
 
 // API client for the NestJS backend.
@@ -733,7 +733,8 @@ async function fetchTokenOnChainFallback(address: string): Promise<Token | null>
           fallbackClient.readContract({ address: curveAddress, abi: curveAbi, functionName: 'tokensSold' }),
           fallbackClient.readContract({ address: curveAddress, abi: curveAbi, functionName: 'graduated' }),
         ]);
-        price = (Number(rawPrice) / 1e6).toFixed(6);
+        // BondingCurve.price() is USD per token scaled by 1e18.
+        price = formatUnits(rawPrice, 18);
         marketCap = (Number(rawMc) / 1e6).toFixed(6);
         realUsdc = rawUsdc.toString();
         tokensSold = rawSold.toString();
