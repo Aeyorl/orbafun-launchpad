@@ -184,27 +184,27 @@ describe('formatTokens', () => {
 
 describe('formatPrice', () => {
   it('formats prices >= $1', () => {
-    expect(formatPrice(1)).toBe('$1.0000');
-    expect(formatPrice(1.5)).toBe('$1.5000');
-    expect(formatPrice(100)).toBe('$100.0000');
+    expect(formatPrice(1)).toBe('$1.00000000');
+    expect(formatPrice(1.5)).toBe('$1.50000000');
+    expect(formatPrice(100)).toBe('$100.00000000');
   });
 
-  it('formats prices between $0.01 and $1', () => {
-    expect(formatPrice(0.05)).toBe('$0.050000');
-    expect(formatPrice(0.5)).toBe('$0.500000');
-    expect(formatPrice(0.01)).toBe('$0.010000');
+  it('formats prices below $1 with eight decimal places', () => {
+    expect(formatPrice(0.05)).toBe('$0.05000000');
+    expect(formatPrice(0.5)).toBe('$0.50000000');
+    expect(formatPrice(0.00745725)).toBe('$0.00745725');
   });
 
-  it('formats very small prices with exponential notation', () => {
-    expect(formatPrice(0.001)).toBe('$1.0000e-3');
-    expect(formatPrice(0.00005)).toBe('$5.0000e-5');
-    expect(formatPrice(0.0000001)).toBe('$1.0000e-7');
+  it('formats very small prices without exponential notation', () => {
+    expect(formatPrice(0.001)).toBe('$0.00100000');
+    expect(formatPrice(0.00005)).toBe('$0.00005000');
+    expect(formatPrice(0.0000001)).toBe('$0.00000010');
+    expect(formatPrice('0.000005680785801888')).toBe('$0.00000568');
   });
 
   it('handles edge cases', () => {
-    // 0 < 0.01, hits the exponential branch
-    expect(formatPrice(0)).toBe('$0.0000e+0');
-    expect(formatPrice('')).toBe('$0.0000e+0');
+    expect(formatPrice(0)).toBe('$0.00000000');
+    expect(formatPrice('')).toBe('$0.00000000');
     expect(formatPrice(NaN)).toBe('$0');
   });
 });
