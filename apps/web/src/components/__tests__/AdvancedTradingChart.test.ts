@@ -28,6 +28,7 @@ describe('Orba Advanced Charts datafeed', () => {
       name: 'ADOGE/USDC',
       ticker: '0xabc',
       exchange: 'Orba',
+      pricescale: 100_000_000,
       has_seconds: true,
       supported_resolutions: ['10S', '1', '5', '15', '30', '60', '240', '1D'],
     }));

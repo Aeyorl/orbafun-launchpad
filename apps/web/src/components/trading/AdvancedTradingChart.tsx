@@ -7,6 +7,7 @@ import { TradingChart } from './TradingChart';
 import { ConnectionStatus } from '@/lib/useWebSocket';
 import type { LiveMarketMove } from '@/hooks/useCandles';
 import { LiveMovementEvidence } from './LiveMovementEvidence';
+import { formatPrice } from '@/lib/utils';
 
 const LIBRARY_PATH = '/vendor/tradingview/charting_library/';
 const LIBRARY_SCRIPT = `${LIBRARY_PATH}charting_library.standalone.js`;
@@ -181,7 +182,7 @@ export function createOrbaDatafeed({
         listed_exchange: 'Orba',
         format: 'price',
         minmov: 1,
-        pricescale: metricMode === 'price' ? 1_000_000_000_000 : 100,
+        pricescale: metricMode === 'price' ? 100_000_000 : 100,
         has_intraday: true,
         intraday_multipliers: ['1', '5', '15', '30', '60', '240'],
         has_seconds: true,
@@ -336,6 +337,11 @@ function LicensedAdvancedChart({
       theme: 'dark',
       toolbar_bg: '#0a0e1a',
       loading_screen: { backgroundColor: '#0a0e1a', foregroundColor: '#2775ca' },
+      custom_formatters: metricMode === 'price' ? {
+        priceFormatterFactory: () => ({
+          format: (price: number) => formatPrice(price),
+        }),
+      } : undefined,
       enabled_features: [
         'seconds_resolution',
         'iframe_loading_same_origin',
