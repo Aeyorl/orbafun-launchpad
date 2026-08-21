@@ -346,7 +346,7 @@ export default function LaunchPage() {
     };
 
     void finalizeLaunch();
-  }, [launchConfirmed, receipt, fallback.logs, txHash, router, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [launchConfirmed, receipt, fallback.logs, txHash, router, queryClient]);
 
   // Step progression state
   const stepStatus = useMemo(() => {
