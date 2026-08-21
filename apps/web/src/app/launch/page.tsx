@@ -22,7 +22,7 @@ import { ARC_CHAIN_ID, ARC_NETWORK_NAME, CONTRACTS, USDC_DECIMALS } from '@/lib/
 import { formatUsdDirect, formatNativeUsdc, shortenAddress, ipfsToGateway, tokenEmoji } from '@/lib/utils';
 import { useArcReceiptFallback } from '@/lib/use-arc-receipt';
 import { useAuth } from '@/lib/use-auth';
-import { api } from '@/lib/api';
+import { api, ApiError, type TokenMetadata } from '@/lib/api';
 import { ImageUploader } from '@/components/ImageUploader';
 import toast from 'react-hot-toast';
 import { ChartBar, Globe, LinkSimple, NotePencil, Palette, WarningCircle } from '@phosphor-icons/react';
@@ -60,6 +60,16 @@ const TOKEN_CREATED_EVENT = {
 } as const;
 
 const CREATION_FEE = 5; // 5 USDC
+const METADATA_SAVE_ATTEMPTS = 8;
+
+const wait = (milliseconds: number) =>
+  new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function shouldRetryMetadataSave(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true;
+  return error.status === 404 || error.status === 408 || error.status === 409 ||
+    error.status === 425 || error.status === 429 || error.status >= 500;
+}
 
 export default function LaunchPage() {
   const router = useRouter();
@@ -212,7 +222,9 @@ export default function LaunchPage() {
 
   const launchConfirmed = txConfirmed && txAction === 'launch';
 
-  const extractTokenAddress = (logs: Log[] | undefined): `0x${string}` | null => {
+  const extractTokenAddress = (
+    logs: Pick<Log, 'data' | 'topics'>[] | undefined,
+  ): `0x${string}` | null => {
     if (!logs || logs.length === 0) return null;
     const eventTopic = toEventSelector(
       'TokenCreated(address,address,address,string,string,string,uint256)',
@@ -233,93 +245,108 @@ export default function LaunchPage() {
     return null;
   };
 
-  const metadataSavedRef = useRef(false);
+  const launchFinalizedRef = useRef(false);
   useEffect(() => {
-    if (!launchConfirmed || metadataSavedRef.current) return;
-    const hasMetadata = banner || website || twitter || telegram || discord;
-    if (!hasMetadata || !address) {
-      metadataSavedRef.current = true;
-      return;
-    }
-    const tokenAddress = extractTokenAddress(receipt?.logs);
-    if (!tokenAddress) {
-      metadataSavedRef.current = true;
-      return;
-    }
-    metadataSavedRef.current = true;
-    (async () => {
-      try {
-        let authToken = getAuthToken();
-        if (!authToken) {
-          await authenticate();
-          authToken = getAuthToken();
-        }
-        if (!authToken) return;
-        await api.setTokenMetadata(
-          tokenAddress,
-          address,
-          {
-            banner: banner || undefined,
-            website: website || undefined,
-            twitter: twitter || undefined,
-            telegram: telegram || undefined,
-            discord: discord || undefined,
-          },
-          authToken,
-        );
-      } catch (err) {
-        console.warn('Failed to save token metadata:', err);
-      }
-    })();
-  }, [launchConfirmed, banner, website, twitter, telegram, discord, address, receipt, getAuthToken, authenticate]);
+    if (!launchConfirmed || launchFinalizedRef.current) return;
 
-  useEffect(() => {
-    if (launchConfirmed) {
-      try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+    const receiptLogs = receipt?.logs?.length ? receipt.logs : fallback.logs;
+    const tokenAddress = extractTokenAddress(receiptLogs);
+    if (!tokenAddress) return;
+    launchFinalizedRef.current = true;
+
+    const finalizeLaunch = async () => {
       toast.success(`${symbol || 'Token'} launched successfully!`, { id: 'launch' });
 
-      const tokenAddress = extractTokenAddress(receipt?.logs);
-      if (tokenAddress) {
-        queryClient.setQueryData(['token', tokenAddress.toLowerCase()], {
-          id: Date.now(),
-          contract_address: tokenAddress.toLowerCase(),
-          curve_address: tokenAddress.toLowerCase(),
-          factory_address: CONTRACTS.TOKEN_FACTORY.toLowerCase(),
-          transfer_policy: (
-            process.env.NEXT_PUBLIC_UNCAPPED_TOKEN_FACTORY_ADDRESSES || ''
-          )
-            .toLowerCase()
-            .split(',')
-            .map((factory) => factory.trim())
-            .includes(CONTRACTS.TOKEN_FACTORY.toLowerCase())
-              ? 'uncapped'
-              : 'legacy_capped',
-          amm_pair_address: null,
-          creator_wallet: (address || '').toLowerCase(),
-          name: name.trim(),
-          symbol: symbol.trim().toUpperCase(),
-          description: description || null,
-          image: image || null,
-          price: '0.000004',
-          market_cap: '4000.000000',
-          volume_24h: '0.000000',
-          real_usdc: '0',
-          tokens_sold: '0',
-          creator_fees_accrued: '0',
-          protocol_fees_accrued: '0',
-          status: 'active',
-          graduated_at: null,
-          lp_burned: null,
-          created_block: '0',
-          created_tx_hash: receipt?.transactionHash || '',
-          created_at: new Date().toISOString(),
-        });
+      queryClient.setQueryData(['token', tokenAddress.toLowerCase()], {
+        id: Date.now(),
+        contract_address: tokenAddress.toLowerCase(),
+        curve_address: tokenAddress.toLowerCase(),
+        factory_address: CONTRACTS.TOKEN_FACTORY.toLowerCase(),
+        transfer_policy: (
+          process.env.NEXT_PUBLIC_UNCAPPED_TOKEN_FACTORY_ADDRESSES || ''
+        )
+          .toLowerCase()
+          .split(',')
+          .map((factory) => factory.trim())
+          .includes(CONTRACTS.TOKEN_FACTORY.toLowerCase())
+            ? 'uncapped'
+            : 'legacy_capped',
+        amm_pair_address: null,
+        creator_wallet: (address || '').toLowerCase(),
+        name: name.trim(),
+        symbol: symbol.trim().toUpperCase(),
+        description: description || null,
+        image: image || null,
+        price: '0.000004',
+        market_cap: '4000.000000',
+        volume_24h: '0.000000',
+        real_usdc: '0',
+        tokens_sold: '0',
+        creator_fees_accrued: '0',
+        protocol_fees_accrued: '0',
+        status: 'active',
+        graduated_at: null,
+        lp_burned: null,
+        created_block: '0',
+        created_tx_hash: receipt?.transactionHash || txHash || '',
+        created_at: new Date().toISOString(),
+      });
+
+      const metadata: Partial<TokenMetadata> = {
+        banner: banner || undefined,
+        website: website || undefined,
+        twitter: twitter || undefined,
+        telegram: telegram || undefined,
+        discord: discord || undefined,
+      };
+      const hasMetadata = Object.values(metadata).some(Boolean);
+
+      if (hasMetadata) {
+        toast.loading('Saving token image and social links…', { id: 'metadata' });
+        try {
+          if (!address) throw new Error('Wallet disconnected before token metadata was saved');
+          let authToken = getAuthToken();
+          if (!authToken) {
+            await authenticate();
+            authToken = getAuthToken();
+          }
+          if (!authToken) throw new Error('Wallet authentication did not complete');
+
+          let savedMetadata: TokenMetadata | null = null;
+          for (let attempt = 1; attempt <= METADATA_SAVE_ATTEMPTS; attempt++) {
+            try {
+              savedMetadata = await api.setTokenMetadata(
+                tokenAddress,
+                address,
+                metadata,
+                authToken,
+              );
+              break;
+            } catch (err) {
+              if (attempt === METADATA_SAVE_ATTEMPTS || !shouldRetryMetadataSave(err)) throw err;
+              await wait(Math.min(attempt * 1_500, 5_000));
+            }
+          }
+
+          if (!savedMetadata) throw new Error('Token metadata was not saved');
+          queryClient.setQueryData(['token-metadata', tokenAddress], savedMetadata);
+          toast.success('Token image and social links saved', { id: 'metadata' });
+        } catch (err) {
+          console.error('Failed to save token metadata after launch:', err);
+          toast.error(
+            'Token launched, but its image/socials could not be saved. Open Token Info & About to retry.',
+            { id: 'metadata', duration: 12_000 },
+          );
+        }
       }
-      const destination = tokenAddress ? `/trade/${tokenAddress}` : '/explore?sort=newest';
-      const t = setTimeout(() => router.push(destination), 1000);
-      return () => clearTimeout(t);
-    }
-  }, [launchConfirmed, router, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
+
+      try { sessionStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+      await wait(750);
+      router.push(`/trade/${tokenAddress}`);
+    };
+
+    void finalizeLaunch();
+  }, [launchConfirmed, receipt, fallback.logs, txHash, router, queryClient]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Step progression state
   const stepStatus = useMemo(() => {

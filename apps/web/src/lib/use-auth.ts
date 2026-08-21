@@ -77,12 +77,14 @@ export function useAuth() {
   }, [address, signMessageAsync]);
 
   const getAuthToken = useCallback((): string | null => {
-    if (!authedWallet || Date.now() >= activeExpiry) {
+    const walletMatches =
+      !!activeWallet && !!address && activeWallet.toLowerCase() === address.toLowerCase();
+    if (!activeToken || !walletMatches || Date.now() >= activeExpiry) {
       if (activeToken) clearToken();
       return null;
     }
     return activeToken;
-  }, [authedWallet, clearToken]);
+  }, [address, clearToken]);
 
   return {
     authenticate,
