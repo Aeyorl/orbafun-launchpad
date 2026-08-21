@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import type { Log } from 'viem';
 import { API_URL, ARC_RPC_URLS as DIRECT_ARC_RPC_URLS } from './config';
 
 /**
@@ -30,10 +31,11 @@ const RECEIPT_RPC_URLS = [
 export function useArcReceiptFallback(
   txHash: `0x${string}` | undefined,
   timeoutMs = 120_000
-): { confirmed: boolean; failed: boolean; timedOut: boolean } {
+): { confirmed: boolean; failed: boolean; timedOut: boolean; logs: Pick<Log, 'data' | 'topics'>[] } {
   const [confirmed, setConfirmed] = useState(false);
   const [failed, setFailed] = useState(false);
   const [timedOut, setTimedOut] = useState(false);
+  const [logs, setLogs] = useState<Pick<Log, 'data' | 'topics'>[]>([]);
 
   // Reset state whenever the tx hash changes (e.g. approval -> buy),
   // so a previous confirmation doesn't leak into the next transaction.
@@ -41,6 +43,7 @@ export function useArcReceiptFallback(
     setConfirmed(false);
     setFailed(false);
     setTimedOut(false);
+    setLogs([]);
   }, [txHash]);
 
   useEffect(() => {
@@ -76,6 +79,10 @@ export function useArcReceiptFallback(
           // Some RPCs return "0x1", others may return "0x01" — normalize.
           const status = BigInt(json.result.status ?? '0x0');
           if (status === 1n) {
+            setLogs((json.result.logs || []).map((log: { data: Log['data']; topics: Log['topics'] }) => ({
+              data: log.data,
+              topics: log.topics,
+            })));
             setConfirmed(true);
           } else {
             setFailed(true);
@@ -106,5 +113,5 @@ export function useArcReceiptFallback(
     };
   }, [txHash, confirmed, failed, timeoutMs]);
 
-  return { confirmed, failed, timedOut };
+  return { confirmed, failed, timedOut, logs };
 }
