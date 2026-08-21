@@ -155,6 +155,7 @@ export default function TradePage() {
       {/* Top Token Header & Hero Price */}
       <TokenHeader
         token={token}
+        metadata={metadata}
         change24h={change24h}
         totalHolders={totalHolders}
       />
