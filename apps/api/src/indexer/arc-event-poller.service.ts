@@ -60,6 +60,9 @@ export class ArcEventPollerService implements OnModuleInit {
   /** Re-entrancy guard — prevents overlapping poll cycles. */
   private polling = false;
 
+  /** Keep an explicitly requested replay below the persisted high-water mark. */
+  private replayActive = false;
+
   /** Max blocks per eth_getLogs call (avoids RPC response size limits). */
   private readonly maxBlockRange = 2000n;
 
@@ -160,6 +163,7 @@ export class ArcEventPollerService implements OnModuleInit {
           `Replaying indexed events from configured cutover block ${replayBlock}`,
         );
         this.lastBlock = replayLastBlock;
+        this.replayActive = true;
       }
     } else if (replayFrom) {
       this.logger.warn(
@@ -184,7 +188,7 @@ export class ArcEventPollerService implements OnModuleInit {
       this.logger.warn(
         `No sync state found — starting from deployment block ${deploymentBlock}`,
       );
-      await this.saveLastBlock(this.lastBlock);
+      this.lastBlock = await this.saveLastBlock(this.lastBlock);
     }
 
     this.logger.log(
@@ -235,10 +239,20 @@ export class ArcEventPollerService implements OnModuleInit {
 
         await this.fetchAndProcessRange(fromBlock, toBlock);
 
-        this.lastBlock = toBlock;
-        await this.saveLastBlock(toBlock);
+        const persistedBlock = await this.saveLastBlock(toBlock);
+        if (this.replayActive && toBlock < persistedBlock) {
+          // An intentional replay scans below the existing high-water mark
+          // without moving that shared checkpoint backward.
+          this.lastBlock = toBlock;
+        } else {
+          this.replayActive = false;
+          // During a blue-green deploy, another instance may already have
+          // advanced farther. Adopt its high-water mark instead of rescanning
+          // or overwriting it with this instance's older local cursor.
+          this.lastBlock = persistedBlock;
+        }
 
-        fromBlock = toBlock + 1n;
+        fromBlock = this.lastBlock + 1n;
       }
     } catch (err) {
       this.logger.error(`Poll failed: ${err.message}`);
@@ -766,13 +780,20 @@ export class ArcEventPollerService implements OnModuleInit {
     }
   }
 
-  private async saveLastBlock(block: bigint): Promise<void> {
-    await this.db.query(
+  private async saveLastBlock(block: bigint): Promise<bigint> {
+    const row = await this.db.queryOne<{ last_block: string }>(
       `INSERT INTO indexer_sync_state (entity, last_block, updated_at)
        VALUES ('ArcEventPoller', $1, NOW())
-       ON CONFLICT (entity) DO UPDATE SET last_block = $1, updated_at = NOW()`,
+       ON CONFLICT (entity) DO UPDATE SET
+         last_block = GREATEST(indexer_sync_state.last_block, EXCLUDED.last_block),
+         updated_at = CASE
+           WHEN EXCLUDED.last_block >= indexer_sync_state.last_block THEN NOW()
+           ELSE indexer_sync_state.updated_at
+         END
+       RETURNING last_block::text`,
       [block.toString()],
     );
+    return BigInt(row?.last_block || block.toString());
   }
 }
 

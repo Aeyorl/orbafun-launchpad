@@ -33,7 +33,7 @@ describe('ArcEventPollerService checkpoint safety', () => {
     service.loadCurveAddresses = jest.fn();
     service.rpcCall = jest.fn().mockResolvedValue('0x64');
     service.fetchAndProcessRange = jest.fn().mockRejectedValue(new Error('persist failed'));
-    service.saveLastBlock = jest.fn();
+    service.saveLastBlock = jest.fn(async (block: bigint) => block);
 
     await service.poll();
 
@@ -49,7 +49,7 @@ describe('ArcEventPollerService checkpoint safety', () => {
     service.fetchAndProcessRange = jest.fn()
       .mockRejectedValueOnce(new Error('persist failed'))
       .mockResolvedValueOnce(undefined);
-    service.saveLastBlock = jest.fn();
+    service.saveLastBlock = jest.fn(async (block: bigint) => block);
 
     await service.poll();
     await service.poll();
@@ -65,13 +65,40 @@ describe('ArcEventPollerService checkpoint safety', () => {
     const { service } = make();
     service.loadCurveAddresses = jest.fn();
     service.loadLastBlock = jest.fn();
-    service.saveLastBlock = jest.fn();
+    service.saveLastBlock = jest.fn(async (block: bigint) => block);
     service.poll = jest.fn().mockResolvedValue(undefined);
 
     await service.onModuleInit();
 
     expect(service.lastBlock).toBe(12344n);
     expect(service.saveLastBlock).toHaveBeenCalledWith(12344n);
+  });
+
+  it('adopts a farther shared checkpoint during blue-green overlap', async () => {
+    const { service } = make();
+    service.lastBlock = 99n;
+    service.loadCurveAddresses = jest.fn();
+    service.rpcCall = jest.fn().mockResolvedValue('0x1388'); // block 5000
+    service.fetchAndProcessRange = jest.fn().mockResolvedValue(undefined);
+    service.saveLastBlock = jest.fn()
+      .mockResolvedValueOnce(4000n)
+      .mockImplementation(async (block: bigint) => block);
+
+    await service.poll();
+
+    expect(service.fetchAndProcessRange).toHaveBeenNthCalledWith(1, 100n, 2100n);
+    expect(service.fetchAndProcessRange).toHaveBeenNthCalledWith(2, 4001n, 5000n);
+    expect(service.lastBlock).toBe(5000n);
+  });
+
+  it('persists the checkpoint as a monotonic high-water mark', async () => {
+    const { service, db } = make();
+    (db as any).queryOne = jest.fn().mockResolvedValue({ last_block: '500' });
+
+    const persisted = await service.saveLastBlock(100n);
+
+    expect(persisted).toBe(500n);
+    expect((db as any).queryOne.mock.calls[0][0]).toContain('GREATEST');
   });
 
   it('ignores a replay block unless replay is explicitly enabled', async () => {
