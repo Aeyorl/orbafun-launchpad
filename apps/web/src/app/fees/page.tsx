@@ -1,322 +1,240 @@
-import { formatUsdDirect } from '@/lib/utils';
+import type { Metadata } from 'next';
 import Link from 'next/link';
+import { formatUsdDirect } from '@/lib/utils';
+import {
+  PUBLIC_PROTOCOL_FACTS as facts,
+  formatBps,
+  shareOfTradePercent,
+} from '@/content/public-protocol-facts';
 
-export const metadata = {
+export const metadata: Metadata = {
   title: 'Fees — Orba',
   description:
-    'Orba fee structure — token creation, trading fees, gas, and referral rewards. All fees paid in USDC. No hidden fees.',
+    'Mainnet draft of Orba creation and bonding-curve fees, network gas, approvals, price impact, referral accruals, and post-graduation AMM costs.',
+  alternates: { canonical: '/fees' },
 };
 
-const CREATION_FEE = 5; // USDC
-const TRADE_FEE_PCT = 1; // 1% of trade
-const CREATOR_SHARE_PCT = 50; // 50% of trade fee
-const PROTOCOL_SHARE_PCT = 50; // 50% of trade fee
-const REFERRAL_REWARD_BPS = 10; // 0.1% of volume
-const GRADUATION_MC = 30_000;
+const TRADE_FEE_PCT = facts.bondingCurveTradeFeeBps / 100;
+const CREATOR_FEE_PCT = Number(
+  shareOfTradePercent(
+    facts.bondingCurveTradeFeeBps,
+    facts.creatorShareOfTradeFeeBps,
+  ).replace('%', ''),
+);
+const PROTOCOL_FEE_PCT = Number(
+  shareOfTradePercent(
+    facts.bondingCurveTradeFeeBps,
+    facts.protocolShareOfTradeFeeBps,
+  ).replace('%', ''),
+);
+const REFERRAL_ACCRUAL_PCT = facts.referralAccrualBps / 100;
 
 export default function FeesPage() {
   return (
     <div className="max-w-3xl mx-auto py-8">
       <div className="card p-8">
         <h1 className="text-2xl font-bold mb-2">Fees</h1>
-        <p className="text-text-muted text-sm mb-6">
-          Orba has a simple, transparent fee structure. All fees are paid in USDC
-          — the native gas token on Arc. There are no hidden fees, no subscriptions,
-          and no charges for graduation.
+        <p className="text-text-muted text-sm mb-4">
+          Target mainnet parameters for creating and trading tokens on Orba.
+          Network gas, approvals, slippage, and price impact are shown separately
+          because they are not Orba platform fees.
+        </p>
+        <p className="bg-bg-input rounded-lg p-4 text-sm text-text-secondary mb-6">
+          <strong className="text-text-primary">{facts.publicationLabel}.</strong>{' '}
+          These values must be checked against the final deployed contracts and
+          production interface before publication. The transaction presented by
+          your wallet is authoritative for a specific action.
         </p>
 
-        {/* Quick summary table */}
         <div className="bg-bg-input rounded-lg p-4 mb-6">
-          <h2 className="font-semibold text-sm mb-3 text-text-secondary">Quick summary</h2>
+          <h2 className="font-semibold text-sm mb-3 text-text-secondary">Target summary</h2>
           <div className="text-sm space-y-2 tabular-nums">
-            <div className="flex justify-between border-b border-bg-border pb-2">
-              <span className="text-text-muted">Token creation (one-time)</span>
-              <span className="font-semibold">{formatUsdDirect(CREATION_FEE)}</span>
+            <div className="flex justify-between gap-4 border-b border-bg-border pb-2">
+              <span className="text-text-muted">Token creation</span>
+              <span className="font-semibold text-right">{formatUsdDirect(facts.creationFeeUsdc)}</span>
             </div>
-            <div className="flex justify-between border-b border-bg-border pb-2">
-              <span className="text-text-muted">Trade fee (buy &amp; sell, bonding curve)</span>
-              <span className="font-semibold">{TRADE_FEE_PCT}% of trade</span>
+            <div className="flex justify-between gap-4 border-b border-bg-border pb-2">
+              <span className="text-text-muted">Bonding-curve buy or sell</span>
+              <span className="font-semibold text-right">{formatBps(facts.bondingCurveTradeFeeBps)}</span>
             </div>
-            <div className="flex justify-between border-b border-bg-border pb-2">
-              <span className="text-text-muted">AMM swap (post-graduation)</span>
-              <span className="font-semibold">0%</span>
+            <div className="flex justify-between gap-4 border-b border-bg-border pb-2">
+              <span className="text-text-muted">Post-graduation AMM protocol fee</span>
+              <span className="font-semibold text-right">{formatBps(facts.ammSwapFeeBps)} target</span>
             </div>
-            <div className="flex justify-between border-b border-bg-border pb-2">
-              <span className="text-text-muted">Referral reward</span>
-              <span className="font-semibold">0.1% of referral volume</span>
+            <div className="flex justify-between gap-4 border-b border-bg-border pb-2">
+              <span className="text-text-muted">Referral accounting accrual</span>
+              <span className="font-semibold text-right">{formatBps(facts.referralAccrualBps)} of eligible volume</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Gas (network fee)</span>
-              <span className="font-semibold">&lt; $0.01 / tx (USDC)</span>
+            <div className="flex justify-between gap-4">
+              <span className="text-text-muted">Arc network gas</span>
+              <span className="font-semibold text-right">Variable, paid in native USDC</span>
             </div>
           </div>
         </div>
 
-        {/* Creation fee */}
-        <div className="bg-bg-input rounded-lg p-4 mb-4">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="font-semibold text-lg">Token Creation Fee</h2>
+        <section className="bg-bg-input rounded-lg p-4 mb-4">
+          <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+            <h2 className="font-semibold text-lg">Token creation fee</h2>
             <span className="text-2xl font-bold text-accent-green tabular-nums">
-              {formatUsdDirect(CREATION_FEE)}
+              {formatUsdDirect(facts.creationFeeUsdc)}
             </span>
           </div>
           <p className="text-sm text-text-secondary mb-2">
-            A one-time fee charged when launching a new token. Covers deployment
-            of the <code className="text-xs bg-bg-base px-1 rounded">MemeToken</code>{' '}
-            and <code className="text-xs bg-bg-base px-1 rounded">BondingCurve</code>{' '}
-            contracts on Arc.
+            The target one-time fee for deploying a token and its bonding curve.
+            The fee is paid in Arc&apos;s ERC-20 representation of USDC and sent to
+            the protocol treasury.
           </p>
           <p className="text-sm text-text-secondary">
-            Paid via USDC{' '}
-            <code className="text-xs bg-bg-base px-1 rounded">transferFrom</code> —
-            you&apos;ll be prompted to approve the 5 USDC spend before launch. The
-            fee goes to the protocol treasury. The token creator does{' '}
-            <strong>not</strong> pay for gas separately — gas is paid in the same
-            USDC and is typically a fraction of a cent.
+            A launch can require an approval transaction before the creation
+            transaction. Both transactions consume network gas in native USDC.
+            Gas is additional to the creation fee. The factory owner can change
+            the creation fee within the contract&apos;s on-chain cap, so review the
+            current wallet request before approving.
           </p>
-        </div>
+        </section>
 
-        {/* Trade fee */}
-        <div className="bg-bg-input rounded-lg p-4 mb-4">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="font-semibold text-lg">Trade Fee</h2>
+        <section className="bg-bg-input rounded-lg p-4 mb-4">
+          <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+            <h2 className="font-semibold text-lg">Bonding-curve trading fee</h2>
             <span className="text-2xl font-bold text-accent-green tabular-nums">
               {TRADE_FEE_PCT}%
             </span>
           </div>
           <p className="text-sm text-text-secondary mb-3">
-            Applied to every buy and sell on the bonding curve. The fee is
-            deducted from the trade amount before it hits the curve — so a 100
-            USDC buy sends 99 USDC into the curve and 1 USDC to fees. Split
-            equally between the token creator and the protocol:
+            The target fee applies to each buy and sell while a token is on its
+            bonding curve. On a 100 USDC buy, 1 USDC is allocated to fees and 99
+            USDC enters the curve. On a sell with a 100 USDC gross curve amount,
+            1 USDC is allocated to fees and the user receives 99 USDC before gas.
           </p>
-          <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             <div className="bg-bg-base rounded p-3">
               <div className="text-text-muted text-xs mb-1">Creator share</div>
               <div className="font-semibold tabular-nums">
-                {CREATOR_SHARE_PCT}% of fee ({TRADE_FEE_PCT * CREATOR_SHARE_PCT / 100}% of trade)
+                {formatBps(facts.creatorShareOfTradeFeeBps)} of the fee ({CREATOR_FEE_PCT}% of the trade)
               </div>
-              <div className="text-xs text-text-muted mt-1">
-                Accrued in the BondingCurve contract. Claimable by the token
-                creator at any time via the curve&apos;s{' '}
-                <code className="text-xs">claimCreatorFees</code> function.
-              </div>
+              <p className="text-xs text-text-muted mt-1">
+                Accrues in the curve contract and is claimable by the recorded token creator.
+              </p>
             </div>
             <div className="bg-bg-base rounded p-3">
               <div className="text-text-muted text-xs mb-1">Protocol share</div>
               <div className="font-semibold tabular-nums">
-                {PROTOCOL_SHARE_PCT}% of fee ({TRADE_FEE_PCT * PROTOCOL_SHARE_PCT / 100}% of trade)
+                {formatBps(facts.protocolShareOfTradeFeeBps)} of the fee ({PROTOCOL_FEE_PCT}% of the trade)
               </div>
-              <div className="text-xs text-text-muted mt-1">
-                Accrued in the BondingCurve contract. Claimable by the protocol
-                owner. Funds ongoing development and operations.
-              </div>
+              <p className="text-xs text-text-muted mt-1">
+                Accrues in the curve contract and is claimable by the protocol owner.
+              </p>
             </div>
           </div>
-        </div>
+        </section>
 
-        {/* AMM swap fee */}
-        <div className="bg-bg-input rounded-lg p-4 mb-4">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="font-semibold text-lg">AMM Swap Fee (post-graduation)</h2>
-            <span className="text-2xl font-bold text-accent-green tabular-nums">0%</span>
-          </div>
-          <p className="text-sm text-text-secondary">
-            After a token graduates to the AMM, swaps on the DEX are{' '}
-            <strong>free</strong> — there is no swap fee. This is intentional:
-            the bonding curve (not the AMM) is where fees are captured. The AMM
-            exists to provide permanent, locked liquidity for graduated tokens.
-            Note: you still pay Arc gas for the swap transaction, which is
-            typically a fraction of a cent.
-          </p>
-        </div>
-
-        {/* Referral reward */}
-        <div className="bg-bg-input rounded-lg p-4 mb-4">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="font-semibold text-lg">Referral Reward</h2>
+        <section className="bg-bg-input rounded-lg p-4 mb-4">
+          <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+            <h2 className="font-semibold text-lg">AMM swaps after graduation</h2>
             <span className="text-2xl font-bold text-accent-green tabular-nums">
-              0.1%
+              {formatBps(facts.ammSwapFeeBps)} target
             </span>
           </div>
           <p className="text-sm text-text-secondary mb-2">
-            When someone you referred trades on Orba, you earn{' '}
-            <strong>0.1% of their trade volume</strong> (10 basis points). This
-            is 10% of the 1% trading fee — the protocol shares its half of the
-            fee with referrers.
+            The release candidate&apos;s AMM does not add a protocol swap fee.
+            A zero protocol fee does not make a swap cost-free: users still pay
+            Arc gas and experience pool price impact and slippage.
           </p>
           <p className="text-sm text-text-secondary">
-            Get your referral link from your{' '}
-            <Link href="/profile" className="text-accent-blue hover:underline">profile page</Link>.
-            Attribution is first-click-wins: the first referrer whose link a
-            wallet clicks is permanently credited. See the{' '}
-            <Link href="/docs#referrals" className="text-accent-blue hover:underline">docs</Link>{' '}
-            for full details.
+            The final router, pair bytecode, reserves, and transaction preview must
+            be verified for the specific graduated token.
           </p>
-          <p className="text-xs text-text-muted mt-2">
-            Rewards are currently tracked off-chain for display and leaderboard
-            ranking. On-chain USDC payout to referrers is on the roadmap.
-          </p>
-        </div>
+        </section>
 
-        {/* Gas */}
-        <div className="bg-bg-input rounded-lg p-4 mb-4">
-          <div className="flex justify-between items-center mb-2">
-            <h2 className="font-semibold text-lg">Gas (Network Fees)</h2>
-            <span className="text-lg font-bold text-accent-green">USDC-native</span>
+        <section className="bg-bg-input rounded-lg p-4 mb-4">
+          <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+            <h2 className="font-semibold text-lg">Referral accounting</h2>
+            <span className="text-2xl font-bold text-accent-green tabular-nums">
+              {REFERRAL_ACCRUAL_PCT}%
+            </span>
           </div>
           <p className="text-sm text-text-secondary mb-2">
-            On Arc, USDC is the native gas token — you pay for transactions in
-            USDC, not a separate utility token. Gas fees are stable and
-            predictable, typically a fraction of a cent per transaction. No ETH
-            or other token required.
+            Orba&apos;s target referral rate records {REFERRAL_ACCRUAL_PCT}% of
+            eligible attributed bonding-curve volume. For 1,000 USDC of eligible
+            volume, the off-chain record would increase by 1 USDC.
           </p>
-          <div className="bg-bg-base rounded p-3 text-xs text-text-muted space-y-1 tabular-nums">
-            <div className="flex justify-between"><span>Token launch (deploy 2 contracts)</span><span>~$0.01</span></div>
-            <div className="flex justify-between"><span>Buy / sell on bonding curve</span><span>~$0.001</span></div>
-            <div className="flex justify-between"><span>AMM swap</span><span>~$0.001</span></div>
-            <div className="flex justify-between"><span>USDC approval (one-time per token)</span><span>~$0.001</span></div>
-          </div>
-          <p className="text-xs text-text-muted mt-2">
-            Gas estimates are approximate and based on Arc testnet. Actual costs
-            may vary slightly with network conditions.
-          </p>
-        </div>
-
-        {/* No hidden fees */}
-        <div className="bg-accent-green/5 border border-accent-green/20 rounded-lg p-4 mb-6">
-          <h3 className="font-semibold text-accent-green mb-2">
-            No Hidden Fees
-          </h3>
-          <ul className="text-sm text-text-secondary space-y-1">
-            <li>✓ No deposit or withdrawal fees</li>
-            <li>✓ No platform listing fees</li>
-            <li>✓ No subscription or membership fees</li>
-            <li>✓ No fees for token graduation to the DEX</li>
-            <li>✓ No fees for AMM swaps (post-graduation)</li>
-            <li>✓ Slippage tolerance is user-controlled, not platform-imposed</li>
-            <li>✓ No fees for claiming creator or protocol fees</li>
-          </ul>
-        </div>
-
-        {/* Worked example */}
-        <div className="mb-6">
-          <h3 className="font-semibold mb-3">Example: Buying 100 USDC of a token</h3>
-          <div className="bg-bg-input rounded-lg p-4 text-sm space-y-1 tabular-nums">
-            <div className="flex justify-between">
-              <span className="text-text-muted">You spend</span>
-              <span>$100.00 USDC</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Trade fee (1%)</span>
-              <span className="text-accent-red">−$1.00</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Net to bonding curve</span>
-              <span>$99.00</span>
-            </div>
-            <div className="flex justify-between border-t border-bg-border pt-1 mt-1">
-              <span className="text-text-muted">→ Creator fee (0.5%)</span>
-              <span>$0.50</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">→ Protocol fee (0.5%)</span>
-              <span>$0.50</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Example: Sell */}
-        <div className="mb-6">
-          <h3 className="font-semibold mb-3">Example: Selling tokens for 100 USDC</h3>
-          <div className="bg-bg-input rounded-lg p-4 text-sm space-y-1 tabular-nums">
-            <div className="flex justify-between">
-              <span className="text-text-muted">Tokens sold (worth at current price)</span>
-              <span>$100.00 USDC</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Trade fee (1%)</span>
-              <span className="text-accent-red">−$1.00</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">You receive</span>
-              <span className="font-semibold">$99.00 USDC</span>
-            </div>
-            <div className="flex justify-between border-t border-bg-border pt-1 mt-1">
-              <span className="text-text-muted">→ Creator fee (0.5%)</span>
-              <span>$0.50</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">→ Protocol fee (0.5%)</span>
-              <span>$0.50</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Example: Launch */}
-        <div className="mb-6">
-          <h3 className="font-semibold mb-3">Example: Launching a token</h3>
-          <div className="bg-bg-input rounded-lg p-4 text-sm space-y-1 tabular-nums">
-            <div className="flex justify-between">
-              <span className="text-text-muted">Creation fee</span>
-              <span className="text-accent-red">−$5.00</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Gas (deploy 2 contracts)</span>
-              <span className="text-accent-red">−$0.01</span>
-            </div>
-            <div className="flex justify-between border-t border-bg-border pt-1 mt-1">
-              <span className="text-text-muted">Total cost to launch</span>
-              <span className="font-semibold">~$5.01 USDC</span>
-            </div>
-          </div>
-          <p className="text-xs text-text-muted mt-2">
-            The 1 billion token supply is minted to the bonding curve for free —
-            you don&apos;t buy your own tokens at launch. You earn the 0.5%
-            creator fee on every trade made by other users.
-          </p>
-        </div>
-
-        {/* Example: Referral */}
-        <div className="mb-6">
-          <h3 className="font-semibold mb-3">Example: Referral earnings</h3>
-          <div className="bg-bg-input rounded-lg p-4 text-sm space-y-1 tabular-nums">
-            <div className="flex justify-between">
-              <span className="text-text-muted">Your referral buys 1,000 USDC of a token</span>
-              <span>$1,000.00</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Your reward (0.1%)</span>
-              <span className="font-semibold text-accent-green">+$1.00 USDC</span>
-            </div>
-            <div className="flex justify-between border-t border-bg-border pt-1 mt-1">
-              <span className="text-text-muted">If they trade $100K volume over time</span>
-              <span className="font-semibold text-accent-green">+$100.00 USDC</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Graduation note */}
-        <div className="bg-bg-input rounded-lg p-4">
-          <h3 className="font-semibold mb-2">What happens to fees at graduation?</h3>
           <p className="text-sm text-text-secondary">
-            When a token graduates (market cap reaches{' '}
-            <strong>{formatUsdDirect(GRADUATION_MC)}</strong>), the bonding curve
-            is retired. Creator and protocol fees accrued up to that point remain
-            claimable from the curve contract forever — they are not lost. After
-            graduation, there are no more trade fees (AMM swaps are 0%). The
-            creator&apos;s ongoing revenue stream ends at graduation by design —
-            the creator fee is a reward for building a token that reaches
-            graduation, not a perpetual tax on trading.
+            This is an accounting accrual, not an on-chain balance or automatic
+            payment. It is intended to be funded from the protocol economics if a
+            payout program is enabled. A future claim process would require separate
+            eligibility, verification, minimum, timing, and legal terms. See the{' '}
+            <Link href="/docs#referrals" className="text-accent-blue hover:underline">
+              referral documentation
+            </Link>.
           </p>
+        </section>
+
+        <section className="bg-bg-input rounded-lg p-4 mb-4">
+          <h2 className="font-semibold text-lg mb-2">Network gas and approvals</h2>
+          <p className="text-sm text-text-secondary mb-2">
+            Arc uses native USDC for gas. Gas changes with network conditions and
+            transaction complexity, so Orba does not promise a fixed cost. Wallets
+            may display native USDC separately from the six-decimal ERC-20 USDC used
+            by contracts even though they represent the same asset.
+          </p>
+          <p className="text-sm text-text-secondary">
+            An ERC-20 approval is not a platform fee, but the approval transaction
+            consumes gas and grants spending authority. Review the spender and amount;
+            prefer the exact or smallest sufficient approval and revoke unused approvals.
+          </p>
+        </section>
+
+        <section className="border border-accent-green/30 bg-accent-green/5 rounded-lg p-4 mb-6">
+          <h2 className="font-semibold text-accent-green mb-2">Costs that are not Orba fees</h2>
+          <ul className="text-sm text-text-secondary space-y-1">
+            <li>• Network gas paid to Arc&apos;s validator mechanism</li>
+            <li>• Slippage caused by state changes before execution</li>
+            <li>• Price impact caused by trade size relative to liquidity</li>
+            <li>• Wallet, exchange, bridge, or third-party provider charges</li>
+            <li>• Taxes or reporting obligations in your jurisdiction</li>
+          </ul>
+        </section>
+
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold">Worked examples</h2>
+
+          <div className="bg-bg-input rounded-lg p-4 text-sm">
+            <h3 className="font-semibold mb-3">Buying with 100 USDC</h3>
+            <div className="space-y-2 tabular-nums">
+              <div className="flex justify-between gap-4"><span className="text-text-muted">Amount submitted</span><span>100.00 USDC</span></div>
+              <div className="flex justify-between gap-4"><span className="text-text-muted">Curve fee ({TRADE_FEE_PCT}%)</span><span>1.00 USDC</span></div>
+              <div className="flex justify-between gap-4"><span className="text-text-muted">Amount entering curve</span><span>99.00 USDC</span></div>
+              <div className="flex justify-between gap-4 text-xs"><span className="text-text-muted">Creator / protocol allocation</span><span>0.50 / 0.50 USDC</span></div>
+            </div>
+            <p className="text-xs text-text-muted mt-3">Token output depends on current curve state and the transaction&apos;s minimum output. Gas is additional.</p>
+          </div>
+
+          <div className="bg-bg-input rounded-lg p-4 text-sm">
+            <h3 className="font-semibold mb-3">Launching a token</h3>
+            <div className="space-y-2 tabular-nums">
+              <div className="flex justify-between gap-4"><span className="text-text-muted">Target creation fee</span><span>{facts.creationFeeUsdc}.00 USDC</span></div>
+              <div className="flex justify-between gap-4"><span className="text-text-muted">Approval gas</span><span>Variable</span></div>
+              <div className="flex justify-between gap-4"><span className="text-text-muted">Creation gas</span><span>Variable</span></div>
+            </div>
+            <p className="text-xs text-text-muted mt-3">The creator receives no initial token allocation. Any later creator purchase is a separate trade with its own fee, gas, and price impact.</p>
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="mt-6 text-center text-xs text-text-muted">
-          <p>
-            Want to know more about how the platform works?{' '}
-            <Link href="/docs" className="text-accent-blue hover:underline">Read the docs</Link>.
+        <section className="mt-6 border-t border-bg-border pt-6">
+          <h2 className="font-semibold mb-2">What changes at graduation?</h2>
+          <p className="text-sm text-text-secondary">
+            Curve trading and its {TRADE_FEE_PCT}% fee stop after successful
+            graduation. Previously accrued creator and protocol amounts remain
+            subject to their contract claim rules. Trading moves to the AMM, where
+            the target protocol swap fee is {formatBps(facts.ammSwapFeeBps)} and gas,
+            slippage, and price impact still apply. Graduation has no separate target
+            platform charge.
           </p>
+        </section>
+
+        <div className="border-t border-bg-border mt-8 pt-6 text-center text-xs text-text-muted">
+          Parameters shown here are draft targets. Read the <Link href="/docs" className="text-accent-blue hover:underline">Docs</Link>{' '}
+          and <Link href="/legal/terms" className="text-accent-blue hover:underline">Terms</Link>, then verify the final wallet transaction.
         </div>
       </div>
     </div>
