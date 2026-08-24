@@ -18,12 +18,12 @@ import {
 
 type LeaderboardTab = 'top_gainers' | 'top_volume' | 'market_cap' | 'new' | 'top_creators';
 
-const TABS: { key: LeaderboardTab; label: string; mobileLabel: string; description: string }[] = [
-  { key: 'top_gainers', label: 'Top Gainers', mobileLabel: 'Gainers', description: 'Tokens moving highest on Orba' },
-  { key: 'top_volume', label: 'Top Volume', mobileLabel: 'Volume', description: 'Tokens ranked by 24h trading volume' },
-  { key: 'market_cap', label: 'Market Cap', mobileLabel: 'MC', description: 'Tokens ranked by total market capitalization' },
-  { key: 'new', label: 'New Tokens', mobileLabel: 'New', description: 'Recently launched tokens on Arc' },
-  { key: 'top_creators', label: 'Top Creators', mobileLabel: 'Creators', description: 'Creators ranked by volume and launched tokens' },
+const TABS: { key: LeaderboardTab; label: string; mobileLabel: string }[] = [
+  { key: 'top_gainers', label: 'Top Gainers', mobileLabel: 'Gainers' },
+  { key: 'top_volume', label: 'Top Volume', mobileLabel: 'Volume' },
+  { key: 'market_cap', label: 'Market Cap', mobileLabel: 'MC' },
+  { key: 'new', label: 'New Tokens', mobileLabel: 'New' },
+  { key: 'top_creators', label: 'Top Creators', mobileLabel: 'Creators' },
 ];
 
 export default function LeaderboardPage() {
@@ -75,8 +75,6 @@ export default function LeaderboardPage() {
     return result;
   }, [rawRows, activeTab, searchQuery]);
 
-  const activeTabMeta = TABS.find((t) => t.key === activeTab)!;
-
   return (
     <div className="max-w-6xl mx-auto space-y-5 pb-16">
       {/* HEADER SECTION */}
@@ -86,12 +84,7 @@ export default function LeaderboardPage() {
             <h1 className="text-2xl sm:text-3xl font-extrabold text-text-primary tracking-tight">
               Leaderboard
             </h1>
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live · Arc
-            </span>
           </div>
-          <p className="text-xs text-text-muted mt-0.5">{activeTabMeta.description}</p>
         </div>
 
         {/* SEARCH FIELD */}

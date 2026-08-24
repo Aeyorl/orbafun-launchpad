@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -19,13 +19,13 @@ import {
   type Log,
 } from 'viem';
 import { ARC_CHAIN_ID, ARC_NETWORK_NAME, CONTRACTS, USDC_DECIMALS } from '@/lib/config';
-import { formatUsdDirect, formatNativeUsdc, shortenAddress, ipfsToGateway, tokenEmoji } from '@/lib/utils';
+import { formatUsdDirect, formatNativeUsdc } from '@/lib/utils';
 import { useArcReceiptFallback } from '@/lib/use-arc-receipt';
 import { useAuth } from '@/lib/use-auth';
 import { api, ApiError, type TokenMetadata } from '@/lib/api';
 import { ImageUploader } from '@/components/ImageUploader';
 import toast from 'react-hot-toast';
-import { ChartBar, Globe, LinkSimple, NotePencil, Palette, WarningCircle } from '@phosphor-icons/react';
+import { ChartBar, Globe, NotePencil, Palette, WarningCircle } from '@phosphor-icons/react';
 
 const TOKEN_FACTORY_ABI = [
   {
@@ -348,15 +348,6 @@ export default function LaunchPage() {
     void finalizeLaunch();
   }, [launchConfirmed, receipt, fallback.logs, txHash, router, queryClient]);
 
-  // Step progression state
-  const stepStatus = useMemo(() => {
-    const hasName = name.trim().length > 0;
-    const hasSymbol = symbol.trim().length > 0;
-    const detailsDone = hasName && hasSymbol;
-    const previewDone = detailsDone && (image.length > 0 || description.length > 0);
-    return { detailsDone, previewDone };
-  }, [name, symbol, image, description]);
-
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-24 lg:pb-12">
       {/* PAGE HERO HEADER */}
@@ -371,34 +362,11 @@ export default function LaunchPage() {
         </h1>
 
         <p className="text-sm text-text-secondary max-w-xl mx-auto">
-          Configure and deploy your memecoin on Arc blockchain. Starts on the bonding curve at $4,000 MC and graduates to DEX at $30,000.
+          Create and deploy on Arc Network
         </p>
-
-        {/* STEP PROGRESSION INDICATOR */}
-        <div className="flex items-center justify-center gap-3 pt-3 text-xs font-mono">
-          <div className={`flex items-center gap-1.5 ${stepStatus.detailsDone ? 'text-accent-blue font-bold' : 'text-text-muted'}`}>
-            <span>{stepStatus.detailsDone ? '✓' : '01'}</span>
-            <span>Details</span>
-          </div>
-          <span className="text-bg-border">──────</span>
-          <div className={`flex items-center gap-1.5 ${stepStatus.previewDone ? 'text-accent-blue font-bold' : 'text-text-muted'}`}>
-            <span>{stepStatus.previewDone ? '✓' : '02'}</span>
-            <span>Preview</span>
-          </div>
-          <span className="text-bg-border">──────</span>
-          <div className={`flex items-center gap-1.5 ${launchConfirmed ? 'text-emerald-500 font-bold' : 'text-text-muted'}`}>
-            <span>03</span>
-            <span>Launch</span>
-          </div>
-        </div>
       </div>
 
       {/* WALLET & GAS WARNINGS */}
-      {!isConnected && (
-        <div className="card bg-accent-blue/5 border border-accent-blue/30 text-xs text-accent-blue flex items-center justify-between">
-          <span className="inline-flex items-center gap-1.5"><LinkSimple size={15} aria-hidden="true" /> Connect your wallet to deploy a token on Arc</span>
-        </div>
-      )}
       {noGasMoney && (
         <div className="card bg-rose-500/10 border border-rose-500/30 text-xs text-rose-600 dark:text-rose-400 flex items-center gap-1.5">
           <WarningCircle size={15} weight="fill" aria-hidden="true" /> No USDC for gas. Get testnet USDC from the{' '}
@@ -414,10 +382,10 @@ export default function LaunchPage() {
         </div>
       )}
 
-      {/* TWO-COLUMN STUDIO LAYOUT */}
+      {/* LAUNCH FORM LAYOUT */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* LEFT COLUMN: FORM CONTROLS (7 cols) */}
-        <div className="lg:col-span-7 space-y-5">
+        {/* FORM CONTROLS */}
+        <div className="lg:col-span-12 space-y-5">
           {/* TOKEN DETAILS CARD */}
           <div className="card space-y-4 bg-bg-card border border-bg-border shadow-subtle-1">
             <h2 className="text-base font-bold text-text-primary flex items-center gap-2 border-b border-bg-border pb-2.5">
@@ -484,7 +452,7 @@ export default function LaunchPage() {
           {/* MEDIA UPLOADS CARD */}
           <div className="card space-y-4 bg-bg-card border border-bg-border shadow-subtle-1">
             <h2 className="text-base font-bold text-text-primary flex items-center gap-2 border-b border-bg-border pb-2.5">
-              <Palette size={18} aria-hidden="true" /> Media & Branding
+              <Palette size={18} aria-hidden="true" /> Add media
             </h2>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -683,11 +651,9 @@ export default function LaunchPage() {
             <div className="flex items-center justify-between text-xs">
               <div>
                 <span className="font-bold text-sm text-text-primary block">Creation Fee</span>
-                <span className="text-text-muted text-[11px]">One-time token deployment cost</span>
               </div>
               <div className="text-right font-mono">
                 <span className="font-extrabold text-lg text-text-primary">{formatUsdDirect(CREATION_FEE)}</span>
-                <span className="text-text-muted block text-[10px]">+$0.001 Arc gas</span>
               </div>
             </div>
 
@@ -766,94 +732,6 @@ export default function LaunchPage() {
           </div>
         </div>
 
-        {/* RIGHT COLUMN: LIVE TOKEN PREVIEW (5 cols) */}
-        <div className="lg:col-span-5 sticky top-20 space-y-4">
-          <div className="text-xs font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
-            <span>Live Token Preview</span>
-            <span className="text-[10px] text-accent-blue font-mono">Updates in real-time</span>
-          </div>
-
-          {/* Interactive Live Card Preview */}
-          <div className="card space-y-3.5 bg-bg-card border border-bg-border shadow-subtle-2 relative overflow-hidden">
-            {/* Banner preview overlay */}
-            {banner && (
-              <div className="h-20 -mx-5 -mt-5 mb-2 overflow-hidden bg-bg-base border-b border-bg-border">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={ipfsToGateway(banner)} alt="Banner" className="w-full h-full object-cover" />
-              </div>
-            )}
-
-            {/* Token Header Identity */}
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-bg-base border border-bg-border flex items-center justify-center text-xl overflow-hidden flex-shrink-0 shadow-xs">
-                {image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={ipfsToGateway(image)} alt={symbol} className="w-full h-full object-cover" />
-                ) : (
-                  tokenEmoji(symbol || 'TOKEN')
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1.5 truncate">
-                  <h3 className="font-bold text-base text-text-primary truncate">
-                    {name.trim() || 'Your Token Name'}
-                  </h3>
-                  <span className="text-xs font-semibold text-text-muted flex-shrink-0">
-                    ${symbol ? symbol.trim().toUpperCase() : 'SYMBOL'}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-medium border bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20">
-                    <span className="w-1 h-1 rounded-full bg-emerald-500" />
-                    Bonding
-                  </span>
-                  <span className="text-[10px] text-text-muted">
-                    by {address ? shortenAddress(address) : '0x...'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Price & MC */}
-            <div className="flex items-baseline justify-between pt-2 border-t border-bg-border/60">
-              <div>
-                <div className="text-xl font-extrabold font-mono text-text-primary tabular-nums">
-                  $0.00000400
-                </div>
-                <div className="text-[11px] text-text-muted font-medium">Starting Price</div>
-              </div>
-              <div className="text-right">
-                <div className="text-sm font-bold text-text-primary font-mono tabular-nums">
-                  $4,000 MC
-                </div>
-                <div className="text-[11px] text-text-muted">Initial Cap</div>
-              </div>
-            </div>
-
-            {/* Description Preview */}
-            <div className="text-xs text-text-secondary leading-relaxed bg-bg-base/60 p-2.5 rounded-xl border border-bg-border/60 min-h-[50px]">
-              {description.trim() ? (
-                <p className="line-clamp-3">{description.trim()}</p>
-              ) : (
-                <p className="text-text-muted italic">Your token description will appear here...</p>
-              )}
-            </div>
-
-            {/* Bonding curve status indicator */}
-            <div className="bg-bg-base p-2.5 rounded-xl border border-bg-border space-y-1.5">
-              <div className="flex justify-between items-center text-[11px]">
-                <span className="font-medium text-text-muted">Bonding Progress</span>
-                <span className="font-bold text-accent-blue font-mono">0%</span>
-              </div>
-              <div className="w-full h-1.5 bg-bg-border rounded-full overflow-hidden">
-                <div className="h-full bg-accent-blue w-0 rounded-full" />
-              </div>
-              <div className="text-[10px] text-text-muted text-right">
-                $26.0K USDC to DEX graduation
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* MOBILE STICKY LAUNCH CTA BAR */}

@@ -19,7 +19,7 @@ import { ThemeToggle } from './ThemeToggle';
 const PRIMARY_LINKS = [
   { href: '/', label: 'Discover' },
   { href: '/explore', label: 'Market' },
-  { href: '/launch', label: 'Launch' },
+  { href: '/launch', label: 'Create' },
   { href: '/agents', label: 'Agents' },
 ] as const;
 
@@ -48,7 +48,7 @@ export function Navbar() {
 
   const menuLinks = [
     ...PRIMARY_LINKS,
-    { href: '/leaderboard', label: 'Leaders' },
+    { href: '/leaderboard', label: 'Leaderboard' },
     ...(address
       ? [
           { href: '/watchlist', label: 'Watchlist' },
@@ -86,7 +86,7 @@ export function Navbar() {
             href="/leaderboard"
             className={`tab hidden min-[1380px]:inline-flex ${isActive('/leaderboard') ? 'tab-active' : ''}`}
           >
-            Leaders
+            Leaderboard
           </Link>
         </div>
 

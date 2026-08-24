@@ -107,9 +107,6 @@ function ExplorePageContent() {
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-text-primary">
             Explore
           </h1>
-          <p className="text-sm text-text-secondary mt-1">
-            Discover what's launching, moving, and graduating on Orba.
-          </p>
         </div>
 
         {/* Search Bar */}
