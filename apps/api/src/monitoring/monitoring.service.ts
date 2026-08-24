@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
 import { AlertService, safeAlertError } from './alert.service';
@@ -22,7 +22,7 @@ export class MonitoringService {
     private readonly alerts: AlertService,
   ) {}
 
-  @Cron(CronExpression.EVERY_MINUTE)
+  @Cron('43 * * * * *')
   async scheduledCheck(): Promise<void> {
     if (process.env.MONITORING_ENABLED !== 'true' || this.running) return;
     this.running = true;
@@ -60,6 +60,10 @@ export class MonitoringService {
     const indexerLag = rpc.highest >= indexer.lastBlock
       ? rpc.highest - indexer.lastBlock
       : 0n;
+    const poolActive = Math.max(0, pool.total - pool.idle);
+    const poolUtilizationPercent = pool.max > 0
+      ? (poolActive / pool.max) * 100
+      : 0;
 
     await Promise.all([
       this.alerts.setCondition('redis', !redisReady, 'Redis is unavailable', { redisReady }),
@@ -96,9 +100,13 @@ export class MonitoringService {
       ),
       this.alerts.setCondition(
         'postgres-pool',
-        pool.waiting > 0 || (pool.total / pool.max) * 100 >= poolWarnPercent,
+        pool.waiting > 0 || poolUtilizationPercent >= poolWarnPercent,
         'PostgreSQL connection pool is saturated',
-        pool,
+        {
+          ...pool,
+          active: poolActive,
+          utilizationPercent: Number(poolUtilizationPercent.toFixed(1)),
+        },
         'warning',
       ),
       this.alerts.setCondition(

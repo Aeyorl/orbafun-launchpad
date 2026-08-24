@@ -42,6 +42,37 @@ describe('MonitoringService', () => {
     expect(conditions.get('postgres-pool')).toBe(true);
     expect(conditions.get('failed-transactions')).toBe(true);
   });
+
+  it('does not treat idle allocated clients as pool saturation', async () => {
+    process.env.ARC_RPC_URLS = 'https://rpc-a.example,https://rpc-b.example';
+    const database = {
+      getPoolStats: jest.fn().mockReturnValue({ total: 9, idle: 9, waiting: 0, max: 10 }),
+      queryOne: jest.fn(async (sql: string) => {
+        if (sql.includes('indexer_sync_state')) return { last_block: '200', age_seconds: '5' };
+        return { count: '0' };
+      }),
+    };
+    const redis = {
+      ping: jest.fn().mockResolvedValue(true),
+      dbSize: jest.fn().mockResolvedValue(10),
+    };
+    const alerts = { setCondition: jest.fn().mockResolvedValue(undefined) };
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: '0xc8' }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ result: '0xc8' }) }) as any;
+    const service = new MonitoringService(database as any, redis as any, alerts as any);
+
+    await service.checkNow();
+
+    const poolCondition = alerts.setCondition.mock.calls
+      .find((call) => call[0] === 'postgres-pool');
+    expect(poolCondition?.[1]).toBe(false);
+    expect(poolCondition?.[3]).toEqual(expect.objectContaining({
+      active: 0,
+      utilizationPercent: 0,
+    }));
+  });
 });
 
 describe('AlertService', () => {

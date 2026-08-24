@@ -16,6 +16,8 @@ describe('ArcEventPollerService checkpoint safety', () => {
 
   afterEach(() => {
     delete process.env.ARC_POLLER_ENABLED;
+    delete process.env.ARC_POLLER_REPLAY_ENABLED;
+    delete process.env.ARC_POLLER_REPLAY_FROM_BLOCK;
     delete process.env.ARC_DEPLOYMENT_BLOCK;
     delete process.env.ARC_MIGRATOR_ADDRESS;
   });
@@ -70,6 +72,35 @@ describe('ArcEventPollerService checkpoint safety', () => {
 
     expect(service.lastBlock).toBe(12344n);
     expect(service.saveLastBlock).toHaveBeenCalledWith(12344n);
+  });
+
+  it('ignores a replay block unless replay is explicitly enabled', async () => {
+    process.env.ARC_POLLER_ENABLED = 'true';
+    process.env.ARC_POLLER_REPLAY_FROM_BLOCK = '100';
+    const { service } = make();
+    service.lastBlock = 500n;
+    service.loadCurveAddresses = jest.fn();
+    service.loadLastBlock = jest.fn();
+    service.poll = jest.fn().mockResolvedValue(undefined);
+
+    await service.onModuleInit();
+
+    expect(service.lastBlock).toBe(500n);
+  });
+
+  it('applies a replay block when replay is explicitly enabled', async () => {
+    process.env.ARC_POLLER_ENABLED = 'true';
+    process.env.ARC_POLLER_REPLAY_ENABLED = 'true';
+    process.env.ARC_POLLER_REPLAY_FROM_BLOCK = '100';
+    const { service } = make();
+    service.lastBlock = 500n;
+    service.loadCurveAddresses = jest.fn();
+    service.loadLastBlock = jest.fn();
+    service.poll = jest.fn().mockResolvedValue(undefined);
+
+    await service.onModuleInit();
+
+    expect(service.lastBlock).toBe(99n);
   });
 
   it('accepts TokenMigrated only from the configured migrator and forwards LP burn state', async () => {
@@ -177,6 +208,54 @@ describe('ArcEventPollerService checkpoint safety', () => {
       amount1In: '500',
       amount0Out: '100',
       amount1Out: '0',
+    }));
+  });
+
+  it('retries a null historical receipt on another RPC provider', async () => {
+    const pair = '0x3000000000000000000000000000000000000003';
+    const router = '0x4000000000000000000000000000000000000004';
+    const trader = '0x5000000000000000000000000000000000000005';
+    const token = '0x6000000000000000000000000000000000000006';
+    const { service } = make();
+    const processEvent = jest.fn().mockResolvedValue(undefined);
+    service.indexerService = { processEvent };
+    service.ammPairAddresses.add(pair);
+
+    const word = (value: bigint) => value.toString(16).padStart(64, '0');
+    const topicAddress = (address: string) => `0x${address.slice(2).padStart(64, '0')}`;
+    service.rpcCall = jest.fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        logs: [{
+          address: token,
+          topics: [
+            keccak256(toBytes('Transfer(address,address,uint256)')),
+            topicAddress(trader),
+            topicAddress(pair),
+          ],
+          data: `0x${word(500n)}`,
+          blockNumber: '0x2a',
+          transactionHash: '0xabc',
+          logIndex: '0x3',
+        }],
+      });
+
+    await service.processLog({
+      address: pair,
+      topics: [
+        keccak256(toBytes('Swap(address,address,uint256,uint256,uint256,uint256)')),
+        topicAddress(router),
+        topicAddress(trader),
+      ],
+      data: `0x${word(0n)}${word(0n)}${word(100n)}${word(0n)}`,
+      blockNumber: '0x2a',
+      transactionHash: '0xabc',
+      logIndex: '0x4',
+    });
+
+    expect(service.rpcCall).toHaveBeenCalledTimes(2);
+    expect(processEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'Swap', trader, amount0In: '0', amount1In: '500',
     }));
   });
 });

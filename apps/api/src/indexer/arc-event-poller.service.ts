@@ -148,7 +148,8 @@ export class ArcEventPollerService implements OnModuleInit {
     // persistence is idempotent by transaction hash and log index. Remove the
     // override after the first successful catch-up deployment.
     const replayFrom = process.env.ARC_POLLER_REPLAY_FROM_BLOCK;
-    if (replayFrom) {
+    const replayEnabled = process.env.ARC_POLLER_REPLAY_ENABLED === 'true';
+    if (replayFrom && replayEnabled) {
       const replayBlock = BigInt(replayFrom);
       if (replayBlock < 1n) {
         throw new Error('ARC_POLLER_REPLAY_FROM_BLOCK must be at least 1');
@@ -160,6 +161,10 @@ export class ArcEventPollerService implements OnModuleInit {
         );
         this.lastBlock = replayLastBlock;
       }
+    } else if (replayFrom) {
+      this.logger.warn(
+        'Ignoring ARC_POLLER_REPLAY_FROM_BLOCK because ARC_POLLER_REPLAY_ENABLED is not "true"',
+      );
     }
 
     // If no checkpoint exists, start at the deployment block. A moving
@@ -549,37 +554,48 @@ export class ArcEventPollerService implements OnModuleInit {
     amount0Out: string,
     amount1Out: string,
   ): Promise<{ amount0In: string; amount1In: string; trader: string }> {
-    const receipt = await this.rpcCall<RpcTransactionReceipt>(
-      'eth_getTransactionReceipt',
-      [swapLog.transactionHash],
-    );
-    const swapIndex = hexToBigInt(swapLog.logIndex);
-    const transfer = receipt?.logs
-      ?.filter((candidate) =>
-        candidate.topics[0] === TOPIC_TRANSFER
-        && candidate.topics.length >= 3
-        && topicToAddress(candidate.topics[2]) === swapLog.address.toLowerCase()
-        && hexToBigInt(candidate.logIndex) < swapIndex,
-      )
-      .sort(compareLogs)
-      .at(-1);
-    if (!transfer) {
-      throw new Error(`Unable to infer AMM input transfer for ${swapLog.transactionHash}`);
-    }
-    const inputAmount = decodeUintData(transfer.data)[0];
-    if (!inputAmount || inputAmount === '0') {
-      throw new Error(`Invalid AMM input transfer for ${swapLog.transactionHash}`);
-    }
     const output0 = BigInt(amount0Out);
     const output1 = BigInt(amount1Out);
     if ((output0 === 0n) === (output1 === 0n)) {
       throw new Error(`Ambiguous AMM output for ${swapLog.transactionHash}`);
     }
-    return {
-      amount0In: output1 > 0n ? inputAmount : '0',
-      amount1In: output0 > 0n ? inputAmount : '0',
-      trader: topicToAddress(transfer.topics[1]),
-    };
+
+    const swapIndex = hexToBigInt(swapLog.logIndex);
+    const pairAddress = swapLog.address.toLowerCase();
+
+    // Some public Arc providers return a null receipt for older transactions
+    // even though other providers still retain it. A null response is valid
+    // JSON-RPC, so rpcCall cannot distinguish it from an authoritative miss.
+    // Retry the receipt lookup across the provider ring before failing the
+    // event and holding the checkpoint at this block.
+    for (let attempt = 0; attempt < this.rpcUrls.length; attempt++) {
+      const receipt = await this.rpcCall<RpcTransactionReceipt | null>(
+        'eth_getTransactionReceipt',
+        [swapLog.transactionHash],
+      );
+      const transfer = receipt?.logs
+        ?.filter((candidate) =>
+          candidate.topics[0]?.toLowerCase() === TOPIC_TRANSFER
+          && candidate.topics.length >= 3
+          && topicToAddress(candidate.topics[2]) === pairAddress
+          && hexToBigInt(candidate.logIndex) < swapIndex,
+        )
+        .sort(compareLogs)
+        .at(-1);
+      if (!transfer) continue;
+
+      const inputAmount = decodeUintData(transfer.data)[0];
+      if (!inputAmount || inputAmount === '0') {
+        throw new Error(`Invalid AMM input transfer for ${swapLog.transactionHash}`);
+      }
+      return {
+        amount0In: output1 > 0n ? inputAmount : '0',
+        amount1In: output0 > 0n ? inputAmount : '0',
+        trader: topicToAddress(transfer.topics[1]),
+      };
+    }
+
+    throw new Error(`Unable to infer AMM input transfer for ${swapLog.transactionHash}`);
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────

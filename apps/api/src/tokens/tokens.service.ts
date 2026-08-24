@@ -119,10 +119,10 @@ export class TokensService implements OnModuleInit {
   }
 
   /**
-   * Cron task running every 60s to refresh 24h rolling volume window
+   * Cron task running every 5 minutes to refresh the 24h rolling volume window
    * across all active tokens and clear cached token lists.
    */
-  @Cron('*/60 * * * * *')
+  @Cron('17 */5 * * * *')
   async refreshVolume24h(): Promise<void> {
     try {
       await this.db.query(

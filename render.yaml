@@ -21,6 +21,11 @@ services:
     startCommand: NODE_PATH=./apps/api/node_modules node apps/api/dist/main.js
     healthCheckPath: /health/ready
     autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - apps/api/**
+        - packages/shared/**
+        - package.json
     envVars:
       - key: NODE_VERSION
         value: "24.12.0"
@@ -56,6 +61,8 @@ services:
         value: "0x33E4bd4561EE669012ff83b4eE5609122838bDcB"
       - key: ARC_POLLER_ENABLED
         value: "true"
+      - key: ARC_POLLER_REPLAY_ENABLED
+        value: "false"
       - key: AUTH_ALLOW_INSECURE
         value: "false"
       - key: AUTH_SIWE_DOMAINS
@@ -101,7 +108,7 @@ services:
       - key: REFERRAL_REWARD_PCT_BPS
         value: "10"
       - key: POSTGRES_POOL_MAX
-        value: "10"
+        value: "5"
       - key: POSTGRES_CONNECT_TIMEOUT_MS
         value: "30000"
       - key: REDIS_CONNECT_TIMEOUT_MS
