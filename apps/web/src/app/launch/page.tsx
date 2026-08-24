@@ -22,7 +22,12 @@ import { ARC_CHAIN_ID, ARC_NETWORK_NAME, CONTRACTS, USDC_DECIMALS } from '@/lib/
 import { formatUsdDirect, formatNativeUsdc } from '@/lib/utils';
 import { useArcReceiptFallback } from '@/lib/use-arc-receipt';
 import { useAuth } from '@/lib/use-auth';
-import { api, ApiError, type TokenMetadata } from '@/lib/api';
+import { api, type TokenMetadata } from '@/lib/api';
+import {
+  recoverLaunchMetadataAuth,
+  saveLaunchMetadataWithRetry,
+  validateLaunchMetadata,
+} from '@/lib/launch-metadata';
 import { ImageUploader } from '@/components/ImageUploader';
 import toast from 'react-hot-toast';
 import { ChartBar, Globe, NotePencil, Palette, WarningCircle } from '@phosphor-icons/react';
@@ -60,16 +65,8 @@ const TOKEN_CREATED_EVENT = {
 } as const;
 
 const CREATION_FEE = 5; // 5 USDC
-const METADATA_SAVE_ATTEMPTS = 8;
-
 const wait = (milliseconds: number) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
-
-function shouldRetryMetadataSave(error: unknown): boolean {
-  if (!(error instanceof ApiError)) return true;
-  return error.status === 404 || error.status === 408 || error.status === 409 ||
-    error.status === 425 || error.status === 429 || error.status >= 500;
-}
 
 export default function LaunchPage() {
   const router = useRouter();
@@ -162,21 +159,33 @@ export default function LaunchPage() {
   const insufficientForFee =
     isConnected && balance && balance.value < parseUnits(String(CREATION_FEE), 18);
 
-  const validateForm = () => {
+  const validateForm = (): Partial<TokenMetadata> | null => {
     setError('');
     if (!name.trim()) {
       setError('Token name is required');
-      return false;
+      return null;
     }
     if (!symbol.trim()) {
       setError('Ticker symbol is required');
-      return false;
+      return null;
     }
     if (symbol.trim().length > 10) {
       setError('Symbol must be 10 characters or less');
-      return false;
+      return null;
     }
-    return true;
+    const validation = validateLaunchMetadata({
+      description,
+      banner,
+      website,
+      twitter,
+      telegram,
+      discord,
+    });
+    if (validation.error) {
+      setError(validation.error);
+      return null;
+    }
+    return validation.metadata;
   };
 
   const handleApprove = async () => {
@@ -192,16 +201,19 @@ export default function LaunchPage() {
   };
 
   const launchingRef = useRef(false);
+  const launchMetadataRef = useRef<Partial<TokenMetadata>>({});
   const handleLaunch = async () => {
     if (launchingRef.current) return;
-    if (!validateForm()) return;
+    const metadata = validateForm();
+    if (!metadata) return;
+    launchMetadataRef.current = metadata;
     launchingRef.current = true;
     setTxAction('launch');
     writeContract({
       address: CONTRACTS.TOKEN_FACTORY,
       abi: TOKEN_FACTORY_ABI,
       functionName: 'createToken',
-      args: [name.trim(), symbol.trim().toUpperCase(), image, description],
+      args: [name.trim(), symbol.trim().toUpperCase(), image, description.trim()],
       chainId: ARC_CHAIN_ID,
     });
   };
@@ -292,49 +304,33 @@ export default function LaunchPage() {
         created_at: new Date().toISOString(),
       });
 
-      const metadata: Partial<TokenMetadata> = {
-        banner: banner || undefined,
-        website: website || undefined,
-        twitter: twitter || undefined,
-        telegram: telegram || undefined,
-        discord: discord || undefined,
-      };
+      const metadata = launchMetadataRef.current;
       const hasMetadata = Object.values(metadata).some(Boolean);
 
       if (hasMetadata) {
-        toast.loading('Saving token image and social links…', { id: 'metadata' });
+        toast.loading('Saving token description, image and social links…', { id: 'metadata' });
         try {
           if (!address) throw new Error('Wallet disconnected before token metadata was saved');
-          let authToken = getAuthToken();
-          if (!authToken) {
-            await authenticate();
-            authToken = getAuthToken();
-          }
-          if (!authToken) throw new Error('Wallet authentication did not complete');
-
-          let savedMetadata: TokenMetadata | null = null;
-          for (let attempt = 1; attempt <= METADATA_SAVE_ATTEMPTS; attempt++) {
-            try {
-              savedMetadata = await api.setTokenMetadata(
+          const authToken = await recoverLaunchMetadataAuth(getAuthToken, authenticate);
+          const savedMetadata = await saveLaunchMetadataWithRetry(
+            () => api.setTokenMetadata(
                 tokenAddress,
                 address,
                 metadata,
                 authToken,
-              );
-              break;
-            } catch (err) {
-              if (attempt === METADATA_SAVE_ATTEMPTS || !shouldRetryMetadataSave(err)) throw err;
-              await wait(Math.min(attempt * 1_500, 5_000));
-            }
-          }
+              ),
+            wait,
+          );
 
-          if (!savedMetadata) throw new Error('Token metadata was not saved');
-          queryClient.setQueryData(['token-metadata', tokenAddress], savedMetadata);
-          toast.success('Token image and social links saved', { id: 'metadata' });
+          queryClient.setQueryData(
+            ['token-metadata', tokenAddress.toLowerCase()],
+            savedMetadata,
+          );
+          toast.success('Token description, image and social links saved', { id: 'metadata' });
         } catch (err) {
           console.error('Failed to save token metadata after launch:', err);
           toast.error(
-            'Token launched, but its image/socials could not be saved. Open Token Info & About to retry.',
+            'Token launched, but its description/image/socials could not be saved. Open Token Info & About to retry.',
             { id: 'metadata', duration: 12_000 },
           );
         }
@@ -537,14 +533,14 @@ export default function LaunchPage() {
             <div className="space-y-3 pt-2">
               {activeSocialFields.twitter && (
                 <div className="space-y-1">
-                  <label htmlFor="token-twitter" className="text-xs text-text-muted block">X / Twitter Handle</label>
+                  <label htmlFor="token-twitter" className="text-xs text-text-muted block">X / Twitter</label>
                   <input
                     id="token-twitter"
                     type="text"
                     value={twitter}
                     onChange={(e) => setTwitter(e.target.value)}
-                    placeholder="e.g. arcdoge_coin"
-                    maxLength={50}
+                    placeholder="@arcdoge_coin or https://x.com/arcdoge_coin"
+                    maxLength={200}
                     className="input text-xs"
                   />
                 </div>
