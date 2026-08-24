@@ -8,7 +8,7 @@ import { TokenGrid } from '@/components/TokenGrid';
 import { AgentBadge } from '@/components/AgentBadge';
 import { SunnySpotlight } from '@/components/SunnySpotlight';
 import { useTokenEvents } from '@/lib/useWebSocket';
-import { formatUsdDirect, formatMarketCap, tokenEmoji, ipfsToGateway } from '@/lib/utils';
+import { formatUsdCompact, formatUsdDirect, formatMarketCap, tokenEmoji, ipfsToGateway } from '@/lib/utils';
 import { ArrowRight, ArrowUpRight, Robot } from '@phosphor-icons/react';
 
 type Tab = 'newest' | 'market_cap' | 'volume' | 'graduated';
@@ -114,7 +114,7 @@ export default function LandingPage() {
       </section>
 
       {/* Compact platform pulse. */}
-      <section className="grid grid-cols-3 gap-2 sm:gap-3">
+      <section className="grid min-w-0 grid-cols-3 gap-2 sm:gap-3">
         <StatCard
           label="TOKENS"
           value={stats ? String(stats.total_tokens) : '—'}
@@ -122,7 +122,7 @@ export default function LandingPage() {
         />
         <StatCard
           label="24H VOLUME"
-          value={stats ? formatUsdDirect(stats.volume_24h) : '—'}
+          value={stats ? formatUsdCompact(stats.volume_24h) : '—'}
           helper="USDC"
         />
         <StatCard
@@ -260,15 +260,15 @@ export default function LandingPage() {
 
 function StatCard({ label, value, helper }: { label: string; value: string; helper?: string }) {
   return (
-    <div className="card-elevated text-center py-4">
-      <div className="text-2xl md:text-3xl font-bold tabular-nums tracking-tight">
+    <div className="card-elevated min-w-0 overflow-hidden !px-2 py-4 text-center sm:!px-5">
+      <div className="whitespace-nowrap text-lg font-bold leading-none tabular-nums tracking-tight sm:text-2xl md:text-3xl">
         {value}
       </div>
-      <div className="text-[11px] font-semibold tracking-wider text-text-muted mt-1 uppercase">
+      <div className="mt-1 text-[9px] font-semibold uppercase tracking-wide text-text-muted sm:text-[11px] sm:tracking-wider">
         {label}
       </div>
       {helper && (
-        <div className="text-[11px] font-mono text-accent-blue mt-0.5 opacity-85">
+        <div className="mt-0.5 text-[10px] font-mono text-accent-blue opacity-85 sm:text-[11px]">
           {helper}
         </div>
       )}

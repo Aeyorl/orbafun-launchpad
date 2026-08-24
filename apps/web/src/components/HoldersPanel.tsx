@@ -7,7 +7,7 @@ import { api, Holder } from '@/lib/api';
 import { formatTokens, shortenAddress, timeAgo } from '@/lib/utils';
 import { ARC_EXPLORER_URL } from '@/lib/config';
 import { WalletBadge } from '@/components/WalletBadge';
-import { Waves } from '@phosphor-icons/react';
+import { ArrowSquareOut, Waves } from '@phosphor-icons/react';
 
 const ARCSCAN_BASE = ARC_EXPLORER_URL;
 
@@ -35,7 +35,7 @@ export function HoldersPanel({ tokenAddress, currentPrice }: { tokenAddress: str
 
   if (isLoading) {
     return (
-      <div className="card">
+      <div className="min-w-0">
         <h3 className="font-semibold mb-3">Top Holders</h3>
         <div className="space-y-2 animate-pulse">
           {[1, 2, 3, 4, 5].map((i) => (
@@ -59,7 +59,7 @@ export function HoldersPanel({ tokenAddress, currentPrice }: { tokenAddress: str
   const topTenConcentration = holders.slice(0, 10).reduce((sum, holder) => sum + Number(holder.percentage), 0);
 
   return (
-    <div className="card">
+    <div className="min-w-0">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <h3 className="font-semibold">Holders</h3>
         <span className="text-xs text-text-muted tabular-nums">
@@ -68,7 +68,7 @@ export function HoldersPanel({ tokenAddress, currentPrice }: { tokenAddress: str
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 mb-3" role="tablist" aria-label="Holder view">
+      <div className="mb-3 grid grid-cols-3 gap-1" role="tablist" aria-label="Holder view">
         <TabButton label="Top Holders" active={tab === 'top'} onClick={() => setTab('top')} />
         <TabButton
           label={`Whales (${whales.length})`}
@@ -112,7 +112,7 @@ export function HoldersPanel({ tokenAddress, currentPrice }: { tokenAddress: str
           {tab === 'whales' ? 'No whales (>5%) found' : 'No holders yet'}
         </div>
       ) : (
-        <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
+        <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
           {displayed.map((holder, i) => (
             <HolderRow
               key={holder.wallet}
@@ -143,9 +143,9 @@ function HolderRow({
   const usdValue = currentPrice && balance > 0 ? balance * currentPrice : null;
 
   return (
-    <div className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-bg-hover transition-colors text-sm group">
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="text-text-muted text-xs w-5 tabular-nums">{rank}</span>
+    <div className="group grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 rounded-lg px-2 py-2.5 text-sm transition-colors hover:bg-bg-hover sm:flex sm:items-center sm:justify-between sm:px-3 sm:py-2">
+      <div className="flex min-w-0 items-start gap-2 sm:items-center">
+        <span className="w-5 shrink-0 pt-0.5 text-xs text-text-muted tabular-nums sm:pt-0">{rank}</span>
         <div className="min-w-0">
           <Link
             href={`/profile/${holder.wallet}`}
@@ -154,7 +154,7 @@ function HolderRow({
           >
             {shortenAddress(holder.wallet)}
           </Link>
-          <span className="block text-[10px] text-text-muted">
+          <span className="block truncate text-[10px] text-text-muted">
             {timeAgo(holder.last_activity_at)} · {holder.buy_count} buys / {holder.sell_count} sells
           </span>
         </div>
@@ -176,17 +176,14 @@ function HolderRow({
           href={`${ARCSCAN_BASE}/address/${holder.wallet}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-text-muted hover:text-accent-blue"
+          className="shrink-0 text-text-muted opacity-70 transition-opacity hover:text-accent-blue sm:opacity-0 sm:group-hover:opacity-100"
           title="View on ArcScan"
+          aria-label={`View ${shortenAddress(holder.wallet)} on ArcScan`}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-            <polyline points="15 3 21 3 21 9" />
-            <line x1="10" y1="14" x2="21" y2="3" />
-          </svg>
+          <ArrowSquareOut size={12} aria-hidden="true" />
         </a>
       </div>
-      <div className="flex items-center gap-3 flex-shrink-0">
+      <div className="col-span-2 flex min-w-0 items-center justify-between gap-2 pl-7 sm:col-span-1 sm:shrink-0 sm:justify-end sm:gap-3 sm:pl-0">
         <span className="text-text-muted text-xs tabular-nums">
           {formatTokens(holder.balance)}
         </span>
@@ -196,7 +193,7 @@ function HolderRow({
           </span>
         )}
         <span
-          className={`font-semibold tabular-nums text-xs w-16 text-right ${
+          className={`w-16 shrink-0 text-right text-xs font-semibold tabular-nums ${
             isWhale ? 'text-accent-orange' : 'text-text-primary'
           }`}
         >
@@ -221,7 +218,7 @@ function TabButton({
       role="tab"
       aria-selected={active}
       onClick={onClick}
-      className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+      className={`min-w-0 whitespace-nowrap rounded-full px-1.5 py-1 text-[11px] font-medium transition-colors sm:px-3 sm:text-xs ${
         active
           ? 'bg-text-primary/10 text-text-primary'
           : 'text-text-muted hover:text-text-primary hover:bg-bg-hover'

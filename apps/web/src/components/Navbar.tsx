@@ -63,9 +63,9 @@ export function Navbar() {
       <div className="mx-auto flex h-[72px] max-w-[1440px] items-center gap-4 px-4 lg:px-6">
         <Link href="/" className="flex shrink-0 items-center gap-2" aria-label="Orba home">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/orba-wordmark-bloom.svg" alt="Orba" className="h-9 w-auto dark:hidden" />
+          <img src="/orba-wordmark-bloom.svg" alt="Orba" className="h-8 w-auto dark:hidden sm:h-9" />
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/orba-wordmark-bloom-dark.svg" alt="Orba" className="hidden h-9 w-auto dark:block" />
+          <img src="/orba-wordmark-bloom-dark.svg" alt="Orba" className="hidden h-8 w-auto dark:block sm:h-9" />
         </Link>
 
         <div className="hidden min-w-0 flex-1 sm:block xl:max-w-[280px] 2xl:max-w-md">
@@ -90,7 +90,7 @@ export function Navbar() {
           </Link>
         </div>
 
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
           {mounted && isConnected && address && (
             <Link
               href={`/profile/${address}`}
@@ -217,13 +217,13 @@ function ConnectButton() {
       <button
         onClick={() => setOpen((value) => !value)}
         disabled={connectors.length === 0}
-        className="btn-primary inline-flex items-center gap-2 whitespace-nowrap text-sm"
+        className="btn-primary inline-flex items-center gap-2 whitespace-nowrap !px-3 text-sm sm:!px-4"
+        aria-label="Connect wallet"
         aria-expanded={open}
         aria-haspopup="menu"
       >
         <Wallet size={17} aria-hidden="true" />
         <span className="hidden sm:inline">Connect Wallet</span>
-        <span className="sm:hidden">Connect</span>
       </button>
 
       {open && (

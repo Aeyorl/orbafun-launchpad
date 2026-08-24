@@ -179,28 +179,28 @@ export default function TradePage() {
 
           {/* Detail Tabs: Trades / Holders / Info / Chat */}
           <div className="card space-y-4">
-            <div className="flex items-center gap-1 border-b border-bg-border pb-2 overflow-x-auto text-sm">
+            <div className="grid grid-cols-2 gap-1 border-b border-bg-border pb-2 text-xs sm:flex sm:items-center sm:overflow-x-auto sm:text-sm">
               <button
                 onClick={() => setActiveTab('trades')}
-                className={`tab ${activeTab === 'trades' ? 'tab-active' : ''}`}
+                className={`tab min-w-0 text-center sm:shrink-0 ${activeTab === 'trades' ? 'tab-active' : ''}`}
               >
                 Trades ({totalTrades})
               </button>
               <button
                 onClick={() => setActiveTab('holders')}
-                className={`tab ${activeTab === 'holders' ? 'tab-active' : ''}`}
+                className={`tab min-w-0 text-center sm:shrink-0 ${activeTab === 'holders' ? 'tab-active' : ''}`}
               >
                 Holders ({totalHolders})
               </button>
               <button
                 onClick={() => setActiveTab('info')}
-                className={`tab ${activeTab === 'info' ? 'tab-active' : ''}`}
+                className={`tab min-w-0 text-center sm:shrink-0 ${activeTab === 'info' ? 'tab-active' : ''}`}
               >
                 Token Info & About
               </button>
               <button
                 onClick={() => setActiveTab('chat')}
-                className={`tab ${activeTab === 'chat' ? 'tab-active' : ''}`}
+                className={`tab min-w-0 text-center sm:shrink-0 ${activeTab === 'chat' ? 'tab-active' : ''}`}
               >
                 Agent Chat
               </button>
