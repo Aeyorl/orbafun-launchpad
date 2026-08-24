@@ -36,6 +36,8 @@ const { mockWagmiRef, createWagmiMockModule } = vi.hoisted(() => {
       useConnect:      (...a: unknown[]) => (ref.current as any).useConnect?.(...a) ?? {},
       useConnectors:   (...a: unknown[]) => (ref.current as any).useConnectors?.(...a) ?? [],
       useDisconnect:   (...a: unknown[]) => (ref.current as any).useDisconnect?.(...a) ?? {},
+      useCapabilities: (...a: unknown[]) => (ref.current as any).useCapabilities?.(...a) ?? {},
+      useSendCallsSync: (...a: unknown[]) => (ref.current as any).useSendCallsSync?.(...a) ?? {},
     };
   }
 
@@ -259,7 +261,7 @@ describe('TradePanel', () => {
   // ─── Approval flow ──────────────────────────────────────────────────────
 
   describe('Approval flow', () => {
-    it('requires resetting a broader legacy allowance to the exact trade amount', () => {
+    it('buys directly when an existing allowance covers the amount', () => {
       updateWagmiMock({
         isConnected: true,
         usdcAllowance: (1n << 256n) - 1n,
@@ -268,21 +270,30 @@ describe('TradePanel', () => {
       fireEvent.change(screen.getByPlaceholderText('0.00'), {
         target: { value: '10' },
       });
-      expect(screen.getByText('Approve 10 USDC (1 of 2)')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Buy ADOGE' }));
+
+      expect(mockWagmiRef.current.useWriteContract().writeContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'buy',
+          args: [10_000_000n, 495_000_000_000_000_000_000n],
+        }),
+      );
+      expect(mockWagmiRef.current.useSendCallsSync().sendCallsSyncAsync).not.toHaveBeenCalled();
     });
 
     beforeEach(() => {
       updateWagmiMock({ isConnected: true, usdcAllowance: 0n });
     });
 
-    it('shows the exact one-time USDC approval on buy with insufficient allowance', () => {
+    it('always shows one Buy action without approval-step copy', () => {
       renderWithProviders(<TradePanel token={createMockToken()} />);
       fireEvent.change(screen.getByPlaceholderText('0.00'), {
         target: { value: '10' },
       });
-      expect(screen.getByTestId('trade-panel-action-footer')).toContainElement(
-        screen.getByText('Approve 10 USDC (1 of 2)'),
-      );
+      expect(screen.getByRole('button', { name: 'Buy ADOGE' })).toBeInTheDocument();
+      expect(screen.getByText('Buy ≈ 500.00 ADOGE ($10.00)')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Approve/ })).not.toBeInTheDocument();
+      expect(screen.queryByText(/1 of 2|2 of 2|two confirmations/i)).not.toBeInTheDocument();
     });
 
     it('shows the exact one-time token approval on sell with insufficient allowance', () => {
@@ -291,35 +302,109 @@ describe('TradePanel', () => {
       fireEvent.change(screen.getByPlaceholderText('0.00'), {
         target: { value: '1000' },
       });
-      expect(screen.getByTestId('trade-panel-action-footer')).toContainElement(
-        screen.getByText('Approve 1000 ADOGE (1 of 2)'),
+      expect(screen.getByText('Approve 1000 ADOGE (1 of 2)')).toBeInTheDocument();
+    });
+
+    it('submits approval then buy in order as one forced-atomic batch', async () => {
+      updateWagmiMock({ atomicStatus: 'supported', usdcAllowance: 0n });
+      renderWithProviders(<TradePanel token={createMockToken()} />);
+      fireEvent.change(screen.getByPlaceholderText('0.00'), {
+        target: { value: '10' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Buy ADOGE' }));
+
+      const sendCalls = mockWagmiRef.current.useSendCallsSync().sendCallsSyncAsync;
+      await waitFor(() => expect(sendCalls).toHaveBeenCalledOnce());
+      const request = sendCalls.mock.calls[0][0];
+      expect(request.forceAtomic).toBe(true);
+      expect(request.calls).toHaveLength(2);
+      expect(request.calls[0]).toMatchObject({
+        functionName: 'approve',
+        args: [createMockToken().curve_address, 10_000_000n],
+      });
+      expect(request.calls[1]).toMatchObject({
+        functionName: 'buy',
+        args: [10_000_000n, 495_000_000_000_000_000_000n],
+      });
+      expect(mockWagmiRef.current.useWriteContract().writeContract).not.toHaveBeenCalled();
+    });
+
+    it('uses one click to start the exact-amount fallback on unsupported wallets', () => {
+      updateWagmiMock({
+        atomicStatus: 'unsupported',
+        usdcAllowance: 0n,
+      });
+      const token = createMockToken();
+      renderWithProviders(<TradePanel token={token} />);
+      fireEvent.change(screen.getByPlaceholderText('0.00'), {
+        target: { value: '10' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Buy ADOGE' }));
+
+      expect(mockWagmiRef.current.useWriteContract().writeContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'approve',
+          args: [token.curve_address, 10_000_000n],
+        }),
       );
     });
 
-    it('keeps the approval action concise', () => {
-      renderWithProviders(<TradePanel token={createMockToken()} />);
-      fireEvent.change(screen.getByPlaceholderText('0.00'), {
-        target: { value: '10' },
+    it('falls back after an atomic-not-supported error without duplicating the buy', async () => {
+      updateWagmiMock({
+        atomicStatus: 'ready',
+        usdcAllowance: 0n,
+        atomicError: Object.assign(new Error('Atomic execution not supported'), {
+          code: 5760,
+          name: 'AtomicityNotSupportedError',
+        }),
       });
-      expect(screen.getByText('Approve 10 USDC (1 of 2)')).toBeInTheDocument();
-      expect(screen.queryByText(/Why your wallet says/)).not.toBeInTheDocument();
+      const token = createMockToken();
+      renderWithProviders(<TradePanel token={token} />);
+      fireEvent.change(screen.getByPlaceholderText('0.00'), { target: { value: '10' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Buy ADOGE' }));
+
+      const writeContract = mockWagmiRef.current.useWriteContract().writeContract;
+      await waitFor(() => expect(writeContract).toHaveBeenCalledOnce());
+      expect(writeContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          functionName: 'approve',
+          args: [token.curve_address, 10_000_000n],
+        }),
+      );
+      expect(writeContract).not.toHaveBeenCalledWith(
+        expect.objectContaining({ functionName: 'buy' }),
+      );
     });
 
-    it('shows Approving in wallet… when approval tx is pending', () => {
+    it('stops after wallet rejection without opening another prompt', async () => {
       updateWagmiMock({
-        isConnected: true,
+        atomicStatus: 'supported',
         usdcAllowance: 0n,
-        isPending: true,
+        atomicError: Object.assign(new Error('User rejected the request'), {
+          code: 4001,
+          name: 'UserRejectedRequestError',
+        }),
       });
       renderWithProviders(<TradePanel token={createMockToken()} />);
-      fireEvent.change(screen.getByPlaceholderText('0.00'), {
-        target: { value: '10' },
+      fireEvent.change(screen.getByPlaceholderText('0.00'), { target: { value: '10' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Buy ADOGE' }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Transaction cancelled');
+      expect(mockWagmiRef.current.useWriteContract().writeContract).not.toHaveBeenCalled();
+      expect(mockWagmiRef.current.useSendCallsSync().sendCallsSyncAsync).toHaveBeenCalledOnce();
+    });
+
+    it('ignores a duplicate Buy click while the same atomic flow is active', async () => {
+      updateWagmiMock({ atomicStatus: 'supported', usdcAllowance: 0n });
+      renderWithProviders(<TradePanel token={createMockToken()} />);
+      fireEvent.change(screen.getByPlaceholderText('0.00'), { target: { value: '10' } });
+      const buy = screen.getByRole('button', { name: 'Buy ADOGE' });
+      fireEvent.click(buy);
+      fireEvent.click(buy);
+
+      await waitFor(() => {
+        expect(mockWagmiRef.current.useSendCallsSync().sendCallsSyncAsync).toHaveBeenCalledOnce();
       });
-      expect(
-        screen.getByText(/Step 1\/2: Approving in wallet/),
-      ).toBeInTheDocument();
-      expect(screen.getByPlaceholderText('0.00')).toBeDisabled();
-      expect(screen.getByRole('tab', { name: /SELL/i })).toBeDisabled();
     });
 
     it('opens the buy confirmation after the approval receipt succeeds', async () => {
@@ -340,7 +425,7 @@ describe('TradePanel', () => {
       fireEvent.change(screen.getByPlaceholderText('0.00'), {
         target: { value: '10' },
       });
-      fireEvent.click(screen.getByText('Approve 10 USDC (1 of 2)'));
+      fireEvent.click(screen.getByRole('button', { name: 'Buy ADOGE' }));
 
       updateWagmiMock({
         isConnected: true,
@@ -356,7 +441,7 @@ describe('TradePanel', () => {
       );
 
       expect(
-        await screen.findByText('Step 2/2: Opening trade confirmation…'),
+        await screen.findByText('Opening the buy in your wallet…'),
       ).toBeInTheDocument();
       await waitFor(() => {
         expect(tradeWrite).toHaveBeenCalledWith(
@@ -437,8 +522,8 @@ describe('TradePanel', () => {
         target: { value: '10' },
       });
 
-      // Click approve → txAction becomes 'approve'
-      fireEvent.click(screen.getByText('Approve 10 USDC (1 of 2)'));
+      // One Buy click starts the safe approval fallback for this wallet.
+      fireEvent.click(screen.getByRole('button', { name: 'Buy ADOGE' }));
 
       // Now switch mock to confirming state and re-render
       updateWagmiMock({
@@ -454,7 +539,7 @@ describe('TradePanel', () => {
       );
 
       expect(
-        screen.getByText('Step 1/2: Confirming approval…'),
+        screen.getByText('Preparing your buy…'),
       ).toBeInTheDocument();
     });
 
@@ -478,7 +563,7 @@ describe('TradePanel', () => {
       });
 
       // No approval needed → click trade button → txAction becomes 'trade'
-      fireEvent.click(screen.getByText('BUY ADOGE'));
+      fireEvent.click(screen.getByRole('button', { name: 'Buy ADOGE' }));
 
       // Switch to confirming state
       updateWagmiMock({
@@ -494,7 +579,7 @@ describe('TradePanel', () => {
       );
 
       expect(
-        screen.getByText('Step 2/2: Confirming trade on Arc…'),
+        screen.getByText('Buy confirming on Arc…'),
       ).toBeInTheDocument();
     });
 
@@ -505,10 +590,13 @@ describe('TradePanel', () => {
         isSuccess: true,
       });
       renderWithProviders(<TradePanel token={createMockToken()} />);
-      expect(screen.getByText('✓ Bought $ADOGE')).toBeInTheDocument();
+      fireEvent.change(screen.getByPlaceholderText('0.00'), {
+        target: { value: '10' },
+      });
+      expect(screen.getByText('Buy confirmed on Arc.')).toBeInTheDocument();
     });
 
-    it('shows Confirming on Arc blockchain text when receipt is pending', () => {
+    it('locks the form while a receipt is pending', () => {
       updateWagmiMock({
         isConnected: true,
         usdcAllowance: 1_000_000_000_000_000n,
@@ -516,9 +604,8 @@ describe('TradePanel', () => {
         isSuccess: false,
       });
       renderWithProviders(<TradePanel token={createMockToken()} />);
-      expect(
-        screen.getByText(/Confirming on Arc blockchain/),
-      ).toBeInTheDocument();
+      expect(screen.getByPlaceholderText('0.00')).toBeDisabled();
+      expect(screen.getByRole('tab', { name: /SELL/i })).toBeDisabled();
     });
   });
 });

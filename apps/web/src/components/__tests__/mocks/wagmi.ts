@@ -31,6 +31,15 @@ export function createMockWagmi(overrides: {
   isSwitching?: boolean;
   shouldConfirm?: boolean;
   txHash?: `0x${string}`;
+  atomicStatus?: 'supported' | 'ready' | 'unsupported';
+  atomicError?: unknown;
+  atomicResult?: {
+    atomic: boolean;
+    status: 'success' | 'failure' | 'pending' | undefined;
+    statusCode?: number;
+    receipts?: Array<{ transactionHash: `0x${string}` }>;
+  };
+  isAtomicPending?: boolean;
 } = {}) {
   const {
     isConnected = true,
@@ -49,6 +58,15 @@ export function createMockWagmi(overrides: {
     isSwitching = false,
     shouldConfirm = true,
     txHash = '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' as `0x${string}`,
+    atomicStatus = 'unsupported',
+    atomicError,
+    atomicResult = {
+      atomic: true,
+      status: 'success',
+      statusCode: 200,
+      receipts: [{ transactionHash: txHash }],
+    },
+    isAtomicPending = false,
   } = overrides;
 
   const mockWriteContract = vi.fn();
@@ -56,6 +74,9 @@ export function createMockWagmi(overrides: {
   const mockConnect = vi.fn();
   const mockReset = vi.fn();
   const mockRefetch = vi.fn().mockResolvedValue(undefined);
+  const mockSendCallsSyncAsync = atomicError
+    ? vi.fn().mockRejectedValue(atomicError)
+    : vi.fn().mockResolvedValue(atomicResult);
 
   return {
     createConfig: vi.fn(() => ({})),
@@ -126,5 +147,18 @@ export function createMockWagmi(overrides: {
       { id: 'walletConnect', name: 'WalletConnect', type: 'walletConnect' as const },
     ],
     useDisconnect: () => ({ disconnect: vi.fn() }),
+    useCapabilities: () => ({
+      data: { atomic: { status: atomicStatus } },
+      isLoading: false,
+      isError: false,
+      error: null,
+    }),
+    useSendCallsSync: () => ({
+      sendCallsSyncAsync: mockSendCallsSyncAsync,
+      isPending: isAtomicPending,
+      isError: false,
+      error: null,
+      reset: vi.fn(),
+    }),
   };
 }

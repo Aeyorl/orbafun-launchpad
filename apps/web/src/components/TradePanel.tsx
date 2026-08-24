@@ -11,6 +11,8 @@ import {
   useSwitchChain,
   useConnect,
   useConnectors,
+  useCapabilities,
+  useSendCallsSync,
 } from 'wagmi';
 import { parseUnits, formatUnits, erc20Abi } from 'viem';
 import toast from 'react-hot-toast';
@@ -91,6 +93,51 @@ const AMM_ROUTER_ABI = [
 const ARC_ERC20_TO_NATIVE_FACTOR = 10n ** 12n;
 const ARC_GAS_RESERVE_NATIVE = 10n ** 16n; // Keep $0.01 USDC for gas.
 
+function errorDetails(error: unknown): { code?: number; name: string; text: string } {
+  const parts: string[] = [];
+  let code: number | undefined;
+  let name = '';
+  let current: unknown = error;
+  for (let depth = 0; current && typeof current === 'object' && depth < 5; depth++) {
+    const item = current as {
+      code?: unknown;
+      name?: unknown;
+      message?: unknown;
+      shortMessage?: unknown;
+      details?: unknown;
+      cause?: unknown;
+    };
+    if (code === undefined && typeof item.code === 'number') code = item.code;
+    if (!name && typeof item.name === 'string') name = item.name;
+    for (const value of [item.name, item.message, item.shortMessage, item.details]) {
+      if (typeof value === 'string') parts.push(value);
+    }
+    current = item.cause;
+  }
+  return { code, name, text: parts.join(' ').toLowerCase() };
+}
+
+function isUserRejection(error: unknown): boolean {
+  const { code, name, text } = errorDetails(error);
+  return code === 4001 || code === 5750 || name === 'UserRejectedRequestError' ||
+    name === 'AtomicReadyWalletRejectedUpgradeError' ||
+    text.includes('user rejected') || text.includes('user denied') ||
+    text.includes('request rejected') || text.includes('cancelled by user');
+}
+
+function isAtomicUnsupported(error: unknown): boolean {
+  const { code, name, text } = errorDetails(error);
+  if (code === 5760 || name === 'AtomicityNotSupportedError') return true;
+  if (text.includes('wallet_getcallsstatus')) return false;
+  return (
+    name === 'MethodNotFoundRpcError' ||
+    name === 'MethodNotSupportedRpcError' ||
+    text.includes('wallet_sendcalls') &&
+      (text.includes('not supported') || text.includes('not found') ||
+        text.includes('does not exist') || text.includes('not available'))
+  );
+}
+
 /**
  * TradePanel — professional, high-density terminal trading form for Orba.
  */
@@ -102,6 +149,7 @@ export function TradePanel({ token }: { token: Token }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isAdvancingToTrade, setIsAdvancingToTrade] = useState(false);
   const [tradeError, setTradeError] = useState<string | null>(null);
+  const [atomicUnavailableFor, setAtomicUnavailableFor] = useState<string | null>(null);
 
   const { address, isConnected, chainId } = useAccount();
   const { switchChain, isPending: isSwitching } = useSwitchChain();
@@ -120,6 +168,7 @@ export function TradePanel({ token }: { token: Token }) {
   // Track active tx hash locally to separate approval vs trade states cleanly
   const [currentTxHash, setCurrentTxHash] = useState<`0x${string}` | undefined>(undefined);
   const [txAction, setTxAction] = useState<'approve' | 'trade' | null>(null);
+  const tradeFlowRef = useRef(false);
   const pendingTradeRef = useRef<{
     mode: 'buy' | 'sell';
     displayAmount: string;
@@ -135,6 +184,19 @@ export function TradePanel({ token }: { token: Token }) {
     error: writeError,
     reset,
   } = useWriteContract();
+  const { data: walletCapabilities } = useCapabilities({
+    chainId: ARC_CHAIN_ID,
+    query: { enabled: isConnected && !wrongNetwork },
+  });
+  const {
+    sendCallsSyncAsync,
+    isPending: isAtomicPending,
+  } = useSendCallsSync();
+  const atomicStatus = walletCapabilities?.atomic?.status;
+  const walletCapabilityKey = `${address || 'disconnected'}:${chainId || 'unknown'}`;
+  const atomicUnavailable = atomicUnavailableFor === walletCapabilityKey;
+  const canAtomicBuy = !atomicUnavailable &&
+    (atomicStatus === 'supported' || atomicStatus === 'ready');
 
   useEffect(() => {
     if (txHash) setCurrentTxHash(txHash);
@@ -196,6 +258,34 @@ export function TradePanel({ token }: { token: Token }) {
     query: { enabled: !!address && mode === 'sell' && (!isAmmTrade || !!ammRouter) },
   });
 
+  const finalizeTradeSuccess = (
+    completedTrade: NonNullable<typeof pendingTradeRef.current>,
+    transactionId: string,
+  ) => {
+    const verb = completedTrade.mode === 'buy' ? 'Bought' : 'Sold';
+    toast.success(
+      `${verb} ${token.symbol} (${completedTrade.displayAmount} ${completedTrade.mode === 'buy' ? 'USDC' : token.symbol})`,
+      { id: `trade-${transactionId}` },
+    );
+
+    refetchUsdcBalance();
+    refetchTokenBalance();
+    refetchAllowance();
+    refetchTokenAllowance();
+    queryClient.invalidateQueries({ queryKey: ['balance'] });
+    queryClient.invalidateQueries({ queryKey: ['readContract'] });
+    queryClient.invalidateQueries({ queryKey: ['user-portfolio'] });
+    queryClient.invalidateQueries({ queryKey: ['user-holdings'] });
+    queryClient.invalidateQueries({ queryKey: ['user-pnl'] });
+    queryClient.invalidateQueries({ queryKey: ['tokenHolders', token.contract_address] });
+    queryClient.invalidateQueries({ queryKey: ['tokenTrades', token.contract_address] });
+    queryClient.invalidateQueries({ queryKey: ['token', token.contract_address] });
+    queryClient.invalidateQueries({ queryKey: ['candles', token.contract_address] });
+    queryClient.invalidateQueries({ queryKey: ['explore'] });
+    queryClient.invalidateQueries({ queryKey: ['leaderboard'] });
+    setAmount('');
+  };
+
   // Notifications & refetches on tx resolution
   useEffect(() => {
     if (!txConfirmed || !txAction) return;
@@ -217,35 +307,15 @@ export function TradePanel({ token }: { token: Token }) {
       return;
     } else if (txAction === 'trade') {
       const completedTrade = pendingTradeRef.current;
-      const completedMode = completedTrade?.mode ?? mode;
-      const verb = completedMode === 'buy' ? 'Bought' : 'Sold';
-      const amt = completedTrade?.displayAmount ?? amount;
-      toast.success(`${verb} ${token.symbol}${amt ? ` (${amt} ${completedMode === 'buy' ? 'USDC' : token.symbol})` : ''}`, {
-        id: `trade-${currentTxHash}`,
-      });
-
-      refetchUsdcBalance();
-      refetchTokenBalance();
-      refetchAllowance();
-      refetchTokenAllowance();
-      queryClient.invalidateQueries({ queryKey: ['balance'] });
-      queryClient.invalidateQueries({ queryKey: ['readContract'] });
-      queryClient.invalidateQueries({ queryKey: ['user-portfolio'] });
-      queryClient.invalidateQueries({ queryKey: ['user-holdings'] });
-      queryClient.invalidateQueries({ queryKey: ['user-pnl'] });
-      queryClient.invalidateQueries({ queryKey: ['tokenHolders', token.contract_address] });
-      queryClient.invalidateQueries({ queryKey: ['tokenTrades', token.contract_address] });
-      queryClient.invalidateQueries({ queryKey: ['token', token.contract_address] });
-      queryClient.invalidateQueries({ queryKey: ['candles', token.contract_address] });
-      queryClient.invalidateQueries({ queryKey: ['explore'] });
-      queryClient.invalidateQueries({ queryKey: ['leaderboard'] });
-
-      setAmount('');
+      if (completedTrade) {
+        finalizeTradeSuccess(completedTrade, currentTxHash || 'transaction');
+      }
 
       const timer = setTimeout(() => {
         setCurrentTxHash(undefined);
         setTxAction(null);
         pendingTradeRef.current = null;
+        tradeFlowRef.current = false;
         reset();
       }, 3000);
       return () => clearTimeout(timer);
@@ -321,7 +391,7 @@ export function TradePanel({ token }: { token: Token }) {
   const needsApproval =
     parsedAmount > 0n &&
     (mode === 'buy'
-      ? (!usdcAllowanceLoaded || usdcAllowance !== parsedAmount)
+      ? (!usdcAllowanceLoaded || usdcAllowance < parsedAmount)
       : (!tokenAllowanceLoaded || tokenAllowance !== parsedAmount));
 
   const buyWouldExceedMaxWallet =
@@ -366,6 +436,7 @@ export function TradePanel({ token }: { token: Token }) {
       if (!token.amm_pair_address || !address || !ammRouter) {
         setTradeError('AMM trading is not configured for this network yet.');
         setTxAction(null);
+        tradeFlowRef.current = false;
         return;
       }
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
@@ -407,24 +478,9 @@ export function TradePanel({ token }: { token: Token }) {
     return () => clearTimeout(timer);
   }, [isAdvancingToTrade]);
 
-  // Execute trade
-  const handleTrade = async () => {
-    if (!address || parsedAmount === 0n) return;
+  // Approve only the exact amount used by this trade, then automatically open it.
+  const startSequentialApproval = (trade: ReturnType<typeof createTradeIntent>) => {
     setTradeError(null);
-    const trade = createTradeIntent();
-    pendingTradeRef.current = trade;
-    executeTrade(trade);
-  };
-
-  // Approve only the amount used by this trade.
-  const handleApprove = async () => {
-    if (!address || parsedAmount === 0n) return;
-    if (isAmmTrade && !ammRouter) {
-      setTradeError('AMM trading is not configured for this network yet.');
-      return;
-    }
-    setTradeError(null);
-    const trade = createTradeIntent();
     pendingTradeRef.current = trade;
     setTxAction('approve');
     if (trade.mode === 'buy') {
@@ -446,7 +502,133 @@ export function TradePanel({ token }: { token: Token }) {
     }
   };
 
-  const flowLocked = isPending || isConfirming || isAdvancingToTrade;
+  const executeAtomicBuy = async (trade: ReturnType<typeof createTradeIntent>) => {
+    if (!address || trade.mode !== 'buy') return;
+    if (isAmmTrade && (!ammRouter || !token.amm_pair_address)) {
+      setTradeError('AMM trading is not configured for this network yet.');
+      tradeFlowRef.current = false;
+      return;
+    }
+
+    const spender = (isAmmTrade ? ammRouter : token.curve_address) as `0x${string}`;
+    const tradeCall = isAmmTrade
+      ? {
+          to: ammRouter as `0x${string}`,
+          abi: AMM_ROUTER_ABI,
+          functionName: 'swapExactUSDCForTokens' as const,
+          args: [
+            trade.parsedAmount,
+            trade.minOut,
+            BigInt(Math.floor(Date.now() / 1000) + 20 * 60),
+            token.amm_pair_address as `0x${string}`,
+            address,
+          ] as const,
+        }
+      : {
+          to: token.curve_address as `0x${string}`,
+          abi: BONDING_CURVE_ABI,
+          functionName: 'buy' as const,
+          args: [trade.parsedAmount, trade.minOut] as const,
+        };
+
+    let continuedWithFallback = false;
+    try {
+      const result = await sendCallsSyncAsync({
+        account: address,
+        chainId: ARC_CHAIN_ID,
+        forceAtomic: true,
+        throwOnFailure: true,
+        timeout: 120_000,
+        calls: [
+          {
+            to: CONTRACTS.USDC,
+            abi: erc20Abi,
+            functionName: 'approve',
+            args: [spender, trade.parsedAmount],
+          },
+          tradeCall,
+        ],
+      });
+
+      if (result.status !== 'success' || result.atomic !== true) {
+        setTradeError('The wallet did not confirm the atomic buy. No second buy was submitted.');
+        pendingTradeRef.current = null;
+        return;
+      }
+
+      const receipts = result.receipts || [];
+      const finalReceipt = receipts[receipts.length - 1];
+      finalizeTradeSuccess(trade, finalReceipt?.transactionHash || 'atomic');
+      pendingTradeRef.current = null;
+    } catch (error) {
+      if (isUserRejection(error)) {
+        setTradeError('Transaction cancelled in wallet.');
+        pendingTradeRef.current = null;
+        return;
+      }
+      if (isAtomicUnsupported(error)) {
+        setAtomicUnavailableFor(walletCapabilityKey);
+        continuedWithFallback = true;
+        startSequentialApproval(trade);
+        return;
+      }
+      setTradeError('The atomic buy failed. No second buy was submitted; refresh the quote and try again.');
+      pendingTradeRef.current = null;
+    } finally {
+      if (!continuedWithFallback) tradeFlowRef.current = false;
+    }
+  };
+
+  // One Buy click chooses a direct trade, an atomic approval + trade, or a safe fallback.
+  const handleTrade = async () => {
+    if (!address || parsedAmount === 0n || !quote || tradeFlowRef.current) return;
+    if (isAmmTrade && (!ammRouter || !token.amm_pair_address)) {
+      setTradeError('AMM trading is not configured for this network yet.');
+      return;
+    }
+    tradeFlowRef.current = true;
+    setTradeError(null);
+    const trade = createTradeIntent();
+    pendingTradeRef.current = trade;
+
+    if (trade.mode === 'buy' && needsApproval) {
+      if (canAtomicBuy) {
+        await executeAtomicBuy(trade);
+      } else {
+        startSequentialApproval(trade);
+      }
+      return;
+    }
+    executeTrade(trade);
+  };
+
+  // Selling keeps the existing exact-approval flow.
+  const handleApprove = async () => {
+    if (!address || parsedAmount === 0n || tradeFlowRef.current) return;
+    if (isAmmTrade && (!ammRouter || !token.amm_pair_address)) {
+      setTradeError('AMM trading is not configured for this network yet.');
+      return;
+    }
+    tradeFlowRef.current = true;
+    startSequentialApproval(createTradeIntent());
+  };
+
+  const flowLocked = isPending || isConfirming || isAdvancingToTrade || isAtomicPending;
+  const buyValueLabel = Number.isFinite(Number(amount))
+    ? `$${Number(amount).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`
+    : '';
+  const buyButtonLabel = txConfirmed
+    ? `Bought ${token.symbol}`
+    : isAtomicPending || isPending
+      ? 'Confirm in wallet…'
+      : isConfirming || isAdvancingToTrade
+        ? 'Buying…'
+        : quote && parsedAmount > 0n
+          ? `Buy ≈ ${formatTokens(quote)} ${token.symbol} (${buyValueLabel})`
+          : `Buy ${token.symbol}`;
   const approvalAsset = mode === 'buy' ? 'USDC' : token.symbol;
   const approvalAmount = formatUnits(
     parsedAmount,
@@ -463,6 +645,8 @@ export function TradePanel({ token }: { token: Token }) {
     setCurrentTxHash(undefined);
     setTxAction(null);
     setIsAdvancingToTrade(false);
+    pendingTradeRef.current = null;
+    tradeFlowRef.current = false;
     reset();
   }, [isWriteError, writeError, reset]);
 
@@ -476,6 +660,8 @@ export function TradePanel({ token }: { token: Token }) {
     setCurrentTxHash(undefined);
     setTxAction(null);
     setIsAdvancingToTrade(false);
+    pendingTradeRef.current = null;
+    tradeFlowRef.current = false;
     reset();
   }, [
     fallback.failed,
@@ -767,18 +953,6 @@ export function TradePanel({ token }: { token: Token }) {
         >
           {isSwitching ? 'Switching Network…' : `Switch to ${ARC_NETWORK_NAME} (${ARC_CHAIN_ID})`}
         </button>
-      ) : isConfirming && !txConfirmed ? (
-        <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-80">
-          {txAction === 'approve' ? 'Step 1/2: Confirming approval…' : 'Step 2/2: Confirming trade on Arc…'}
-        </button>
-      ) : isAdvancingToTrade ? (
-        <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-80">
-          Step 2/2: Opening trade confirmation…
-        </button>
-      ) : txConfirmed ? (
-        <button disabled className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl bg-emerald-600">
-          ✓ {mode === 'buy' ? 'Bought' : 'Sold'} ${token.symbol}
-        </button>
       ) : buyWouldExceedMaxWallet ? (
         <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-lg opacity-60">
           Reduce buy — legacy wallet limit
@@ -791,11 +965,59 @@ export function TradePanel({ token }: { token: Token }) {
         <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-60">
           Enter amount
         </button>
+      ) : mode === 'buy' ? (
+        <div className="space-y-2">
+          <button
+            onClick={handleTrade}
+            disabled={flowLocked || !quote || txConfirmed}
+            aria-label={`Buy ${token.symbol}`}
+            className="w-full rounded-lg bg-[#9ed6a4] px-4 py-3 text-base font-bold text-[#050505] shadow-sm transition-colors hover:bg-[#8fcd98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4f9f62] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {buyButtonLabel}
+          </button>
+          {isAtomicPending ? (
+            <p className="text-[11px] text-text-muted text-center animate-pulse">
+              Confirm the buy in your wallet.
+            </p>
+          ) : txAction === 'approve' && isPending ? (
+            <p className="text-[11px] text-text-muted text-center animate-pulse">
+              Confirm in your wallet to continue the buy.
+            </p>
+          ) : txAction === 'approve' && isConfirming && !txConfirmed ? (
+            <p className="text-[11px] text-text-muted text-center animate-pulse">
+              Preparing your buy…
+            </p>
+          ) : isAdvancingToTrade ? (
+            <p className="text-[11px] text-text-muted text-center animate-pulse">
+              Opening the buy in your wallet…
+            </p>
+          ) : txAction === 'trade' && (isPending || isConfirming) ? (
+            <p className="text-[11px] text-text-muted text-center animate-pulse">
+              {isPending ? 'Confirm the buy in your wallet.' : 'Buy confirming on Arc…'}
+            </p>
+          ) : txConfirmed ? (
+            <p className="text-[11px] text-emerald-600 text-center font-medium">
+              Buy confirmed on Arc.
+            </p>
+          ) : null}
+        </div>
+      ) : isConfirming && !txConfirmed ? (
+        <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-80">
+          {txAction === 'approve' ? 'Step 1/2: Confirming approval…' : 'Step 2/2: Confirming trade on Arc…'}
+        </button>
+      ) : isAdvancingToTrade ? (
+        <button disabled className="btn-secondary w-full py-3.5 text-sm font-bold rounded-xl opacity-80">
+          Step 2/2: Opening trade confirmation…
+        </button>
+      ) : txConfirmed ? (
+        <button disabled className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl bg-emerald-600">
+          ✓ Sold ${token.symbol}
+        </button>
       ) : needsApproval ? (
         <div className="space-y-2.5">
           <button
             onClick={handleApprove}
-            disabled={isPending || (isAmmTrade && !ammRouter)}
+            disabled={flowLocked || (isAmmTrade && !ammRouter)}
             className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl shadow-sm"
           >
             {isPending
@@ -809,19 +1031,15 @@ export function TradePanel({ token }: { token: Token }) {
       ) : (
         <button
           onClick={handleTrade}
-          disabled={isPending || !quote || (isAmmTrade && !ammRouter)}
+          disabled={flowLocked || !quote || (isAmmTrade && !ammRouter)}
           className="btn-primary w-full py-3.5 text-sm font-bold rounded-xl shadow-sm"
         >
-          {isPending
-            ? 'Confirming in wallet…'
-            : mode === 'buy'
-            ? `BUY ${token.symbol}`
-            : `SELL ${token.symbol}`}
+          {isPending ? 'Confirming in wallet…' : `SELL ${token.symbol}`}
         </button>
       )}
 
         {/* Confirmation indicator */}
-        {isConfirming && !txConfirmed && (
+        {isConfirming && !txConfirmed && mode === 'sell' && (
         <p className="text-xs text-text-muted text-center animate-pulse">
           Confirming on Arc blockchain (~0.5s block time)…
         </p>
