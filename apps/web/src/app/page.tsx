@@ -9,7 +9,7 @@ import { AgentBadge } from '@/components/AgentBadge';
 import { SunnySpotlight } from '@/components/SunnySpotlight';
 import { useTokenEvents } from '@/lib/useWebSocket';
 import { formatUsdDirect, formatMarketCap, tokenEmoji, ipfsToGateway } from '@/lib/utils';
-import { ArrowRight, ArrowUpRight, Robot, Sparkle } from '@phosphor-icons/react';
+import { ArrowRight, ArrowUpRight, Robot } from '@phosphor-icons/react';
 
 type Tab = 'newest' | 'market_cap' | 'volume' | 'graduated';
 
@@ -90,10 +90,6 @@ export default function LandingPage() {
     <div className="space-y-14">
       <section className="grid min-h-[680px] gap-10 border-b border-bg-border py-12 xl:grid-cols-[1.05fr_0.95fr] xl:items-center xl:py-20 animate-fade-in">
         <div className="min-w-0">
-          <div className="mb-6 flex items-center gap-2 text-[11px] font-extrabold tracking-[0.14em] text-accent-green">
-            <Sparkle size={17} weight="fill" />
-            <span>A BRIGHTER KIND OF LAUNCHPAD</span>
-          </div>
           <h1 className="max-w-3xl text-[clamp(3.7rem,7vw,7rem)] leading-[0.86] tracking-[-0.065em] text-accent-blue">
             Make a coin<br />people want to<br /><em className="font-normal text-accent-green">pass around.</em>
           </h1>
@@ -140,9 +136,7 @@ export default function LandingPage() {
       <section>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
           <div>
-            <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-accent-green">Fresh from the bazaar</p>
             <h2 className="text-3xl text-accent-blue">Ideas with good energy.</h2>
-            <p className="text-xs text-text-muted mt-1">Live launches finding their people on Arc</p>
           </div>
           <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Token board sorting">
             {(['newest', 'market_cap', 'volume', 'graduated'] as Tab[]).map((t) => (
@@ -251,7 +245,7 @@ export default function LandingPage() {
         <HowItStep
           num="02"
           title="Price discovery on the curve"
-          desc="Every trade moves a constant-product curve priced in USDC. Market cap starts at $4K and rises as people buy."
+          desc="Every trade moves a constant-product curve priced in USDC."
         />
         <HowItStep
           num="03"

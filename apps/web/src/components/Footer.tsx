@@ -118,10 +118,6 @@ export function Footer() {
             </a>
             .
           </p>
-          <p className="max-w-2xl md:text-right">
-            Orba is an independent project and is not affiliated with or endorsed by
-            Circle Internet Financial. USDC is a registered trademark of Circle.
-          </p>
         </div>
       </div>
     </footer>
