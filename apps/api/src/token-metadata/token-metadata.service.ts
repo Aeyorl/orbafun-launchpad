@@ -60,14 +60,37 @@ function sanitizeTelegram(value: string): string | null {
   return null;
 }
 
-/**
- * Sanitize a Twitter handle. Strip leading @, only allow alphanumeric + underscores.
- */
+/** Accept a handle, @handle, or a profile URL and return the canonical handle. */
 function sanitizeTwitter(value: string): string | null {
-  const trimmed = value.trim().replace(/^@/, '');
-  if (!trimmed || trimmed.length > 50) return null;
-  if (/^[a-zA-Z0-9_]+$/.test(trimmed)) return trimmed;
-  return null;
+  let handle = value.trim();
+  if (!handle) return null;
+
+  if (/^https?:\/\//i.test(handle)) {
+    try {
+      const url = new URL(handle);
+      const hostname = url.hostname.toLowerCase().replace(/^www\./, '');
+      const pathParts = url.pathname.split('/').filter(Boolean);
+      if (
+        (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+        (hostname !== 'x.com' && hostname !== 'twitter.com') ||
+        url.port ||
+        url.username ||
+        url.password ||
+        url.search ||
+        url.hash ||
+        pathParts.length !== 1
+      ) {
+        return null;
+      }
+      handle = decodeURIComponent(pathParts[0]);
+    } catch {
+      return null;
+    }
+  }
+
+  handle = handle.replace(/^@/, '');
+  if (!handle || handle.length > 50) return null;
+  return /^[a-zA-Z0-9_]+$/.test(handle) ? handle : null;
 }
 
 /**
@@ -151,7 +174,9 @@ export class TokenMetadataService {
 
     const twitter = input.twitter ? sanitizeTwitter(input.twitter) : null;
     if (input.twitter && !twitter) {
-      throw new Error('Twitter handle must be alphanumeric (letters, numbers, underscores only)');
+      throw new Error(
+        'Twitter must be a handle, @handle, or an x.com/twitter.com profile URL',
+      );
     }
 
     const telegram = input.telegram ? sanitizeTelegram(input.telegram) : null;
