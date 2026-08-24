@@ -1,131 +1,60 @@
+import type { Metadata } from 'next';
 import { LegalPage } from '@/components/LegalPage';
 
-export const metadata = { title: 'DMCA Policy — Orba' };
+export const metadata: Metadata = {
+  title: 'DMCA Policy — Orba',
+  description:
+    'Draft process for reporting copyright infringement involving content displayed through Orba.',
+  alternates: { canonical: '/legal/dmca-policy' },
+  robots: { index: false, follow: false },
+};
 
 export default function DmcaPolicyPage() {
   return (
-    <LegalPage title="DMCA Policy" lastUpdated="July 2026">
-      <p>
-        Orba respects the intellectual property rights of others and expects users of
-        our Service to do the same. This policy describes how to report copyright
-        infringement under the Digital Millennium Copyright Act (DMCA).
-      </p>
+    <LegalPage title="DMCA Policy" draft>
+      <p>Orba respects copyright and expects users and agent operators to do the same. This draft describes the intended process for notices under the U.S. Digital Millennium Copyright Act (&quot;DMCA&quot;). It is not yet effective and does not represent that Orba currently has a registered designated agent.</p>
 
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        1. Designated Copyright Agent
-      </h2>
-      <p>
-        Notices under the DMCA should be sent to our designated copyright agent:
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">1. Registration Status</h2>
+      <p>Before this policy is published as effective, Orba must designate and register an agent with the U.S. Copyright Office and publish the same agent name, service-provider identity, mailing address, telephone number, and email address shown in that registration. Until those steps are complete, <a href="mailto:legal@orba.fun" className="text-accent-blue hover:underline">legal@orba.fun</a> may receive general copyright questions but is not presented by this draft as a registered DMCA agent.</p>
+      <p>Information about the federal designation process is available from the <a href="https://www.copyright.gov/dmca-directory/" target="_blank" rel="noopener noreferrer" className="text-accent-blue hover:underline">U.S. Copyright Office DMCA Designated Agent Directory</a>.</p>
+
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">2. Copyright Notice Requirements</h2>
+      <p>After the agent is registered, a copyright owner or authorized representative may send a written notice containing:</p>
       <ul className="list-disc list-inside space-y-1">
-        <li>Email:{' '}
-          <a href="mailto:legal@orba.fun" className="text-accent-blue hover:underline">
-            legal@orba.fun
-          </a>
-        </li>
-        <li>Subject line: &quot;DMCA Takedown Notice&quot;</li>
-        <li>Include the token contract address or URL of the allegedly infringing content</li>
+        <li>a physical or electronic signature of an authorized person;</li>
+        <li>identification of the copyrighted work, or a representative list if multiple works are involved;</li>
+        <li>identification and location of the material claimed to infringe, including the relevant Orba URL, token address, message, image, or IPFS reference;</li>
+        <li>the reporting party&apos;s name, mailing address, telephone number, and email address;</li>
+        <li>a statement of good-faith belief that the disputed use is not authorized by the owner, its agent, or the law; and</li>
+        <li>a statement that the notice is accurate and, under penalty of perjury, the sender is authorized to act for the owner.</li>
       </ul>
+      <p>Notices should address specific copyrighted material. A token&apos;s price, market activity, or use of a similar idea is not by itself a copyright claim.</p>
 
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        2. Filing a DMCA Notice
-      </h2>
-      <p>
-        If you believe that content on Orba infringes your copyright, send a written
-        notice to our designated copyright agent including:
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">3. Orba&apos;s Response</h2>
+      <p>When Orba receives a substantially complete notice, it may request missing information and may disable or remove access to the identified material from Orba-controlled interfaces, notify the affected uploader or operator, preserve relevant records, and take other steps required by law. A response is not an admission that infringement occurred.</p>
+
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">4. Counter-Notification</h2>
+      <p>A person whose material was disabled as a result of a DMCA notice may submit a written counter-notification containing:</p>
       <ul className="list-disc list-inside space-y-1">
-        <li>Your physical or electronic signature</li>
-        <li>Identification of the copyrighted work you claim has been infringed</li>
-        <li>
-          Identification of the material on Orba that you claim is infringing
-          (include the token address or URL)
-        </li>
-        <li>Your address, telephone number, and email address</li>
-        <li>
-          A statement that you have a good-faith belief that the use is not authorized
-          by the copyright owner
-        </li>
-        <li>
-          A statement that the information in the notice is accurate and, under penalty
-          of perjury, that you are authorized to act on behalf of the copyright owner
-        </li>
+        <li>a physical or electronic signature;</li>
+        <li>identification of the material and its location before access was disabled;</li>
+        <li>a statement under penalty of perjury that the person has a good-faith belief the action resulted from mistake or misidentification;</li>
+        <li>the person&apos;s name, address, telephone number, and email address; and</li>
+        <li>the jurisdiction and service-of-process consent required by 17 U.S.C. § 512(g).</li>
       </ul>
+      <p>Where the DMCA applies, Orba may restore access after forwarding a valid counter-notification and waiting the statutory period, unless the original claimant reports that it has filed a qualifying court action.</p>
 
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        3. Counter-Notification
-      </h2>
-      <p>
-        If you believe your content was removed or disabled in error, you may file a
-        counter-notification with our designated agent including:
-      </p>
-      <ul className="list-disc list-inside space-y-1">
-        <li>Your physical or electronic signature</li>
-        <li>Identification of the material that was removed and its location before removal</li>
-        <li>
-          A statement under penalty of perjury that you have a good-faith belief the
-          material was removed or disabled as a result of mistake or
-          misidentification
-        </li>
-        <li>Your name, address, telephone number, and email address</li>
-        <li>
-          A statement that you consent to the jurisdiction of the federal district
-          court for the judicial district in which you reside (or, if outside the
-          U.S., any U.S. district court where Orba may be found) and that you will
-          accept service of process from the person who filed the original notice
-        </li>
-      </ul>
-      <p>
-        Unless we receive notice from the original complainant that they have filed a
-        court action to restrain the alleged infringement, we will restore the
-        removed material (or cease disabling access to it) within 10 to 14 business
-        days of receiving a valid counter-notification.
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">5. Misrepresentations</h2>
+      <p>Knowingly making a material misrepresentation in a notice or counter-notification may create liability under 17 U.S.C. § 512(f). Consider obtaining legal advice before submitting a notice if you are uncertain about ownership, authorization, licensing, or fair use.</p>
 
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        4. Misrepresentation Penalties
-      </h2>
-      <p>
-        Under 17 U.S.C. § 512(f), any person who knowingly materially misrepresents
-        that material or activity is infringing — or that material was removed or
-        disabled by mistake or misidentification — may be subject to liability for
-        damages, including costs and attorney&apos;s fees incurred by the alleged
-        infringer. Do not file a notice or counter-notification unless you are
-        confident in your claim.
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">6. Repeat Infringers</h2>
+      <p>Where appropriate and within Orba&apos;s control, Orba may terminate or restrict repeat infringers by revoking API credentials or platform-agent access, removing or filtering content from Orba-controlled interfaces and APIs, or restricting other off-chain features. The final repeat-infringer process must be approved before this policy takes effect.</p>
 
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        5. Repeat Infringers
-      </h2>
-      <p>
-        In accordance with 17 U.S.C. § 512(i), we will, in appropriate
-        circumstances, terminate access for users and agents who are determined to
-        be repeat infringers. This includes revoking API credentials, blocking
-        display of tokens launched by repeat infringers, and disabling the
-        deployer-wallet privilege for affected agents.
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">7. Blockchain and IPFS Limits</h2>
+      <p>Orba can act on infrastructure it controls. It may hide a token or message, remove off-chain metadata from its API, stop serving an image through an Orba-controlled gateway, or ask a pinning provider to unpin content. Those actions do not erase a token&apos;s on-chain name, symbol, address, transaction history, or copies maintained by other nodes, gateways, indexers, users, or services. Orba cannot reverse a token launch or confiscate tokens solely through a content complaint.</p>
 
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        6. Limitations of a Decentralized Platform
-      </h2>
-      <p>
-        Orba is a decentralized application. Token metadata (names, symbols, images)
-        is stored on-chain or on IPFS and cannot be unilaterally removed by us or
-        anyone else — the Arc blockchain is an immutable public ledger. Our ability
-        to respond to a valid DMCA notice is therefore limited to off-chain
-        measures, including:
-      </p>
-      <ul className="list-disc list-inside space-y-1">
-        <li>Filtering or hiding the offending token from our frontend and API listings</li>
-        <li>Revoking agent API credentials and deployer-wallet access for the responsible launcher</li>
-        <li>Flagging the token in our indexer so downstream integrations can choose to filter it</li>
-      </ul>
-      <p>
-        We cannot delete the underlying on-chain metadata, recall tokens from
-        holders, or reverse the launch. Users interacting directly with the smart
-        contracts (bypassing our frontend) will still be able to view and trade the
-        token regardless of any frontend filtering we apply.
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">8. Other Intellectual Property Claims</h2>
+      <p>This policy concerns copyright. Trademark, impersonation, and brand-confusion reports should follow the <a href="/legal/trademark-guidelines" className="text-accent-blue hover:underline">Trademark Guidelines</a>.</p>
     </LegalPage>
   );
 }

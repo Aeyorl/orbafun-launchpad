@@ -1,193 +1,94 @@
+import type { Metadata } from 'next';
 import { LegalPage } from '@/components/LegalPage';
 
-export const metadata = { title: 'Privacy Policy — Orba' };
+export const metadata: Metadata = {
+  title: 'Privacy Policy — Orba',
+  description:
+    'Draft privacy policy explaining how Orba handles wallet, service, device, and public blockchain data.',
+  alternates: { canonical: '/legal/privacy-policy' },
+  robots: { index: false, follow: false },
+};
 
 export default function PrivacyPolicyPage() {
   return (
-    <LegalPage title="Privacy Policy" lastUpdated="July 2026">
+    <LegalPage title="Privacy Policy" draft>
       <p>
-        Orba (&quot;we&quot;, &quot;us&quot;, &quot;our&quot;) is a decentralized
-        application deployed on the Arc blockchain. This privacy policy explains how we
-        handle information when you use our website and services.
+        This draft explains how Orba (&quot;we&quot;, &quot;us&quot;, or
+        &quot;our&quot;) handles information when you visit or use the Orba
+        website, APIs, indexer, agent features, and related services
+        (collectively, the &quot;Service&quot;). It is not yet effective and must
+        be reviewed before Orba launches on mainnet.
       </p>
 
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        1. Information We Do Not Collect
-      </h2>
-      <p>
-        Orba is a non-custodial, decentralized application. We do not collect, store,
-        or process personal information such as your name, email address, or physical
-        address. You interact with our services through a self-custody wallet (e.g.,
-        MetaMask, Rabby, or other EVM-compatible wallets).
-      </p>
-
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        2. On-Chain Data
-      </h2>
-      <p>
-        All transactions you make on Orba are recorded on the Arc blockchain, which is
-        a public, permissionless ledger. Your wallet address, transaction amounts, token
-        launches, and trades are visible to anyone. This data is not controlled by
-        Orba and cannot be deleted by us.
-      </p>
-
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        3. Local Storage &amp; Cookies
-      </h2>
-      <p>
-        We use browser local storage to remember your preferences (e.g., slippage
-        settings, theme). We do not use tracking cookies or third-party analytics that
-        identify you across sites.
-      </p>
-
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        4. RPC Requests
-      </h2>
-      <p>
-        When you read blockchain data (balances, quotes, transaction receipts), your
-        browser sends JSON-RPC requests to Arc RPC providers. These providers may log
-        IP addresses and request metadata per their own privacy policies. We route
-        reads through our own proxy first to minimize direct exposure.
-      </p>
-
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        5. Third-Party Links
-      </h2>
-      <p>
-        Our site may link to third-party services (Circle faucet, Arc docs, Telegram).
-        We are not responsible for the privacy practices of these external sites.
-      </p>
-
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        6. Children&apos;s Privacy
-      </h2>
-      <p>
-        Orba is not directed to individuals under 18. Do not use our services if you
-        are under 18.
-      </p>
-
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        7. Data Retention
-      </h2>
-      <p>
-        We do not maintain user accounts or profiles. Off-chain data we may process
-        (such as server logs for the RPC read proxy, indexer event records, and
-        referral attributions) is retained only as long as necessary to operate the
-        Service. On-chain data (wallet addresses, transaction history, token
-        metadata) is permanent and cannot be erased by us or anyone else.
-      </p>
-
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        8. Third-Party Processors
-      </h2>
-      <p>
-        In the course of operating the Service, your requests may be processed by:
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">1. Information We Handle</h2>
+      <p>Depending on how you use the Service, we may handle:</p>
       <ul className="list-disc list-inside space-y-1">
-        <li>
-          Arc RPC providers (Circle, dRPC, QuickNode, Blockdaemon) — to read
-          blockchain state and broadcast signed transactions
-        </li>
-        <li>
-          IPFS gateways — to retrieve token images and metadata referenced by
-          token launchers
-        </li>
-        <li>
-          Your wallet provider (e.g., MetaMask, Rabby) — which signs and submits
-          transactions on your behalf
-        </li>
+        <li><strong>Wallet and blockchain data:</strong> wallet addresses, transactions, token launches, trades, balances, approvals, tips, and other activity recorded on Arc.</li>
+        <li><strong>Authentication data:</strong> wallet-signature challenges, signatures, nonces, session tokens, and related security records.</li>
+        <li><strong>Service records:</strong> profiles derived from wallet activity, favorites, messages, referral relationships and statistics, token positions, and leaderboard data.</li>
+        <li><strong>Agent records:</strong> agent profiles, operator wallet addresses, hashed API-key records, templates, launches, trades, spend reservations, limits, tips, and operational status.</li>
+        <li><strong>Submitted content:</strong> token descriptions, images, banners, websites, and social links. Images submitted through Orba may be sent to an IPFS pinning provider.</li>
+        <li><strong>Technical data:</strong> IP address, request time, route, browser or device information, RPC requests, error and security logs, and rate-limit records generated when your device communicates with our infrastructure.</li>
       </ul>
-      <p>
-        Each of these third parties has its own privacy practices governing IP
-        addresses, request metadata, and device identifiers. We rotate across
-        multiple RPC providers to reduce concentration of any one party&apos;s logs.
-      </p>
+      <p>We do not ask for your wallet seed phrase or private key. Never provide either one to Orba or to anyone claiming to represent Orba.</p>
 
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        9. Security
-      </h2>
-      <p>
-        We use industry-standard measures to protect the off-chain components of the
-        Service, including TLS in transit, server-side rate limiting, and rotation
-        of provider credentials. However, no system is perfectly secure. You are
-        responsible for safeguarding your wallet&apos;s seed phrase and private keys
-        — loss or compromise of these cannot be reversed by us.
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">2. Public Blockchain Data</h2>
+      <p>Arc is a public blockchain. Wallet addresses and confirmed transactions are visible to anyone and may be copied, indexed, or analyzed by third parties. We do not control the blockchain and cannot correct, erase, or reverse confirmed on-chain activity. A wallet address may be personal data under some laws when it can be linked to a person.</p>
 
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        10. Your Privacy Rights (GDPR &amp; CCPA)
-      </h2>
-      <p>
-        Depending on your jurisdiction (e.g., the EU/EEA under the GDPR, or
-        California under the CCPA/CPRA), you may have rights regarding personal data
-        we hold about you, including the right to access, correct, or delete it,
-        and the right to object to or restrict certain processing.
-      </p>
-      <p>
-        Because Orba is non-custodial and does not collect identity-level personal
-        data, these rights primarily apply to the limited off-chain data described
-        above (server logs, indexer records, referral attributions tied to a wallet
-        address). To exercise these rights, contact us at{' '}
-        <a href="mailto:legal@orba.fun" className="text-accent-blue hover:underline">
-          legal@orba.fun
-        </a>{' '}
-        from the email associated with your inquiry and include the wallet address
-        at issue.
-      </p>
-      <p>
-        Note: We cannot delete or alter on-chain data. Any &quot;deletion&quot; of
-        on-chain activity is impossible by design — the Arc blockchain is an
-        immutable public ledger.
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">3. How We Use Information</h2>
+      <p>We use information to:</p>
+      <ul className="list-disc list-inside space-y-1">
+        <li>operate wallet authentication and requested product features;</li>
+        <li>index and display token, market, profile, referral, and agent activity;</li>
+        <li>process image uploads and display user-submitted token content;</li>
+        <li>protect the Service, enforce limits, prevent abuse, and investigate incidents;</li>
+        <li>maintain reliability, diagnose errors, and measure infrastructure health;</li>
+        <li>comply with law and respond to valid legal requests; and</li>
+        <li>establish, exercise, or defend legal claims.</li>
+      </ul>
+      <p>Where applicable, our legal bases may include providing the Service you request, our legitimate interests in operating and securing it, compliance with legal obligations, and consent where the law requires it.</p>
 
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        11. International Data Transfers
-      </h2>
-      <p>
-        The Service and its third-party processors may be located in jurisdictions
-        other than your own. By using the Service, you acknowledge that your
-        wallet address, IP address, and request metadata may be processed in the
-        United States and other countries with differing data protection laws.
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">4. Browser Storage and Cookies</h2>
+      <p>Orba uses local storage to remember theme and referral information, session storage to preserve an in-progress token launch, and a SameSite theme cookie. Wallet connectors may use their own storage to maintain a connection. These technologies support requested functionality; they are not used by Orba for cross-site behavioral advertising.</p>
 
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        12. Do Not Track Signals
-      </h2>
-      <p>
-        Orba does not respond to browser &quot;Do Not Track&quot; signals because we
-        do not engage in cross-site tracking. We do not use advertising networks,
-        retargeting pixels, or third-party analytics that profile you across the
-        web.
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">5. How Information Is Shared</h2>
+      <p>We disclose information only as needed to operate the Service, comply with law, protect users and infrastructure, or complete a business transition. Providers used for the mainnet Service may include:</p>
+      <ul className="list-disc list-inside space-y-1">
+        <li>Vercel for website hosting and delivery;</li>
+        <li>Render for API hosting;</li>
+        <li>Supabase for PostgreSQL data storage;</li>
+        <li>Upstash for Redis caching, rate limits, and event delivery;</li>
+        <li>Circle, dRPC, QuickNode, and Blockdaemon for Arc RPC access;</li>
+        <li>Pinata and public IPFS gateways for token media;</li>
+        <li>WalletConnect and the wallet provider selected by you; and</li>
+        <li>professional advisers, authorities, or counterparties where reasonably necessary.</li>
+      </ul>
+      <p>This list must be checked against the production provider inventory before publication. Each independent provider may handle IP addresses, device data, wallet addresses, or request metadata under its own terms.</p>
 
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        13. Changes to This Policy
-      </h2>
-      <p>
-        We may update this policy from time to time. Changes will be posted on this
-        page with an updated revision date. Material changes will be reflected in
-        the &quot;Last updated&quot; date above.
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">6. Sale, Sharing, and Advertising</h2>
+      <p>Orba does not sell personal information and does not use personal information for cross-context behavioral advertising. If those practices change, we will update this policy and provide any notices or choices required by law before the change takes effect.</p>
 
-      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">
-        14. Contact
-      </h2>
-      <p>
-        For privacy-related questions or to exercise your data rights, contact us at{' '}
-        <a href="mailto:legal@orba.fun" className="text-accent-blue hover:underline">
-          legal@orba.fun
-        </a>{' '}
-        or via{' '}
-        <a
-          href="https://x.com/orbafun"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-accent-blue hover:underline"
-        >
-          @orbafun
-        </a>
-        .
-      </p>
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">7. Retention</h2>
+      <p>We retain off-chain information for as long as reasonably necessary for the purposes described above. Authentication challenges and transient cache data are short-lived. Security logs may be retained long enough to detect abuse and investigate incidents. Token, trade, referral, agent, message, and profile records may be retained while the Service operates and afterward where needed for security, dispute resolution, legal compliance, or reliable historical market records. Backups may persist for a limited recovery period. Production retention periods must be approved before this draft is published.</p>
+
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">8. Your Choices and Rights</h2>
+      <p>Depending on where you live, you may have rights to know about, access, correct, delete, restrict, object to, or obtain a copy of personal data we control, and to appeal or complain to a regulator. These rights are subject to legal exceptions and do not allow Orba to alter public blockchain data.</p>
+      <p>To make a request, email <a href="mailto:legal@orba.fun" className="text-accent-blue hover:underline">legal@orba.fun</a>. We may ask for reasonable proof that you control the wallet address involved, such as a narrowly worded signature challenge. We will never ask for your seed phrase or private key.</p>
+
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">9. Security</h2>
+      <p>We use technical and organizational measures intended to protect off-chain information, including encrypted transport, access controls, rate limiting, secret management, and monitoring. No system is completely secure. You remain responsible for protecting your wallet, device, recovery phrase, and any API credentials issued to you.</p>
+
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">10. International Transfers</h2>
+      <p>Orba and its providers may process information in the United States and other countries whose privacy laws differ from those where you live. Where required, we will use an appropriate transfer mechanism or other safeguard.</p>
+
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">11. Children</h2>
+      <p>The Service is not directed to anyone under 18, and people under 18 may not use it. Contact us if you believe a minor has provided off-chain personal data.</p>
+
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">12. External Services</h2>
+      <p>The Service may link to wallets, block explorers, faucets, social networks, and other third-party services. Their privacy practices are governed by their own policies, not this policy.</p>
+
+      <h2 className="text-lg font-semibold text-text-primary mt-6 mb-2">13. Changes and Contact</h2>
+      <p>We may update this policy as the Service, providers, or law changes. The final policy will show its effective date. Questions and rights requests may be sent to <a href="mailto:legal@orba.fun" className="text-accent-blue hover:underline">legal@orba.fun</a>.</p>
     </LegalPage>
   );
 }
