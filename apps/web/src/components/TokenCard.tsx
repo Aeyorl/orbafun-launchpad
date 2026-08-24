@@ -8,7 +8,7 @@ import {
   bondingCurveProgress,
   formatMarketCap,
   formatUsdDirect,
-  ipfsToGateway,
+  ipfsGatewayUrls,
   shortenAddress,
   timeAgo,
 } from '@/lib/utils';
@@ -37,7 +37,10 @@ function getSignal(token: Token, progress: number) {
 
 export function TokenCard({ token, featured = false }: { token: Token; featured?: boolean }) {
   const [quickLookOpen, setQuickLookOpen] = useState(false);
-  const [imageFailed, setImageFailed] = useState(false);
+  const [imageAttempt, setImageAttempt] = useState<{ image: string | null; index: number }>({
+    image: token.image,
+    index: 0,
+  });
   const progress = bondingCurveProgress(token.market_cap);
   const signal = getSignal(token, progress);
   const age = timeAgo(token.created_at).replace(/\s+ago$/, '');
@@ -46,10 +49,12 @@ export function TokenCard({ token, featured = false }: { token: Token; featured?
   const creatorLabel = token.is_agent === 'true' && token.agent_name
     ? token.agent_name
     : shortenAddress(token.creator_wallet);
-  const tokenArtwork = useMemo(
-    () => token.image && !imageFailed ? ipfsToGateway(token.image) : fallbackFor(token.symbol),
-    [imageFailed, token.image, token.symbol],
-  );
+  const tokenArtworkSources = useMemo(() => [
+    ...ipfsGatewayUrls(token.image),
+    fallbackFor(token.symbol),
+  ], [token.image, token.symbol]);
+  const imageSourceIndex = imageAttempt.image === token.image ? imageAttempt.index : 0;
+  const tokenArtwork = tokenArtworkSources[Math.min(imageSourceIndex, tokenArtworkSources.length - 1)];
 
   useEffect(() => {
     if (!quickLookOpen) return;
@@ -75,7 +80,12 @@ export function TokenCard({ token, featured = false }: { token: Token; featured?
             <img
               src={tokenArtwork}
               alt={`${token.name} token artwork`}
-              onError={() => setImageFailed(true)}
+              onError={() => {
+                setImageAttempt({
+                  image: token.image,
+                  index: Math.min(imageSourceIndex + 1, tokenArtworkSources.length - 1),
+                });
+              }}
             />
             <span className={styles.imageShade} aria-hidden="true" />
             <span className={styles.signalBadge}>
@@ -120,7 +130,18 @@ export function TokenCard({ token, featured = false }: { token: Token; featured?
               <X size={18} />
             </button>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={tokenArtwork} alt="" width={132} height={132} />
+            <img
+              src={tokenArtwork}
+              alt=""
+              width={132}
+              height={132}
+              onError={() => {
+                setImageAttempt({
+                  image: token.image,
+                  index: Math.min(imageSourceIndex + 1, tokenArtworkSources.length - 1),
+                });
+              }}
+            />
             <div className={styles.quickLookCopy}>
               <span className={styles.quickLabel}>{signal} · {age}</span>
               <h3>{token.name} <small>${token.symbol}</small></h3>

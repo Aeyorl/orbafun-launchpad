@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { UploadSimple } from '@phosphor-icons/react';
-import { ipfsToGateway } from '@/lib/utils';
+import { ipfsGatewayUrls } from '@/lib/utils';
 
 
 /**
@@ -43,13 +43,12 @@ export function ImageUploader({
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [previewState, setPreviewState] = useState<{
+    value: string;
+    preview: string | null;
+    sourceIndex: number;
+  }>({ value, preview: value || null, sourceIndex: 0 });
   const fileInputRef = useRef<HTMLInputElement>(null);
-  // Guards against the preview-sync useEffect overwriting the local blob URL
-  // while an IPFS upload is in progress. Without this, uploading a PFP can
-  // clobber the banner preview (and vice versa) because the parent re-renders
-  // both ImageUploader instances when either one calls onChange.
-  const isUploadingRef = useRef(false);
   // Track the current blob URL so we can revoke it on cleanup or replacement
   // instead of immediately in the upload handler (mobile browsers reclaim
   // revoked blob URLs when the app is backgrounded).
@@ -63,16 +62,11 @@ export function ImageUploader({
       .catch(() => setUploadEnabled(false));
   }, []);
 
-  // Build a display URL for the preview from the current value.
-  // Skip if an upload is in-flight — the local blob preview is more current.
-  useEffect(() => {
-    if (isUploadingRef.current) return;
-    if (!value) {
-      setPreview(null);
-      return;
-    }
-    setPreview(ipfsToGateway(value));
-  }, [value]);
+  // React-recommended derived-state pattern: synchronize a changed controlled
+  // value during render, while preserving the newer local blob during upload.
+  if (!uploading && previewState.value !== value) {
+    setPreviewState({ value, preview: value || null, sourceIndex: 0 });
+  }
 
   // Revoke stale blob URLs on unmount.
   useEffect(() => {
@@ -104,9 +98,8 @@ export function ImageUploader({
       // Show local preview immediately.
       const localUrl = URL.createObjectURL(file);
       blobUrlRef.current = localUrl;
-      setPreview(localUrl);
+      setPreviewState({ value, preview: localUrl, sourceIndex: 0 });
 
-      isUploadingRef.current = true;
       setUploading(true);
       try {
         const form = new FormData();
@@ -119,26 +112,41 @@ export function ImageUploader({
           const body = await res.json().catch(() => ({}));
           throw new Error(body.message || `Upload failed (${res.status})`);
         }
-        const data = await res.json();
-        onChange(data.uri);
+        const data: { uri?: unknown } = await res.json();
+        if (typeof data.uri !== 'string' || !data.uri.trim()) {
+          throw new Error('Upload completed without a valid image URI');
+        }
+        const uri = data.uri.trim();
+        setPreviewState({ value: uri, preview: localUrl, sourceIndex: 0 });
+        onChange(uri);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Upload failed');
-        setPreview(null);
+        setPreviewState({ value, preview: value || null, sourceIndex: 0 });
         // Revoke on error since we won't need this preview.
         if (blobUrlRef.current === localUrl) {
           URL.revokeObjectURL(localUrl);
           blobUrlRef.current = null;
         }
       } finally {
-        isUploadingRef.current = false;
         setUploading(false);
         // Note: we do NOT revoke the blob URL here — mobile browsers reclaim
         // revoked URLs when backgrounded, causing the preview to vanish.
         // Cleanup happens on unmount or when a new file replaces it.
       }
     },
-    [onChange],
+    [onChange, value],
   );
+
+  const preview = previewState.preview;
+  const previewSources = ipfsGatewayUrls(preview);
+  const previewSrc = previewSources[previewState.sourceIndex] || preview || '';
+  const handlePreviewError = () => {
+    if (previewState.sourceIndex + 1 < previewSources.length) {
+      setPreviewState((state) => ({ ...state, sourceIndex: state.sourceIndex + 1 }));
+      return;
+    }
+    setPreviewState((state) => ({ ...state, preview: null, sourceIndex: 0 }));
+  };
 
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -173,14 +181,14 @@ export function ImageUploader({
           <div className="mt-2 flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={preview}
+              src={previewSrc}
               alt="Preview"
               className={
                 shape === 'wide'
                   ? 'w-24 h-12 object-cover bg-bg-input border border-bg-border'
                   : 'w-12 h-12 rounded-full object-cover bg-bg-input'
               }
-              onError={() => setPreview(null)}
+              onError={handlePreviewError}
             />
             <span className="text-xs text-text-muted">Preview</span>
           </div>
@@ -215,14 +223,14 @@ export function ImageUploader({
         <div className={`flex items-center gap-4 ${shape === 'wide' ? 'flex-col items-stretch' : ''}`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={preview}
+            src={previewSrc}
             alt={label}
             className={
               shape === 'wide'
                 ? 'w-full h-32 object-cover bg-bg-input border border-bg-border'
                 : 'w-20 h-20 rounded-full object-cover bg-bg-input border border-bg-border'
             }
-            onError={() => setPreview(null)}
+            onError={handlePreviewError}
           />
           <div className="flex-1 space-y-2">
             <p className="text-xs text-text-muted">
@@ -241,7 +249,7 @@ export function ImageUploader({
                 type="button"
                 onClick={() => {
                   onChange('');
-                  setPreview(null);
+                  setPreviewState({ value: '', preview: null, sourceIndex: 0 });
                 }}
                 disabled={uploading}
                 className="btn-secondary text-xs px-3 py-1"

@@ -111,17 +111,42 @@ export function shortenAddress(addr: string): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
+const DEFAULT_IPFS_GATEWAY = 'https://gateway.pinata.cloud';
+const FALLBACK_IPFS_GATEWAYS = [
+  DEFAULT_IPFS_GATEWAY,
+  'https://dweb.link',
+  'https://ipfs.io',
+];
+
+function gatewayUrl(gateway: string, path: string): string {
+  const base = gateway.trim().replace(/\/+$/, '');
+  return `${base.endsWith('/ipfs') ? base : `${base}/ipfs`}/${path}`;
+}
+
 /**
- * Convert an IPFS URI (ipfs://<cid>) to a browser-loadable gateway URL.
- * Returns the input unchanged if it's already an HTTP(S) URL or empty.
- * Uses ipfs.io as the gateway — reliable and publicly available.
+ * Return browser-loadable sources for an image URI in retry order.
+ *
+ * Uploaded Orba images are pinned with Pinata, so its gateway is the primary
+ * source. Other public gateways are retained as fallbacks for temporary
+ * provider or regional outages. Direct HTTP(S), blob, and data URLs are left
+ * unchanged.
  */
+export function ipfsGatewayUrls(uri: string | null | undefined): string[] {
+  const normalized = uri?.trim();
+  if (!normalized) return [];
+  if (!normalized.startsWith('ipfs://')) return [normalized];
+
+  const path = normalized.slice('ipfs://'.length).replace(/^ipfs\//, '');
+  if (!path) return [];
+
+  const configuredGateway = process.env.NEXT_PUBLIC_IPFS_GATEWAY || DEFAULT_IPFS_GATEWAY;
+  return Array.from(new Set([configuredGateway, ...FALLBACK_IPFS_GATEWAYS]))
+    .map((gateway) => gatewayUrl(gateway, path));
+}
+
+/** Convert an image URI to its preferred browser-loadable source. */
 export function ipfsToGateway(uri: string | null | undefined): string {
-  if (!uri) return '';
-  if (uri.startsWith('ipfs://')) {
-    return uri.replace('ipfs://', 'https://ipfs.io/ipfs/');
-  }
-  return uri;
+  return ipfsGatewayUrls(uri)[0] || '';
 }
 
 /** Format a timestamp relative to now (e.g. "2m ago"). */

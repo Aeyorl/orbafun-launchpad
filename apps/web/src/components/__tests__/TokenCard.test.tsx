@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TokenCard } from '../TokenCard';
 import type { Token } from '@/lib/api';
@@ -70,7 +70,19 @@ describe('TokenCard', () => {
 
   it('uses the supplied token image when present', () => {
     render(<TokenCard token={createMockToken({ image: 'ipfs://QmTest123' })} />);
-    expect(screen.getByRole('img')).toHaveAttribute('src', 'https://ipfs.io/ipfs/QmTest123');
+    expect(screen.getByRole('img')).toHaveAttribute('src', 'https://gateway.pinata.cloud/ipfs/QmTest123');
+  });
+
+  it('tries alternate IPFS gateways before generic artwork', () => {
+    render(<TokenCard token={createMockToken({ image: 'ipfs://QmTest123' })} />);
+    const artwork = screen.getByRole('img');
+
+    fireEvent.error(artwork);
+    expect(artwork).toHaveAttribute('src', 'https://dweb.link/ipfs/QmTest123');
+    fireEvent.error(artwork);
+    expect(artwork).toHaveAttribute('src', 'https://ipfs.io/ipfs/QmTest123');
+    fireEvent.error(artwork);
+    expect(artwork.getAttribute('src')).toMatch(/^\/token-board-lab\//);
   });
 
   it('shows the compact creator and age metadata', () => {
