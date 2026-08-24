@@ -1,7 +1,6 @@
 import { ImageResponse } from 'next/og';
 import type { Token } from '@/lib/api';
 
-export const runtime = 'edge';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -59,7 +58,14 @@ export default async function OgImage({
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <span style={{ fontSize: 72, color: green }}>◆</span>
+            <div
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 9999,
+                background: green,
+              }}
+            />
             <span style={{ fontSize: 64, fontWeight: 800 }}>
               Orba
             </span>
@@ -100,7 +106,14 @@ export default async function OgImage({
       >
         {/* Top bar: brand */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 36, color: green }}>◆</span>
+          <div
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: 9999,
+              background: green,
+            }}
+          />
           <span style={{ fontSize: 32, fontWeight: 700 }}>
             Orba
           </span>

@@ -2,10 +2,21 @@ import { cp, mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import { loadAssetLock, verifyAssetTree } from './tradingview-assets.mjs';
 
 const destination = resolve('public/vendor/tradingview/charting_library');
+const lockPath = resolve('tradingview-assets.lock.json');
+const lock = await loadAssetLock(lockPath);
 const localRepository = process.env.TRADINGVIEW_LIBRARY_PATH?.trim();
 const githubToken = process.env.TRADINGVIEW_GITHUB_TOKEN?.trim();
+const configuredRef = process.env.TRADINGVIEW_LIBRARY_REF?.trim();
+const requireAssets = Boolean(process.env.VERCEL) || process.env.TRADINGVIEW_REQUIRED === 'true';
+
+if (configuredRef && configuredRef !== lock.ref) {
+  throw new Error(
+    `TRADINGVIEW_LIBRARY_REF must match the locked commit ${lock.ref}.`,
+  );
+}
 
 async function isDirectory(path) {
   try {
@@ -21,9 +32,12 @@ async function copyLibrary(repositoryPath) {
     throw new Error(`TradingView charting_library directory not found at ${source}`);
   }
 
+  await verifyAssetTree(source, lock);
+
   await rm(destination, { recursive: true, force: true });
   await mkdir(destination, { recursive: true });
   await cp(source, destination, { recursive: true });
+  await verifyAssetTree(destination, lock);
 }
 
 function runGit(args, env) {
@@ -39,7 +53,7 @@ function runGit(args, env) {
 
 async function cloneWithToken() {
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'orba-tradingview-'));
-  const clonePath = join(temporaryRoot, 'charting_library');
+  const clonePath = join(temporaryRoot, 'repository');
   const authorization = Buffer.from(`x-access-token:${githubToken}`).toString('base64');
   const gitEnvironment = {
     ...process.env,
@@ -50,14 +64,12 @@ async function cloneWithToken() {
   };
 
   try {
+    await mkdir(clonePath);
+    await runGit(['-C', clonePath, 'init'], gitEnvironment);
+    await runGit(['-C', clonePath, 'remote', 'add', 'origin', lock.repository], gitEnvironment);
+    await runGit(['-C', clonePath, 'fetch', '--depth=1', 'origin', lock.ref], gitEnvironment);
     await runGit(
-      [
-        'clone',
-        '--depth=1',
-        '--filter=blob:none',
-        'https://github.com/tradingview/charting_library.git',
-        clonePath,
-      ],
+      ['-C', clonePath, '-c', 'advice.detachedHead=false', 'checkout', '--detach', 'FETCH_HEAD'],
       gitEnvironment,
     );
     await copyLibrary(clonePath);
@@ -68,18 +80,19 @@ async function cloneWithToken() {
 
 if (localRepository) {
   await copyLibrary(resolve(localRepository));
-  console.log('TradingView Advanced Charts assets copied from the local licensed repository.');
+  console.log(`TradingView Advanced Charts assets verified at ${lock.ref} from the local repository.`);
 } else if (githubToken) {
   await cloneWithToken();
-  console.log('TradingView Advanced Charts assets fetched from the private licensed repository.');
+  console.log(`TradingView Advanced Charts assets fetched and verified at ${lock.ref}.`);
 } else if (await isDirectory(destination)) {
-  console.log('Using existing local TradingView Advanced Charts assets.');
-} else if (process.env.VERCEL) {
+  await verifyAssetTree(destination, lock);
+  console.log(`Using verified local TradingView Advanced Charts assets at ${lock.ref}.`);
+} else if (requireAssets) {
   throw new Error(
-    'TRADINGVIEW_GITHUB_TOKEN is required for Vercel builds. Configure a read-only token as a Sensitive Environment Variable.',
+    'Verified TradingView Advanced Charts assets are required. Configure TRADINGVIEW_LIBRARY_PATH or a read-only TRADINGVIEW_GITHUB_TOKEN.',
   );
 } else {
-  console.warn(
-    'TradingView Advanced Charts assets are unavailable; the app will use its Lightweight Charts fallback.',
+  console.info(
+    'TradingView Advanced Charts assets were not prepared; using the Lightweight Charts fallback. Set TRADINGVIEW_LIBRARY_PATH to a licensed checkout to enable Advanced Charts locally.',
   );
 }

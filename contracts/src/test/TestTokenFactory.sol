@@ -82,14 +82,15 @@ contract TestTokenFactory is Ownable {
     /// @param name Token name (e.g. "Arc Doge")
     /// @param symbol Token symbol (e.g. "ADOGE")
     /// @param imageURI IPFS URI for token logo
-    /// @param description Token description (stored off-chain by indexer)
+    /// @dev The fourth string argument is the token description. It is stored
+    ///      off-chain by the API and intentionally omitted from contract state.
     /// @return tokenAddress Address of the deployed MemeToken
     /// @return curveAddress Address of the deployed BondingCurve
     function createToken(
         string calldata name,
         string calldata symbol,
         string calldata imageURI,
-        string calldata description // stored off-chain by indexer, not on-chain (gas)
+        string calldata // description is stored off-chain by the API, not in contract state
     ) external returns (address tokenAddress, address curveAddress) {
         if (paused) revert FactoryPaused();
 

@@ -1,6 +1,5 @@
 import { ImageResponse } from 'next/og';
 
-export const runtime = 'edge';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -25,7 +24,14 @@ export default function OgImage() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <span style={{ fontSize: 80, color: '#00ff9d' }}>◆</span>
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 9999,
+              background: '#00ff9d',
+            }}
+          />
           <span style={{ fontSize: 72, fontWeight: 800 }}>
             Orba
           </span>
