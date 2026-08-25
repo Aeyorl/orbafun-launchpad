@@ -13,6 +13,10 @@ function normalizeRelativePath(path) {
   return path.split(sep).join('/');
 }
 
+function normalizeContents(contents) {
+  return Buffer.from(contents.toString('binary').replaceAll('\r\n', '\n'), 'binary');
+}
+
 async function listFiles(root, directory = root) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];
@@ -43,7 +47,7 @@ export async function hashAssetTree(rootPath) {
   const aggregate = createHash('sha256');
 
   for (const file of files) {
-    const contents = await readFile(file.absolutePath);
+    const contents = normalizeContents(await readFile(file.absolutePath));
     const digest = createHash('sha256').update(contents).digest('hex');
     aggregate.update(`${file.relativePath}\0${contents.byteLength}\0${digest}\n`);
   }

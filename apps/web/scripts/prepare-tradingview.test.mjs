@@ -27,6 +27,18 @@ test('hashAssetTree is stable for an unchanged asset tree', async () => {
   }
 });
 
+test('hashAssetTree is stable across platform line endings', async () => {
+  const root = await fixture();
+  try {
+    await writeFile(join(root, 'bundles', 'runtime.js'), 'first\nsecond\n');
+    const lf = await hashAssetTree(root);
+    await writeFile(join(root, 'bundles', 'runtime.js'), 'first\r\nsecond\r\n');
+    assert.deepEqual(await hashAssetTree(root), lf);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test('verifyAssetTree accepts the locked tree and rejects tampering', async () => {
   const root = await fixture();
   try {
