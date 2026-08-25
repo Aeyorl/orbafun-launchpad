@@ -261,7 +261,7 @@ contract ArcIntegrationTest is Test {
         // Buy tokens as deployer, transfer to blocklisted address.
         uint256 tokensOut = buyAs(deployer, 10 * 10 ** 6);
         vm.prank(deployer);
-        tokenContract.transfer(BLOCKLISTED, tokensOut);
+        assertTrue(tokenContract.transfer(BLOCKLISTED, tokensOut), "fund blocklisted wallet");
 
         // Make MockUSDC block transfers TO the blocklisted address
         // (simulating Arc's runtime blocklist enforcement).
@@ -295,14 +295,14 @@ contract ArcIntegrationTest is Test {
 
         // Transfer tokens to 0x...dEaD (simulating a burn).
         vm.prank(deployer);
-        tokenContract.transfer(DEAD, tokensOut);
+        assertTrue(tokenContract.transfer(DEAD, tokensOut), "token burn transfer");
 
         // Verify the dead address holds the tokens.
         assertEq(tokenContract.balanceOf(DEAD), tokensOut, "tokens at 0x...dEaD");
 
         // Also test USDC transfer to 0x...dEaD (should work — it's a valid address).
         vm.prank(deployer);
-        usdc.transfer(DEAD, 1 * 10 ** 6); // 1 USDC
+        assertTrue(usdc.transfer(DEAD, 1 * 10 ** 6), "USDC burn transfer"); // 1 USDC
 
         assertGt(usdc.balanceOf(DEAD), 0, "USDC at 0x...dEaD");
     }
@@ -312,14 +312,13 @@ contract ArcIntegrationTest is Test {
     /// @notice Full lifecycle: create → buy to graduation → migrate to AMM → LP burned.
     /// @dev This is the most important integration test — verifies the entire
     ///      graduation flow works against real Arc state. Uses many wallets to
-    ///      stay under the 4% max-wallet limit.
+    ///      exercise repeated buys from independent test actors.
     function test_FullGraduationE2E() public {
         launchToken();
 
         console.log("Initial market cap:", curveContract.marketCap());
 
-        // Buy from many wallets (max-wallet = 4% = 40M tokens per wallet).
-        // $50 USDC per wallet is always under max-wallet at any price.
+        // Buy from multiple wallets to exercise the integration path.
         // Need ~$8,800 USDC total → but deployer only has ~60 USDC.
         // We'll mint USDC to test wallets (on the fork, we can cheat).
         // Actually, we can't mint real USDC — but we can use vm.deal for native

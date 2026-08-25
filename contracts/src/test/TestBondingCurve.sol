@@ -315,9 +315,8 @@ contract TestBondingCurve is ReentrancyGuard {
 
         graduated = true;
 
-        // Mark token as graduated FIRST — this disables max-wallet and cooldown
-        // on the token, so the large transfer of reserved tokens to the migrator
-        // is not blocked by the max-wallet check.
+        // Mark token as graduated first. This disables the pre-graduation
+        // transfer cooldown before reserved liquidity moves to the migrator.
         token.graduate(ammPair);
 
         // Transfer reserved tokens (12%) to the migrator for AMM liquidity.

@@ -628,7 +628,7 @@ async function main() {
   );
   console.log(`    Token bondingCurve: ${tokenBondingCurve}`);
   if (tokenBondingCurve === '0x0000000000000000000000000000000000000000') {
-    console.log('    ✓ PASS: bondingCurve zeroed (max-wallet + cooldown disabled)');
+    console.log('    ✓ PASS: bondingCurve zeroed (cooldown disabled)');
   } else {
     console.log(`    ✗ FAIL: bondingCurve is ${tokenBondingCurve} (expected zero)`);
     allPass = false;

@@ -135,7 +135,11 @@ contract AMMPair is ERC20, ReentrancyGuard {
     // ─── Internal ───────────────────────────────────────────────────────────
     function _update(uint256 balance0, uint256 balance1) internal {
         if (balance0 > type(uint112).max || balance1 > type(uint112).max) revert InsufficientLiquidity();
+        // Bounds are checked immediately above.
+        // forge-lint: disable-next-line(unsafe-typecast)
         reserve0 = uint112(balance0);
+        // Bounds are checked immediately above.
+        // forge-lint: disable-next-line(unsafe-typecast)
         reserve1 = uint112(balance1);
         blockTimestampLast = uint32(block.timestamp);
         emit Sync(reserve0, reserve1);

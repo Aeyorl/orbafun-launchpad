@@ -6,7 +6,12 @@ databases, Redis databases, signing keys or API secrets.
 
 ## Release gates
 
-1. Circle publishes final Arc mainnet RPC, explorer, chain and USDC parameters.
+As checked on 2026-08-25, Circle's official documentation says Arc is available
+on testnet only. This runbook cannot be executed until that status changes.
+
+1. Circle publishes final Arc mainnet RPC, explorer, chain and USDC parameters;
+   two reviewers record the official sources and set
+   `ARC_MAINNET_PARAMETERS_APPROVED=true` only after matching them independently.
 2. Contract source is frozen and the external audit plus remediation review are
    complete against the exact release commit.
 3. All contract, API, web, E2E, graduation and load tests pass from that commit.
@@ -16,6 +21,8 @@ databases, Redis databases, signing keys or API secrets.
 6. The Safe controls `ProtocolTimelock`; the timelock owns Treasury, Factory,
    AMMFactory and LiquidityMigration. The Safe is only the factory pause guardian.
 7. `npm run mainnet:check` passes against the proposed production environment.
+8. A mainnet-only deployment script with explicit chain and USDC code guards is
+   reviewed against the final official parameters; testnet scripts are not reused.
 
 ## Deployment ceremony
 

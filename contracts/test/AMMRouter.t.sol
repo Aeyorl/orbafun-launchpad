@@ -46,8 +46,8 @@ contract AMMRouterTest is Test {
         // Seed liquidity: 1000 USDC + 1,000,000 tokens.
         usdc.mint(address(this), 1000 * 10 ** 6);
         token.mint(address(this), 1_000_000 * 10 ** 18);
-        usdc.transfer(pairAddr, 1000 * 10 ** 6);
-        token.transfer(pairAddr, 1_000_000 * 10 ** 18);
+        assertTrue(usdc.transfer(pairAddr, 1000 * 10 ** 6), "USDC liquidity transfer");
+        assertTrue(token.transfer(pairAddr, 1_000_000 * 10 ** 18), "token liquidity transfer");
         pair.mint(address(this));
 
         // Fund swappers with USDC + tokens.

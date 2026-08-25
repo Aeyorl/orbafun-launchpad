@@ -28,8 +28,8 @@
  *   - Deployer wallet has enough USDC for each buy plus the configurable gas buffer
  *
  * Safety:
- *   - Uses small buy amounts to stay well under max-wallet (4% of supply)
- *   - Each buyer is a fresh wallet, so no single wallet hits max-wallet
+ *   - Uses small buy amounts to limit test cost and individual price impact
+ *   - Each buyer is a fresh wallet to exercise independent approvals/nonces
  *   - 5% slippage tolerance on each buy
  *   - Idempotent: can re-run against the same curve (buys just add to tokensSold)
  */

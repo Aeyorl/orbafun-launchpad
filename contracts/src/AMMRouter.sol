@@ -68,6 +68,8 @@ contract AMMRouter {
     ) external returns (uint256 amountOut) {
         if (to == address(0)) revert ZeroAddress();
         if (amountIn == 0) revert InsufficientOutputAmount();
+        // A timestamp deadline is the intended stale-quote boundary.
+        // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > deadline) revert Expired();
         _validatePair(pair);
 
@@ -100,6 +102,8 @@ contract AMMRouter {
     ) external returns (uint256 amountOut) {
         if (to == address(0)) revert ZeroAddress();
         if (amountIn == 0) revert InsufficientOutputAmount();
+        // A timestamp deadline is the intended stale-quote boundary.
+        // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp > deadline) revert Expired();
 
         address tokenIn = _validatePair(pair);

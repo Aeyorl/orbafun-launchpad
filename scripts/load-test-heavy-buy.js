@@ -152,7 +152,7 @@ async function main() {
     console.error(`  ✗ Quote exceeds max wallet limit — would revert`);
     process.exit(1);
   }
-  console.log(`  ✓ Within max wallet limit`);
+  if (maxWallet !== null) console.log('  ✓ Within legacy max wallet limit');
   console.log('');
 
   // Execute buy

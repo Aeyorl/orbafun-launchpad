@@ -52,7 +52,7 @@ function requireSecureUrl(name, value, protocol) {
   }
 }
 
-requireExact('ARC_CHAIN_ID', '5042');
+requireExact('ARC_MAINNET_PARAMETERS_APPROVED', 'true');
 requireExact('AUTH_ALLOW_INSECURE', 'false');
 requireExact('DEPLOYER_ACTIONS_ENABLED', 'false');
 requireExact('DEPLOYER_SIGNER_PROVIDER', 'aws-kms');
@@ -148,11 +148,23 @@ async function rpc(method, params) {
 }
 
 async function main() {
+  const configuredChainId = Number.parseInt(process.env.ARC_CHAIN_ID || '', 10);
+  if (!Number.isSafeInteger(configuredChainId) || configuredChainId <= 0) {
+    errors.push('ARC_CHAIN_ID must be a positive integer');
+  } else if (configuredChainId === 5_042_002) {
+    errors.push('ARC_CHAIN_ID still points to Arc Testnet');
+  }
+
   if (rpcUrls) {
     try {
       const chainId = Number.parseInt(await rpc('eth_chainId', []), 16);
-      if (chainId !== 5042) errors.push(`RPC returned chain ID ${chainId}, expected 5042`);
-      else checks.push('RPC chain ID is 5042');
+      if (chainId !== configuredChainId) {
+        errors.push(
+          `RPC returned chain ID ${chainId}, expected configured ARC_CHAIN_ID ${configuredChainId}`,
+        );
+      } else {
+        checks.push(`RPC chain ID matches configured ARC_CHAIN_ID ${configuredChainId}`);
+      }
 
       const contracts = [
         ['TOKEN_FACTORY', 'ARC_TOKEN_FACTORY_ADDRESS'],

@@ -2,9 +2,8 @@
 pragma solidity ^0.8.26;
 
 /// @title MockToken
-/// @notice Plain ERC-20 with public mint, for AMM router tests. No cooldown,
-///         no max-wallet — those are bonding-curve-phase restrictions on
-///         MemeToken, not relevant to AMM (post-graduation) swap testing.
+/// @notice Plain ERC-20 with public mint, for AMM router tests. It omits the
+///         pre-graduation transfer cooldown used by MemeToken.
 import {ERC20} from "solady/tokens/ERC20.sol";
 
 contract MockToken is ERC20 {

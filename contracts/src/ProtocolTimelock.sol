@@ -91,6 +91,8 @@ contract ProtocolTimelock {
         bytes32 operationId = hashOperation(target, value, data, salt);
         uint64 eta = readyAt[operationId];
         if (eta == 0) revert OperationNotQueued();
+        // Validator timestamp tolerance is negligible relative to the 24-hour minimum delay.
+        // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < eta) revert OperationNotReady();
         delete readyAt[operationId];
         executing = true;

@@ -239,12 +239,14 @@ contract BondingCurveTest is Test {
 
         // First transfer (no cooldown yet — lastTxBlock is 0).
         vm.startPrank(buyer1);
-        tokenContract.transfer(buyer2, tokensOut / 2);
+        assertTrue(tokenContract.transfer(buyer2, tokensOut / 2), "first cooldown transfer");
         vm.stopPrank();
 
         // Second transfer in same block → cooldown active.
         vm.startPrank(buyer1);
         vm.expectRevert(); // CooldownActive
+        // The expected revert means there is no boolean result to assert.
+        // forge-lint: disable-next-line(erc20-unchecked-transfer)
         tokenContract.transfer(buyer2, tokensOut / 2);
         vm.stopPrank();
 
@@ -253,7 +255,7 @@ contract BondingCurveTest is Test {
 
         // Now transfer succeeds.
         vm.startPrank(buyer1);
-        tokenContract.transfer(buyer2, tokensOut / 2);
+        assertTrue(tokenContract.transfer(buyer2, tokensOut / 2), "post-cooldown transfer");
         vm.stopPrank();
     }
 
@@ -305,8 +307,7 @@ contract BondingCurveTest is Test {
         // Deploy a token + USDC pair.
         launchToken();
 
-        // Buy tokens from the curve (under max-wallet limit: 4% = 40M tokens).
-        // At ~$4K market cap, $150 USDC buys ~37M tokens (under 40M limit).
+        // Buy tokens from the curve for the AMM liquidity test.
         uint256 tokensForLiq = buy(address(this), 150 * 10 ** 6);
 
         // Create pair.
@@ -316,8 +317,8 @@ contract BondingCurveTest is Test {
         // Add liquidity: 100 USDC + half the bought tokens.
         uint256 liqUsdc = 100 * 10 ** 6;
         uint256 liqTokens = tokensForLiq / 2;
-        usdc.transfer(pair, liqUsdc);
-        tokenContract.transfer(pair, liqTokens);
+        assertTrue(usdc.transfer(pair, liqUsdc), "USDC liquidity transfer");
+        assertTrue(tokenContract.transfer(pair, liqTokens), "token liquidity transfer");
         uint256 lp = AMMPair(pair).mint(address(this));
         assertGt(lp, 0, "LP minted");
 
@@ -328,7 +329,7 @@ contract BondingCurveTest is Test {
         uint256 tokenReserve = usdcIsToken0 ? reserve1 : reserve0;
 
         uint256 swapAmount = 10 * 10 ** 6;
-        usdc.transfer(pair, swapAmount);
+        assertTrue(usdc.transfer(pair, swapAmount), "swap input transfer");
         uint256 expectedOut = (swapAmount * tokenReserve) / (usdcReserve + swapAmount);
         if (usdcIsToken0) {
             AMMPair(pair).swap(0, expectedOut, address(this));
@@ -347,17 +348,18 @@ contract BondingCurveTest is Test {
         // into this token's AMM liquidity.
         uint256 donatedUsdc = 7 * 10 ** 6;
         uint256 donatedTokens = 1 * 10 ** 18;
-        usdc.transfer(address(migrator), donatedUsdc);
+        assertTrue(usdc.transfer(address(migrator), donatedUsdc), "donated USDC transfer");
         buy(buyer1, 10 * 10 ** 6);
         vm.prank(buyer1);
-        tokenContract.transfer(address(migrator), donatedTokens);
+        assertTrue(
+            tokenContract.transfer(address(migrator), donatedTokens), "donated token transfer"
+        );
 
-        // Buy from many wallets (max-wallet limits each to 4% = 40M tokens).
-        // $100 USDC per wallet is always under max-wallet at any price point:
-        //   - At $4K mcap: $100 buys ~25M tokens (< 40M limit ✓)
-        //   - At $25K mcap: $100 buys ~4M tokens (< 40M limit ✓)
-        // Need ~$8,800 USDC total to reach graduation → 100 wallets at $100 = $10K.
+        // Use multiple funded wallets to exercise repeated buys and reach the
+        // graduation threshold without relying on one test actor.
         for (uint256 i = 0; i < 100 && !curveContract.graduated(); i++) {
+            // Test indices are bounded to 100 and therefore fit uint160.
+            // forge-lint: disable-next-line(unsafe-typecast)
             address w = address(uint160(0x20000 + i));
             usdc.mint(w, 200 * 10 ** 6);
 
@@ -401,6 +403,8 @@ contract BondingCurveTest is Test {
         launchToken();
 
         for (uint256 i = 0; i < 100 && !curveContract.graduated(); i++) {
+            // Test indices are bounded by the loop and therefore fit uint160.
+            // forge-lint: disable-next-line(unsafe-typecast)
             address buyer = address(uint160(0x30000 + i));
             usdc.mint(buyer, 200 * 10 ** 6);
             buy(buyer, 100 * 10 ** 6);
