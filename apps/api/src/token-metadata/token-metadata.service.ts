@@ -8,7 +8,6 @@ export interface TokenMetadata {
   twitter: string | null;
   telegram: string | null;
   discord: string | null;
-  description: string | null;
   banner: string | null;
   updated_at: string;
 }
@@ -18,12 +17,10 @@ export interface TokenMetadataInput {
   twitter?: string;
   telegram?: string;
   discord?: string;
-  description?: string;
   banner?: string;
 }
 
 const MAX_URL_LENGTH = 200;
-const MAX_DESCRIPTION_LENGTH = 500;
 const MAX_BANNER_LENGTH = 200;
 
 /**
@@ -135,7 +132,7 @@ export class TokenMetadataService {
     const addr = tokenAddress.toLowerCase();
     const row = await this.db.queryOne<TokenMetadata>(
       `SELECT tm.token_address, tm.website, tm.twitter, tm.telegram, tm.discord,
-              tm.description, tm.banner, tm.updated_at
+              tm.banner, tm.updated_at
        FROM token_metadata tm
        JOIN tokens t ON t.contract_address = tm.token_address
        WHERE tm.token_address = $1 AND ${publicFactoryClause('t', 2)}`,
@@ -165,6 +162,9 @@ export class TokenMetadataService {
     if (token.creator_wallet.toLowerCase() !== creator) {
       throw new Error('Only the token creator can update metadata');
     }
+    if (Object.prototype.hasOwnProperty.call(input, 'description')) {
+      throw new Error('The original launch description is immutable');
+    }
 
     // Validate and sanitize all fields.
     const website = input.website?.trim() || null;
@@ -189,11 +189,6 @@ export class TokenMetadataService {
       throw new Error('Discord must be a valid http:// or https:// URL');
     }
 
-    const description = input.description?.trim() || null;
-    if (description && description.length > MAX_DESCRIPTION_LENGTH) {
-      throw new Error(`Description must be ${MAX_DESCRIPTION_LENGTH} characters or less`);
-    }
-
     const banner = input.banner ? sanitizeImageUri(input.banner, MAX_BANNER_LENGTH) : null;
     if (input.banner && !banner) {
       throw new Error('Banner must be a valid ipfs:// URI or http(s):// URL');
@@ -201,19 +196,18 @@ export class TokenMetadataService {
 
     // Upsert.
     const result = await this.db.queryOne<TokenMetadata>(
-      `INSERT INTO token_metadata (token_address, website, twitter, telegram, discord, description, banner, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      `INSERT INTO token_metadata (token_address, website, twitter, telegram, discord, banner, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, NOW())
        ON CONFLICT (token_address)
        DO UPDATE SET
          website = EXCLUDED.website,
          twitter = EXCLUDED.twitter,
          telegram = EXCLUDED.telegram,
          discord = EXCLUDED.discord,
-         description = EXCLUDED.description,
          banner = EXCLUDED.banner,
          updated_at = NOW()
-       RETURNING token_address, website, twitter, telegram, discord, description, banner, updated_at`,
-      [addr, website, twitter, telegram, discord, description, banner],
+       RETURNING token_address, website, twitter, telegram, discord, banner, updated_at`,
+      [addr, website, twitter, telegram, discord, banner],
     );
     return result!;
   }

@@ -186,7 +186,6 @@ export interface TokenMetadata {
   twitter: string | null;
   telegram: string | null;
   discord: string | null;
-  description: string | null;
   banner: string | null;
 }
 
@@ -353,7 +352,7 @@ export const api = {
     }
   },
 
-  // Token metadata (social links, website, description)
+  // Editable token metadata (social links, website, artwork)
   getTokenMetadata: async (address: string): Promise<TokenMetadata> => {
     const res = await fetch(`${API_URL}/tokens/${address.toLowerCase()}/metadata`, {
       next: { revalidate: 30 },

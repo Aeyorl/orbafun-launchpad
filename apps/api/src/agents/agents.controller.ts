@@ -189,7 +189,7 @@ export class AgentsController {
   /**
    * POST /agents/tokens/:address/metadata
    * Update metadata for a token the agent has launched.
-   * Body: { website?, twitter?, telegram?, discord?, description? }
+   * Body: { website?, twitter?, telegram?, discord? }
    */
   @Post('tokens/:address/metadata')
   @Throttle({ default: { ttl: 60_000, limit: 10 } })

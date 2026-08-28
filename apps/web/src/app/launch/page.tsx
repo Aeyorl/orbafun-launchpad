@@ -174,7 +174,6 @@ export default function LaunchPage() {
       return null;
     }
     const validation = validateLaunchMetadata({
-      description,
       banner,
       website,
       twitter,
@@ -308,7 +307,7 @@ export default function LaunchPage() {
       const hasMetadata = Object.values(metadata).some(Boolean);
 
       if (hasMetadata) {
-        toast.loading('Saving token description, image and social links…', { id: 'metadata' });
+        toast.loading('Saving token image and social links…', { id: 'metadata' });
         try {
           if (!address) throw new Error('Wallet disconnected before token metadata was saved');
           const authToken = await recoverLaunchMetadataAuth(getAuthToken, authenticate);
@@ -326,11 +325,11 @@ export default function LaunchPage() {
             ['token-metadata', tokenAddress.toLowerCase()],
             savedMetadata,
           );
-          toast.success('Token description, image and social links saved', { id: 'metadata' });
+          toast.success('Token image and social links saved', { id: 'metadata' });
         } catch (err) {
           console.error('Failed to save token metadata after launch:', err);
           toast.error(
-            'Token launched, but its description/image/socials could not be saved. Open Token Info & About to retry.',
+            'Token launched, but its image/socials could not be saved. Open Token Info & About to retry.',
             { id: 'metadata', duration: 12_000 },
           );
         }

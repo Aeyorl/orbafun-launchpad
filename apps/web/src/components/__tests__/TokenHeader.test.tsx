@@ -57,7 +57,6 @@ const metadata: TokenMetadata = {
   twitter: '@orbafun',
   telegram: 'orbafun',
   discord: 'https://discord.gg/orba',
-  description: null,
   banner: null,
 };
 

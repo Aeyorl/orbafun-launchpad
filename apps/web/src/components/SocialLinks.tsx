@@ -15,6 +15,11 @@ import {
 import { api, TokenMetadata } from '@/lib/api';
 import { useAuth } from '@/lib/use-auth';
 
+type EditableTokenMetadata = Pick<
+  TokenMetadata,
+  'website' | 'twitter' | 'telegram' | 'discord'
+>;
+
 function safeHref(url: string): string | null {
   if (!url) return null;
   try {
@@ -40,13 +45,14 @@ export function SocialLinks({
   const { address } = useAccount();
   const { getAuthToken, authenticate } = useAuth();
   const queryClient = useQueryClient();
+  const metadataQueryKey = ['token-metadata', tokenAddress.toLowerCase()] as const;
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<Partial<TokenMetadata>>({});
+  const [form, setForm] = useState<Partial<EditableTokenMetadata>>({});
 
   const isCreator = address?.toLowerCase() === creatorWallet.toLowerCase();
   const { data: meta } = useQuery({
-    queryKey: ['token-metadata', tokenAddress],
+    queryKey: metadataQueryKey,
     queryFn: () => api.getTokenMetadata(tokenAddress),
     staleTime: 30_000,
   });
@@ -59,7 +65,6 @@ export function SocialLinks({
       twitter: meta?.twitter || '',
       telegram: meta?.telegram || '',
       discord: meta?.discord || '',
-      description: meta?.description || '',
     });
     setEditing(true);
   };
@@ -79,8 +84,8 @@ export function SocialLinks({
 
     setSaving(true);
     try {
-      await api.setTokenMetadata(tokenAddress, address, form, token);
-      await queryClient.invalidateQueries({ queryKey: ['token-metadata', tokenAddress] });
+      const saved = await api.setTokenMetadata(tokenAddress, address, form, token);
+      queryClient.setQueryData(metadataQueryKey, saved);
       toast.success('Social links updated');
       setEditing(false);
     } catch (error) {
@@ -100,17 +105,6 @@ export function SocialLinks({
           <SocialInput label="X / Twitter" value={form.twitter || ''} placeholder="handle" onChange={(twitter) => setForm({ ...form, twitter })} />
           <SocialInput label="Telegram" value={form.telegram || ''} placeholder="https://t.me/group" onChange={(telegram) => setForm({ ...form, telegram })} />
           <SocialInput label="Discord" value={form.discord || ''} placeholder="https://discord.gg/invite" onChange={(discord) => setForm({ ...form, discord })} />
-          <label className="sm:col-span-2">
-            <span className="mb-1 block text-xs text-text-muted">About</span>
-            <textarea
-              className="input-field"
-              rows={3}
-              maxLength={500}
-              placeholder="Tell people about this token"
-              value={form.description || ''}
-              onChange={(event) => setForm({ ...form, description: event.target.value })}
-            />
-          </label>
         </div>
         <div className="mt-3 flex gap-2">
           <button type="button" onClick={save} disabled={saving} className="btn-primary text-sm">
@@ -182,7 +176,6 @@ export function SocialLinks({
         <h3 className="font-semibold">Socials</h3>
       </div>
       <div className="flex flex-wrap items-center gap-2">{content}</div>
-      {meta?.description && <p className="mt-3 text-sm text-text-secondary">{meta.description}</p>}
     </div>
   );
 }

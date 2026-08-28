@@ -4,7 +4,7 @@ export const LAUNCH_METADATA_SAVE_ATTEMPTS = 8;
 
 type LaunchMetadataFields = Pick<
   TokenMetadata,
-  'banner' | 'website' | 'twitter' | 'telegram' | 'discord' | 'description'
+  'banner' | 'website' | 'twitter' | 'telegram' | 'discord'
 >;
 
 export interface LaunchMetadataValidation {
@@ -58,16 +58,12 @@ export function normalizeTwitterHandle(value: string): string | null {
 export function validateLaunchMetadata(
   input: Partial<LaunchMetadataFields>,
 ): LaunchMetadataValidation {
-  const description = input.description?.trim() || '';
   const website = input.website?.trim() || '';
   const twitterInput = input.twitter?.trim() || '';
   const telegram = input.telegram?.trim() || '';
   const discord = input.discord?.trim() || '';
   const banner = input.banner?.trim() || '';
 
-  if (description.length > 500) {
-    return { metadata: {}, error: 'Description must be 500 characters or less' };
-  }
   if (website && (website.length > 200 || !isHttpUrl(website))) {
     return { metadata: {}, error: 'Website must be a valid http:// or https:// URL' };
   }
@@ -101,7 +97,6 @@ export function validateLaunchMetadata(
 
   return {
     metadata: {
-      description: description || undefined,
       banner: banner || undefined,
       website: website || undefined,
       twitter: twitter || undefined,

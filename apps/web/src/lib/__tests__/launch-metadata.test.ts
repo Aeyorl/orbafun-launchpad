@@ -6,19 +6,18 @@ import {
 } from '../launch-metadata';
 
 describe('launch metadata', () => {
-  it('treats a description-only launch as metadata that must be saved', () => {
-    const result = validateLaunchMetadata({ description: '  Built for Arc.  ' });
+  it('keeps the launch description out of editable metadata', () => {
+    const result = validateLaunchMetadata({});
 
     expect(result.error).toBeNull();
     expect(result.metadata).toEqual({
-      description: 'Built for Arc.',
       banner: undefined,
       website: undefined,
       twitter: undefined,
       telegram: undefined,
       discord: undefined,
     });
-    expect(Object.values(result.metadata).some(Boolean)).toBe(true);
+    expect(Object.values(result.metadata).some(Boolean)).toBe(false);
   });
 
   it.each([

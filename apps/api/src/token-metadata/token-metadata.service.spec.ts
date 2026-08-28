@@ -24,7 +24,6 @@ describe('TokenMetadataService', () => {
       twitter: canonical,
       telegram: null,
       discord: null,
-      description: null,
       banner: null,
       updated_at: new Date().toISOString(),
     };
@@ -38,7 +37,6 @@ describe('TokenMetadataService', () => {
       tokenAddress.toLowerCase(),
       null,
       canonical,
-      null,
       null,
       null,
       null,
@@ -57,31 +55,13 @@ describe('TokenMetadataService', () => {
     expect(db.queryOne).toHaveBeenCalledTimes(1);
   });
 
-  it('persists a trimmed description in the metadata upsert', async () => {
-    const saved = {
-      token_address: tokenAddress.toLowerCase(),
-      website: null,
-      twitter: null,
-      telegram: null,
-      discord: null,
-      description: 'A coin for Arc builders.',
-      banner: null,
-      updated_at: new Date().toISOString(),
-    };
-    db.queryOne.mockResolvedValueOnce(saved);
+  it('rejects attempts to replace the original launch description', async () => {
+    await expect(
+      service.setMetadata(tokenAddress, creatorWallet, {
+        description: 'A replacement description.',
+      } as never),
+    ).rejects.toThrow('The original launch description is immutable');
 
-    await service.setMetadata(tokenAddress, creatorWallet, {
-      description: '  A coin for Arc builders.  ',
-    });
-
-    expect(db.queryOne.mock.calls[1][1]).toEqual([
-      tokenAddress.toLowerCase(),
-      null,
-      null,
-      null,
-      null,
-      'A coin for Arc builders.',
-      null,
-    ]);
+    expect(db.queryOne).toHaveBeenCalledTimes(1);
   });
 });

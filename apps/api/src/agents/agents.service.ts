@@ -631,7 +631,7 @@ export class AgentsService {
   }
 
   /**
-   * Update metadata (website, twitter, telegram, discord, description) for a
+   * Update editable metadata (website, twitter, telegram, discord) for a
    * token the agent has launched. The deployer wallet is the on-chain creator,
    * so we pass its address to the metadata service for ownership verification.
    */

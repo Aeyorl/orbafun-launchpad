@@ -25,7 +25,6 @@ export class TokenMetadataController {
         twitter: null,
         telegram: null,
         discord: null,
-        description: null,
         banner: null,
       };
     }
