@@ -138,29 +138,32 @@ export function TradeHistory({
             {filteredTrades.map((trade) => (
               <div
                 key={`${trade.tx_hash}-${trade.log_index}`}
-                className="group grid gap-2 border-b border-bg-border px-1 py-3 text-sm transition-colors last:border-0 hover:bg-bg-hover/60 sm:grid-cols-[minmax(0,1.2fr)_minmax(230px,.8fr)] sm:items-center sm:px-3"
+                data-testid="trade-history-row"
+                className="group grid gap-2 border-b border-bg-border px-1 py-3 text-sm transition-colors last:border-0 hover:bg-bg-hover/60 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-3"
               >
-                <div className="flex min-w-0 items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap">
                   <span
-                    className={`badge ${
+                    className={`badge shrink-0 ${
                       trade.type === 'buy' ? 'badge-green' : 'badge-red'
                     }`}
                   >
                     {trade.type === 'buy' ? 'BUY' : 'SELL'}
                   </span>
-                  <span className="text-text-muted tabular-nums">
-                    {formatUsdc(trade.usdc_amount)}
-                  </span>
-                  <span className="text-text-muted">→</span>
-                  <span className="font-medium tabular-nums truncate">
-                    {formatTokens(trade.token_amount)}
-                  </span>
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <span className="shrink-0 text-text-muted tabular-nums">
+                      {formatUsdc(trade.usdc_amount)}
+                    </span>
+                    <span className="shrink-0 text-text-muted" aria-hidden="true">→</span>
+                    <span className="min-w-0 flex-1 truncate font-medium tabular-nums" title={formatTokens(trade.token_amount)}>
+                      {formatTokens(trade.token_amount)}
+                    </span>
+                  </div>
                 </div>
-                <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 text-xs text-text-muted sm:justify-self-end">
+                <div data-testid="trade-history-meta" className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-text-muted sm:flex-nowrap sm:justify-end sm:text-xs">
                   {/* Wallet — links to both internal profile and ArcScan */}
                   <Link
                     href={`/profile/${trade.wallet}`}
-                    className="truncate transition-colors hover:text-accent-blue hover:underline"
+                    className="max-w-[8rem] truncate transition-colors hover:text-accent-blue hover:underline"
                     title={`View profile: ${trade.wallet}`}
                   >
                     {shortenAddress(trade.wallet)}
@@ -173,15 +176,16 @@ export function TradeHistory({
                       calculated_at: trade.wallet_tier_calculated_at,
                     }} />
                   )}
-                  <span>·</span>
-                  <span>{timeAgo(trade.timestamp)}</span>
+                  <span className="hidden sm:inline" aria-hidden="true">·</span>
+                  <span className="ml-auto shrink-0 sm:ml-0">{timeAgo(trade.timestamp)}</span>
                   {/* ArcScan tx link */}
                   <a
                     href={`${ARCSCAN_BASE}/tx/${trade.tx_hash}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-text-muted opacity-60 transition-opacity hover:text-accent-blue group-hover:opacity-100"
+                    className="shrink-0 text-text-muted opacity-60 transition-opacity hover:text-accent-blue sm:opacity-0 sm:group-hover:opacity-100 sm:focus:opacity-100"
                     title="View on ArcScan"
+                    aria-label="View transaction on ArcScan"
                   >
                     <ArrowSquareOut size={13} weight="bold" aria-hidden="true" />
                   </a>
