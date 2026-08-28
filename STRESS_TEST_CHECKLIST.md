@@ -3,6 +3,10 @@
 Print this. Tick boxes as you go. Date + initial each row when done.
 Anything that fails → log in `STRESS_TEST_PLAYBOOK.md` "Findings log" before moving on.
 
+Evidence review: the fully checked 2026-08-27 local WIP copy did not identify
+testers or link evidence for individual rows, so none of its checks are carried
+forward here. See `docs/TESTNET_MANUAL_QA_EVIDENCE_2026-08-28.md`.
+
 **Tester A** = "The Trader" (launch, buy, sell, graduation, AMM, real-time)
 **Tester B** = "The Browser" (every page, auth, favorites, chat, profile, search, formatting, mobile)
 
@@ -84,7 +88,7 @@ Anything that fails → log in `STRESS_TEST_PLAYBOOK.md` "Findings log" before m
 ### A7 — Watch graduation happen (needs more USDC — coordinate with Lead)
 - [ ] Market cap climbs as you buy (visible on page) ______
 - [ ] Price chart updates with each buy ______
-- [ ] At $25,000 MC, graduation triggers automatically ______
+- [ ] At $30,000 MC, graduation triggers automatically ______
 - [ ] "Graduated" badge/indicator appears ______
 - [ ] Trade panel changes (AMM, not curve) ______
 - [ ] Price continues smoothly (no sudden jump/drop) ______
@@ -94,7 +98,7 @@ Anything that fails → log in `STRESS_TEST_PLAYBOOK.md` "Findings log" before m
 ### A8 — Trade on AMM (after graduation)
 - [ ] Buy on AMM works (approve + swap + confirm) ______
 - [ ] Sell on AMM works (approve + swap + confirm) ______
-- [ ] Quotes reasonable (0.3% AMM fee) ______
+- [ ] Quotes reasonable (0% AMM fee) ______
 - [ ] Price updates after each trade ______
 - [ ] Trades appear in TradeHistory ______
 - [ ] Large buy → slippage protection kicks in ______
@@ -234,7 +238,7 @@ Anything that fails → log in `STRESS_TEST_PLAYBOOK.md` "Findings log" before m
 ### B12 — Fees page (`/fees`)
 - [ ] Page loads ______
 - [ ] 1% fee explained (50/50 creator/protocol) ______
-- [ ] $25,000 graduation threshold shown ______
+- [ ] $30,000 graduation threshold shown ______
 - [ ] $8,500 LP seed shown ______
 - [ ] 5 USDC creation fee shown ______
 
@@ -278,7 +282,7 @@ Anything that fails → log in `STRESS_TEST_PLAYBOOK.md` "Findings log" before m
 - [ ] Text readable without zooming ______
 
 ### B19 — USDC formatting (every page — #1 bug source)
-- [ ] Home: market cap reasonable (~$4K–$25K, not $4B) ______
+- [ ] Home: market cap reasonable (~$4K–$30K, not $4B) ______
 - [ ] Home: volume reasonable (not $0 for active tokens) ______
 - [ ] Coin: market cap reasonable ______
 - [ ] Coin: price reasonable (small, e.g., $0.004) ______
@@ -289,7 +293,7 @@ Anything that fails → log in `STRESS_TEST_PLAYBOOK.md` "Findings log" before m
 - [ ] Profile: holdings value reasonable ______
 - [ ] Profile: trade amounts reasonable ______
 - [ ] Fees: creation fee shows $5 (not $0.000005) ______
-- [ ] Fees: graduation shows $25,000 (not $25B) ______
+- [ ] Fees: graduation shows $30,000 (not $30B) ______
 - [ ] Fees: LP seed shows $8,500 (not $8.5B) ______
 
 ### B20 — Browser shields / adblocker
@@ -321,7 +325,7 @@ Anything that fails → log in `STRESS_TEST_PLAYBOOK.md` "Findings log" before m
 **Tester A — completed:** ______ (date) ______ (initials)
 **Tester B — completed:** ______ (date) ______ (initials)
 **Lead — reviewed findings:** ______ (date) ______ (initials)
-**Mainnet go/no-go:** ______ (date) ______ (decision)
+**Mainnet go/no-go:** 2026-08-28 — **NO-GO pending external audit**
 
 **Mainnet cannot ship until:**
 - All Critical findings resolved

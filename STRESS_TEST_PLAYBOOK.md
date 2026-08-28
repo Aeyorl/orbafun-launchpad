@@ -40,7 +40,7 @@ Ask the Lead for the frontend URL (local: `http://localhost:3000`, or a deployed
 ### What "fail" means
 - Button doesn't work or hangs forever
 - Error message that doesn't make sense to a user
-- Value displayed is obviously wrong (e.g., market cap shows $25,000,000,000 instead of $25,000)
+- Value displayed is obviously wrong (e.g., market cap shows $30,000,000,000 instead of $30,000)
 - Page crashes, blank screen, or console errors
 - Transaction fails on-chain with no feedback to the user
 - Real-time updates stop flowing
@@ -81,7 +81,7 @@ Keep your browser's Developer Tools open (F12) on every test. Watch:
 | What | Correct value | If you see this, it's wrong |
 |---|---|---|
 | Initial market cap (new token) | ~$4,000 | $4,000,000,000 (off by 1e6×) or $0 |
-| Graduation threshold | $25,000 | $25,000,000,000 (off by 1e6×) |
+| Graduation threshold | $30,000 | $30,000,000,000 (off by 1e6×) |
 | Creation fee | 5 USDC ($5) | 0.000005 (off by 1e6×) |
 | Trading fee | 1% (50/50 creator/protocol) | — |
 | Max wallet holding | 4% of supply (40M tokens) | — |
@@ -273,16 +273,16 @@ Keep your browser's Developer Tools open (F12) on every test. Watch:
 
 **Steps**:
 1. Launch a fresh token (or use one with very little USDC in the curve)
-2. Buy tokens in increments, watching the market cap climb toward $25,000
+2. Buy tokens in increments, watching the market cap climb toward $30,000
 3. As you buy, watch the price chart update in real-time
-4. When your buy pushes the market cap to $25,000, graduation should trigger automatically
+4. When your buy pushes the market cap to $30,000, graduation should trigger automatically
 5. Watch the page change — the token should now show as "Graduated"
 6. The trade panel should change (trading now happens on the AMM, not the curve)
 
 **Verify**:
 - Market cap climbs as you buy (visible on the coin page)
 - Price chart updates with each buy
-- At $25,000 MC, graduation triggers (you may see a notification or the page state change)
+- At $30,000 MC, graduation triggers (you may see a notification or the page state change)
 - After graduation:
   - The token shows a "Graduated" badge or indicator
   - The trade panel changes (you're now trading on the AMM, not the bonding curve)
@@ -291,7 +291,7 @@ Keep your browser's Developer Tools open (F12) on every test. Watch:
 - No console errors
 - No frozen UI during graduation
 
-**Pass criteria**: graduation triggers at $25K, page updates to graduated state, trading continues on AMM
+**Pass criteria**: graduation triggers at $30K, page updates to graduated state, trading continues on AMM
 
 ---
 
@@ -304,7 +304,7 @@ Keep your browser's Developer Tools open (F12) on every test. Watch:
 **Verify**:
 - Buy on AMM works (approval + swap + confirmation)
 - Sell on AMM works (approval + swap + confirmation)
-- Quotes are reasonable (AMM uses a 0.3% fee — slightly different from curve's 1%)
+- Quotes are reasonable (the AMM uses a 0% fee; the bonding curve charges 1%)
 - Price updates after each trade
 - Trades appear in TradeHistory
 - No console errors
@@ -687,7 +687,7 @@ Keep your browser's Developer Tools open (F12) on every test. Watch:
 - Fee structure is explained clearly:
   - 1% trading fee
   - 50% to creator, 50% to protocol
-  - $25,000 graduation threshold
+  - $30,000 graduation threshold
   - $8,500 LP seed on graduation
   - 5 USDC creation fee
 - Values match what's in section 2 of this doc
@@ -812,7 +812,7 @@ Keep your browser's Developer Tools open (F12) on every test. Watch:
 **What to look for**:
 | Page | Value | Should be | Bug if it shows |
 |---|---|---|---|
-| Home | Token market cap | ~$4,000–$25,000 | $4,000,000,000 or $0 |
+| Home | Token market cap | ~$4,000–$30,000 | $4,000,000,000 or $0 |
 | Home | Token volume | reasonable $ amount | $0 for an active token |
 | Coin | Market cap | reasonable | 1e6× too big |
 | Coin | Price | small (e.g., $0.004) | $4,000,000 |
@@ -823,7 +823,7 @@ Keep your browser's Developer Tools open (F12) on every test. Watch:
 | Profile | Holdings value | reasonable | 1e6× off |
 | Profile | Trade history amounts | reasonable | 1e6× off |
 | Fees page | Creation fee | $5 | $0.000005 |
-| Fees page | Graduation threshold | $25,000 | $25,000,000,000 |
+| Fees page | Graduation threshold | $30,000 | $30,000,000,000 |
 | Fees page | LP seed | $8,500 | $8,500,000,000 |
 
 **If any value is 1,000,000× or 1,000,000,000,000× too big, or shows $0 when it shouldn't, log it.**
