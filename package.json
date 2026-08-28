@@ -14,7 +14,7 @@
     "dev:api": "npm run dev --workspace=apps/api",
     "build": "npm run build --workspaces",
     "lint": "npm run lint --workspaces",
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present && node --test scripts/check-infrastructure-readiness.test.js",
     "test:graduation-canary": "node scripts/graduation-canary.js",
     "audit:manifest": "node scripts/build-audit-manifest.js --verify",
     "mainnet:check": "node scripts/validate-mainnet-readiness.js"
