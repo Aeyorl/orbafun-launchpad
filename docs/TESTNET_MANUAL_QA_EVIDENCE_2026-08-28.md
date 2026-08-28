@@ -18,7 +18,7 @@ or proof of a mainnet deployment.
 - Archived design screenshots, local API/web logs, and the repository's
   existing audit-candidate documentation.
 
-## Verification result
+## Initial evidence review
 
 The checked WIP checklist cannot be accepted as a completed manual test run:
 
@@ -34,9 +34,28 @@ The checked WIP checklist cannot be accepted as a completed manual test run:
 - The archived design screenshots demonstrate selected layouts, not the full
   wallet, transaction, real-time, failure, cross-browser, or mobile checklist.
 
-Accordingly, **zero manual checklist rows were carried forward as passed**.
-The canonical checklist remains unchecked until each row has traceable evidence
-and an identifiable tester/date.
+Accordingly, the original blanket WIP completion was not carried forward at
+that point.
+
+## Subsequent lead attestation and formal closeout
+
+On 2026-08-28, project lead `AY` provided a direct attestation that more than
+five people had tested Orba over approximately three weeks and confirmed that
+the human-QA stage was cleared. The attestation covers the complete published
+checklist, including:
+
+- launch, buy, sell, approvals, graduation, and transaction-failure states;
+- USDC formatting across the application and conservation-of-funds behavior;
+- mobile layouts, multiple tabs, wallet/network switching, and adblockers; and
+- image and metadata persistence.
+
+The repository therefore records the checklist as passed under one
+cohort-level lead attestation, with `AY` as the accepting lead. This is an
+honest closeout of the project lead's reported testing, not an independently
+reconstructed result: individual tester names or initials, exact per-tester
+dates, transaction hashes, and row-level screenshots were not supplied in the
+repository. Those limitations should remain visible to reviewers and must not
+be replaced with invented details.
 
 ## Corrected test expectations
 
