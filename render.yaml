@@ -72,7 +72,7 @@ services:
       - key: DEPLOYER_ACTIONS_ENABLED
         value: "false"
       - key: DEPLOYER_SIGNER_PROVIDER
-        value: local
+        value: aws-kms
       # Required before enabling platform-funded testnet actions. Values are
       # integer micro-USDC and deliberately have no permissive defaults.
       - key: DEPLOYER_MAX_ACTION_MICRO_USDC
@@ -142,11 +142,14 @@ services:
       # Application secrets — never commit their values.
       - key: AUTH_SECRET
         sync: false
-      - key: DEPLOYER_PRIVATE_KEY
-        sync: false
-      # Mainnet replaces DEPLOYER_PRIVATE_KEY with a non-exportable AWS KMS
-      # secp256k1 signer. These stay unset for the current testnet deployment.
+      # Use the same non-exportable secp256k1 KMS signing boundary in the
+      # production-like testnet service. Platform-funded actions remain
+      # independently disabled above until every spending cap is reviewed.
       - key: AWS_REGION
+        sync: false
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
         sync: false
       - key: AWS_KMS_KEY_ID
         sync: false
