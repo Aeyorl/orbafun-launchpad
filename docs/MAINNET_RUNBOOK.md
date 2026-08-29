@@ -17,7 +17,10 @@ on testnet only. This runbook cannot be executed until that status changes.
 3. All contract, API, web, E2E, graduation and load tests pass from that commit.
 4. A fresh staging deployment is exercised end to end for at least seven days.
 5. The admin Safe has three hardware-backed owners, threshold two, verified
-   recovery procedures and no shared seed phrases.
+   recovery procedures and no shared seed phrases. The
+   [Arc Testnet Safe recovery drill](SAFE_RECOVERY_DRILL_2026-08-30.md)
+   validates the procedure and owner participation only; repeat and approve
+   these checks against the final production Safe before mainnet launch.
 6. The Safe controls `ProtocolTimelock`; the timelock owns Treasury, Factory,
    AMMFactory and LiquidityMigration. The Safe is only the factory pause guardian.
 7. `npm run mainnet:check` passes against the proposed production environment.
