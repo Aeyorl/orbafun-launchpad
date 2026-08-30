@@ -41,6 +41,27 @@ on testnet only. This runbook cannot be executed until that status changes.
 - Do not update public DNS/config until an independent person reproduces the
   manifest checks and the E2E smoke test passes.
 
+## Compensating production-release control
+
+Until the private repository has enforceable branch protection and Vercel has
+production deployment approvals, direct pushes to `master` are prohibited by
+procedure. This control reduces risk but does not close the infrastructure gate.
+
+Every production release must:
+
+1. use a pull request from a non-production branch;
+2. identify the exact commit and paths entering production;
+3. pass the repository Release gate workflow;
+4. receive an explicit approval from a second human who did not author the
+   change;
+5. use a GitHub-verified signed merge commit; and
+6. record the pull request, approved commit, Vercel deployment and production
+   smoke result in the release evidence.
+
+The author must not count as the second approver. Emergency changes follow the
+same review requirement; if the platform cannot enforce it, the release remains
+procedurally controlled and must not be represented as independently enforced.
+
 ## Production infrastructure
 
 - Render API: production-only CORS, `AUTH_ALLOW_INSECURE=false`, strict proxy

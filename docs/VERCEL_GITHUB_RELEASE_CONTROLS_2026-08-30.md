@@ -12,15 +12,17 @@ audit, mainnet approval, or authorization to deploy contracts.
 - Verification method: authenticated Vercel inspection and configuration,
   authenticated GitHub API queries, and local Git signing verification
 
-No environment-variable values were revealed or copied. No deployment, branch,
-repository visibility or production-domain setting was changed.
+No environment-variable value was stored in the repository or this evidence
+record. The Preview credential was transmitted to Vercel through standard input.
+No repository visibility, production-domain mapping or Production credential was
+changed.
 
 ## Result
 
 | Control | Result | Evidence |
 |---|---|---|
 | Production/preview API and WebSocket variables use separate entries | PASS | `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL` each have distinct Production and Preview entries. Contract-address variables also have environment-scoped entries. |
-| Enforced distinct production secret values | FAIL | Team policy **Separate Production Secret Values** is unchecked. `TRADINGVIEW_GITHUB_TOKEN` is one secret entry scoped to both Production and Preview. |
+| Enforced distinct production secret values | PASS | `TRADINGVIEW_GITHUB_TOKEN` now has separate encrypted Production and Preview entries. Team policy **Separate Production Secret Values** is enabled and remained checked after reload. |
 | Sensitive environment-variable enforcement | FAIL | Team policy **Enforce Sensitive Environment Variables** is disabled. |
 | Preview deployment access protection | PASS | Vercel Authentication / **Require Log In** is enabled. Password protection and trusted-IP protection are unavailable on the current plan. |
 | Protected source maps | PASS | Vercel reports Protected Sourcemaps as enabled. |
@@ -45,18 +47,33 @@ domains without a deployment approval.
   key. The private key was not displayed, copied or uploaded.
 - Enabled repository-local SSH commit signing with `commit.gpgsign=true`.
 - Enabled and saved Vercel team **Require Verified Commits** enforcement.
-- Left **Separate Production Secret Values** disabled because
-  `TRADINGVIEW_GITHUB_TOKEN` is currently one secret scoped to Production and
-  Preview. Preview builds require this credential to fetch and verify the
-  licensed TradingView assets. Enabling the policy or removing Preview scope
-  before creating a distinct Preview credential could break Preview builds.
+- Pushed signed commit `d2c8e0f402f6dfafbfb121fbde8ed31a62f48af5`;
+  GitHub reported `verified=true` with reason `valid`. Release gate run
+  `33310171555` passed, Vercel production deployment
+  `dpl_KkFwDUbY4grVWFxewygUqbnZ8xXR` reached **Ready**, and
+  `https://www.orba.fun/` returned HTTP 200.
+- Restricted the existing `TRADINGVIEW_GITHUB_TOKEN` entry to Production and
+  added a separate encrypted Preview entry. GitHub offered only `Aeyod7` as a
+  fine-grained-token resource owner, so the private TradingView organization
+  was not eligible for a repository-scoped fine-grained token. With explicit
+  operator approval, a 30-day classic `repo` token was used for Preview and is
+  scheduled for rotation by `2026-09-29`.
+- Enabled and saved Vercel team **Separate Production Secret Values**
+  enforcement.
+- Redeployed Preview commit `d3ecf36` as
+  `dpl_4h4VpSF9GVMDMSk6F2TgGqqTgUPm`. The deployment reached **Ready** and its
+  build log confirms that TradingView Advanced Charts assets were fetched and
+  verified at `470eec1bba4ada14e0f0b12dd17ca56ae81f36ff` before the Next.js build
+  completed.
+- Opened pull request `#10` for the compensating two-person release procedure.
+  All Release gate and Vercel checks pass; the pull request remains unmerged
+  pending approval from a second human who did not author the change.
 
 ## Remediation choices
 
-1. Create a second read-only TradingView GitHub credential, replace the shared
-   `TRADINGVIEW_GITHUB_TOKEN` with distinct Production and Preview credentials.
-   Then enable **Separate Production Secret Values**. Do not paste either token
-   into chat or store it in the repository.
+1. Rotate the temporary Preview TradingView credential by `2026-09-29`, retain
+   separate Production and Preview values, and keep both credentials out of the
+   repository and evidence documents.
 2. Enable sensitive-variable and team-2FA enforcement where the current Vercel
    plan permits them and after confirming every human and CI account is ready.
 3. Upgrade GitHub or make the repository public before claiming enforced branch
