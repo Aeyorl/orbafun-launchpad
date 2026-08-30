@@ -29,6 +29,7 @@ where security-relevant, auditor retest.
 - `RFP.md` — requested engagement and deliverables.
 - `DEPLOYMENT_MANIFEST.template.md` — post-audit, post-deployment evidence form.
 - `ARTIFACTS.sha256` — deterministic hashes of review inputs.
+- `SLITHER_SCAN_2026-08-30.md` — post-candidate internal static-analysis evidence.
 
 Historical testnet evidence remains in separately dated files and must not be
 treated as mainnet evidence.
