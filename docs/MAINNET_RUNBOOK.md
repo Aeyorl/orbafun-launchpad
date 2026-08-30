@@ -45,7 +45,9 @@ on testnet only. This runbook cannot be executed until that status changes.
 
 Until the private repository has enforceable branch protection and Vercel has
 production deployment approvals, direct pushes to `master` are prohibited by
-procedure. This control reduces risk but does not close the infrastructure gate.
+procedure. The [2026-08-30 release-control rehearsal](VERCEL_GITHUB_RELEASE_CONTROLS_2026-08-30.md)
+clears this compensating process for production-like testnet releases. It does
+not close the mainnet infrastructure gate or become platform enforcement.
 
 Every production release must:
 
@@ -63,6 +65,11 @@ same review requirement; if the platform cannot enforce it, the release remains
 procedurally controlled and must not be represented as independently enforced.
 
 ## Production infrastructure
+
+The [2026-08-30 production-infrastructure evidence](PRODUCTION_INFRASTRUCTURE_EVIDENCE_2026-08-30.md)
+records the controls that are currently live, the free monitoring checks added,
+and the provider/user-action items that remain open. It is production-like
+testnet evidence, not a substitute for final mainnet-provider verification.
 
 - Render API: production-only CORS, `AUTH_ALLOW_INSECURE=false`, strict proxy
   count, least-privilege runtime DB role, deploy migrations with the owner role,
