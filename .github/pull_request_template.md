@@ -1,7 +1,8 @@
 ## Scope
 
 - Production paths changed:
-- Exact release commit:
+- Reviewed PR head commit (must exist before approval):
+- Reviewed paths/tree:
 - Related issue/evidence:
 
 ## Verification
@@ -18,6 +19,9 @@
 - Reviewer:
 - Review timestamp (UTC):
 - Approval statement:
+
+Record the resulting signed merge commit separately in post-merge release
+evidence. It does not exist at the time of this independent approval.
 
 Direct pushes to `master` are prohibited by the Orba compensating
 production-release procedure. This checklist is procedural evidence and does
