@@ -45,11 +45,20 @@ domains without a deployment approval.
   key. The private key was not displayed, copied or uploaded.
 - Enabled repository-local SSH commit signing with `commit.gpgsign=true`.
 - Enabled and saved Vercel team **Require Verified Commits** enforcement.
+- Pushed signed commit `d2c8e0f402f6dfafbfb121fbde8ed31a62f48af5`;
+  GitHub reported `verified=true` with reason `valid`. Release gate run
+  `33310171555` passed, Vercel production deployment
+  `dpl_KkFwDUbY4grVWFxewygUqbnZ8xXR` reached **Ready**, and
+  `https://www.orba.fun/` returned HTTP 200.
 - Left **Separate Production Secret Values** disabled because
   `TRADINGVIEW_GITHUB_TOKEN` is currently one secret scoped to Production and
   Preview. Preview builds require this credential to fetch and verify the
   licensed TradingView assets. Enabling the policy or removing Preview scope
   before creating a distinct Preview credential could break Preview builds.
+- GitHub offered only `Aeyod7` as a fine-grained-token resource owner. The
+  private TradingView organization was not eligible, so a repository-scoped,
+  read-only Preview token could not be created. A classic `repo` token would
+  grant materially broader private-repository access and was not created.
 
 ## Remediation choices
 
