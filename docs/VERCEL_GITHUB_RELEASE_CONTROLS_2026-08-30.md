@@ -30,7 +30,7 @@ changed.
 | Manual production deployment approval | FAIL | Vercel states that every commit pushed to `master` creates a Production Deployment, and auto-assignment of production domains is enabled. No approval stage is configured or exposed on the current project settings. |
 | GitHub `master` branch protection | FAIL | GitHub reports `protected: false` and status-check enforcement `off`. Branch-protection and ruleset APIs return that GitHub Pro is required for this private repository, or the repository must be public. |
 | Verified-commit enforcement | PASS | An existing Windows Ed25519 public key was registered with GitHub as a signing key; repository-local Git configuration now signs new commits; Vercel team policy **Require Verified Commits** was enabled and saved. The previously deployed `43a4133` remains historically unsigned. |
-| Team 2FA enforcement | USER ACTION REQUIRED | The only team member, owner `aeyod7-1453`, is reported without 2FA. Vercel disables team enforcement until the owner's personal passkey or TOTP setup is complete. The authenticated setup page is ready at Account Settings -> Authentication. |
+| Team 2FA enforcement | PASS | Owner `aeyod7-1453` completed personal 2FA enrollment. Vercel team **Two-Factor Authentication Enforcement** was then enabled, saved, and remained checked after save. |
 
 ## Gate disposition
 
@@ -60,6 +60,8 @@ directly to `master` and do not provide a production deployment-approval stage.
   scheduled for rotation by `2026-09-29`.
 - Enabled and saved Vercel team **Separate Production Secret Values**
   enforcement.
+- Enabled and saved Vercel team **Two-Factor Authentication Enforcement**
+  after the owner completed personal 2FA enrollment.
 - Redeployed Preview commit `d3ecf36` as
   `dpl_4h4VpSF9GVMDMSk6F2TgGqqTgUPm`. The deployment reached **Ready** and its
   build log confirms that TradingView Advanced Charts assets were fetched and
@@ -83,9 +85,8 @@ directly to `master` and do not provide a production deployment-approval stage.
 1. Rotate the temporary Preview TradingView credential by `2026-09-29`, retain
    separate Production and Preview values, and keep both credentials out of the
    repository and evidence documents.
-2. Complete personal 2FA enrollment for owner `aeyod7-1453`, then enable and
-   save Vercel team 2FA enforcement. Keep every new secret marked Sensitive and
-   retain the 90-day rotation cadence.
+2. Keep every new Vercel secret marked Sensitive, retain the 90-day rotation
+   cadence, and require 2FA before adding another team member.
 3. Upgrade GitHub or make the repository public before claiming enforced branch
    protection. Making the repository public is not recommended solely to obtain
    this feature because the repository may contain private operational history.
