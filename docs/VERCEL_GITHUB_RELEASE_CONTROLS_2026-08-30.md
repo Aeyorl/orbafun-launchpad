@@ -23,23 +23,23 @@ changed.
 |---|---|---|
 | Production/preview API and WebSocket variables use separate entries | PASS | `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL` each have distinct Production and Preview entries. Contract-address variables also have environment-scoped entries. |
 | Enforced distinct production secret values | PASS | `TRADINGVIEW_GITHUB_TOKEN` now has separate encrypted Production and Preview entries. Team policy **Separate Production Secret Values** is enabled and remained checked after reload. |
-| Sensitive environment-variable enforcement | FAIL | Team policy **Enforce Sensitive Environment Variables** is disabled. |
+| Sensitive environment-variable coverage | PASS | The authenticated Vercel Security Dashboard reports **All environment variables marked Sensitive** and **All environment variables updated within 90 days**. This verifies the current variables, not a separate default-enforcement policy for future variables. |
 | Preview deployment access protection | PASS | Vercel Authentication / **Require Log In** is enabled. Password protection and trusted-IP protection are unavailable on the current plan. |
 | Protected source maps | PASS | Vercel reports Protected Sourcemaps as enabled. |
 | Production branch mapping | PASS | Vercel Production tracks `master`; Preview tracks all unassigned Git branches. |
 | Manual production deployment approval | FAIL | Vercel states that every commit pushed to `master` creates a Production Deployment, and auto-assignment of production domains is enabled. No approval stage is configured or exposed on the current project settings. |
 | GitHub `master` branch protection | FAIL | GitHub reports `protected: false` and status-check enforcement `off`. Branch-protection and ruleset APIs return that GitHub Pro is required for this private repository, or the repository must be public. |
 | Verified-commit enforcement | PASS | An existing Windows Ed25519 public key was registered with GitHub as a signing key; repository-local Git configuration now signs new commits; Vercel team policy **Require Verified Commits** was enabled and saved. The previously deployed `43a4133` remains historically unsigned. |
-| Team 2FA enforcement | FAIL | Vercel team Two-Factor Authentication Enforcement is disabled. |
+| Team 2FA enforcement | USER ACTION REQUIRED | The only team member, owner `aeyod7-1453`, is reported without 2FA. Vercel disables team enforcement until the owner's personal passkey or TOTP setup is complete. The authenticated setup page is ready at Account Settings -> Authentication. |
 
 ## Gate disposition
 
-The Vercel/GitHub production-control gate is **partially closed but remains
-open**. Environment-specific public runtime configuration, preview
-authentication and verified-commit enforcement are present. The current
-configuration still does not prevent an authorized signer from pushing an
-unreviewed commit directly to `master`, which would reach the production
-domains without a deployment approval.
+The compensating two-person control is **procedurally cleared for the current
+production-like testnet release** after one complete reviewed release. This is
+an explicitly accepted process control, not a claim of platform enforcement.
+The mainnet infrastructure gate remains open because the current GitHub/Vercel
+plans do not prevent an authorized signer from pushing an unreviewed commit
+directly to `master` and do not provide a production deployment-approval stage.
 
 ## Changes applied
 
@@ -65,17 +65,27 @@ domains without a deployment approval.
   build log confirms that TradingView Advanced Charts assets were fetched and
   verified at `470eec1bba4ada14e0f0b12dd17ca56ae81f36ff` before the Next.js build
   completed.
-- Opened pull request `#10` for the compensating two-person release procedure.
-  All Release gate and Vercel checks pass; the pull request remains unmerged
-  pending approval from a second human who did not author the change.
+- Completed the compensating-control rehearsal through pull request `#10`.
+  Reviewer `Neymatoby` approved the reviewed head, all six checks passed, and
+  the pull request was merged as GitHub-verified commit
+  `5a66c77e325e4a7cc52fd13ff0d5b54cbbf9a722`.
+- Release run `33316188370` passed. Vercel production deployment
+  `dpl_GwwjqNidgo69ryDYx3Ko3nSYFS8b` reached **Ready**, and
+  `https://www.orba.fun/` returned HTTP 200. Immutable post-merge evidence was
+  recorded on pull request `#10`.
+- Rechecked the Vercel Security Dashboard. All current environment variables
+  are Sensitive and were updated within 90 days. The Orba framework-exposed
+  findings are public contract-address variables (`NEXT_PUBLIC_*`) by design;
+  a separate `void-bot` `VITE_API_KEY` finding is outside this project.
 
 ## Remediation choices
 
 1. Rotate the temporary Preview TradingView credential by `2026-09-29`, retain
    separate Production and Preview values, and keep both credentials out of the
    repository and evidence documents.
-2. Enable sensitive-variable and team-2FA enforcement where the current Vercel
-   plan permits them and after confirming every human and CI account is ready.
+2. Complete personal 2FA enrollment for owner `aeyod7-1453`, then enable and
+   save Vercel team 2FA enforcement. Keep every new secret marked Sensitive and
+   retain the 90-day rotation cadence.
 3. Upgrade GitHub or make the repository public before claiming enforced branch
    protection. Making the repository public is not recommended solely to obtain
    this feature because the repository may contain private operational history.
