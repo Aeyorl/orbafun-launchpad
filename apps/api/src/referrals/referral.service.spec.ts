@@ -9,7 +9,7 @@ describe('ReferralService partner attribution', () => {
     const db = {
       query: jest.fn(async () => ({ rows: [], rowCount: 1 })),
       queryOne: jest.fn(),
-      queryRows: jest.fn(async (..._args: any[]) => []),
+      queryRows: jest.fn<Promise<any[]>, any[]>(async () => []),
     };
     return { db, service: new ReferralService(db as any) };
   }
