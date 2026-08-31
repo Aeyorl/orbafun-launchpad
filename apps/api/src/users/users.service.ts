@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
 import { TokensService } from '../tokens/tokens.service';
@@ -22,6 +22,7 @@ export interface UserHolding {
 export interface UserProfile {
   wallet: string;
   username: string | null;
+  referral_slug: string | null;
   avatar: string | null;
   tokens_launched: number;
   total_volume_usdc: string;
@@ -92,6 +93,7 @@ export class UsersService {
     const profile: UserProfile = {
       wallet: user.wallet,
       username: user.username,
+      referral_slug: user.referral_slug,
       avatar: user.avatar,
       tokens_launched: launchedTokens.total,
       total_volume_usdc: tradeStats?.total_usdc_volume?.toString() || '0',
@@ -107,6 +109,72 @@ export class UsersService {
 
     await this.redis.setJson(cacheKey, profile, this.CACHE_TTL);
     return profile;
+  }
+
+  async updateProfile(wallet: string, input: { username: string }) {
+    const normalizedWallet = wallet.toLowerCase();
+    if (typeof input.username !== 'string') {
+      throw new BadRequestException('username is required');
+    }
+    const username = input.username.trim().replace(/^@/, '');
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{2,31}$/.test(username)) {
+      throw new BadRequestException(
+        'Username must be 3-32 letters, numbers, underscores, or hyphens',
+      );
+    }
+    const referralSlug = username.toLowerCase().replaceAll('_', '-');
+
+    const reservedPartner = await this.db.queryOne<{ wallet: string }>(
+      `SELECT wallet FROM referral_partners WHERE code = $1`,
+      [referralSlug],
+    );
+    if (reservedPartner && reservedPartner.wallet !== normalizedWallet) {
+      throw new ConflictException('That username is already in use');
+    }
+    const reservedAlias = await this.db.queryOne<{ wallet: string }>(
+      `SELECT wallet FROM user_referral_aliases WHERE slug = $1`,
+      [referralSlug],
+    );
+    if (reservedAlias && reservedAlias.wallet !== normalizedWallet) {
+      throw new ConflictException('That username is already in use');
+    }
+
+    await this.db.query(
+      `INSERT INTO users (wallet) VALUES ($1) ON CONFLICT (wallet) DO NOTHING`,
+      [normalizedWallet],
+    );
+    try {
+      const current = await this.db.queryOne<{ referral_slug: string | null }>(
+        `SELECT referral_slug FROM users WHERE wallet = $1`,
+        [normalizedWallet],
+      );
+      if (current?.referral_slug && current.referral_slug !== referralSlug) {
+        await this.db.query(
+          `INSERT INTO user_referral_aliases (slug, wallet)
+           VALUES ($1, $2)
+           ON CONFLICT (slug) DO NOTHING`,
+          [current.referral_slug, normalizedWallet],
+        );
+      }
+      const updated = await this.db.queryOne<{
+        wallet: string;
+        username: string;
+        referral_slug: string;
+      }>(
+        `UPDATE users
+         SET username = $2, referral_slug = $3
+         WHERE wallet = $1
+         RETURNING wallet, username, referral_slug`,
+        [normalizedWallet, username, referralSlug],
+      );
+      await this.redis.del(`user:${normalizedWallet}`);
+      return updated;
+    } catch (err: any) {
+      if (err?.code === '23505') {
+        throw new ConflictException('That username is already in use');
+      }
+      throw err;
+    }
   }
 
   async getWalletStats(wallet: string) {

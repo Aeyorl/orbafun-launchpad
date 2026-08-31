@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
     id          BIGSERIAL PRIMARY KEY,
     wallet      TEXT NOT NULL UNIQUE,        -- checksummed address, lowercase
     username    TEXT,
+    referral_slug TEXT,
     avatar      TEXT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     -- Aggregated stats (updated by indexer on each trade)
@@ -22,6 +23,71 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_slug TEXT;
+
+-- Backfill readable slugs for existing named profiles. Duplicate or short names
+-- receive a wallet suffix so every resulting link remains unambiguous.
+WITH normalized AS (
+    SELECT
+        id,
+        wallet,
+        TRIM(BOTH '-' FROM REGEXP_REPLACE(LOWER(username), '[^a-z0-9]+', '-', 'g')) AS base
+    FROM users
+    WHERE username IS NOT NULL AND referral_slug IS NULL
+), ranked AS (
+    SELECT
+        id,
+        wallet,
+        base,
+        COUNT(*) OVER (PARTITION BY base) AS duplicate_count
+    FROM normalized
+), candidates AS (
+    SELECT
+        id,
+        CASE
+            WHEN LENGTH(base) BETWEEN 3 AND 32 AND duplicate_count = 1 THEN LEFT(base, 32)
+            ELSE LEFT(CASE WHEN base = '' THEN 'user' ELSE base END, 23) || '-' || RIGHT(wallet, 8)
+        END AS slug
+    FROM ranked
+)
+UPDATE users u
+SET referral_slug = candidates.slug
+FROM candidates
+WHERE u.id = candidates.id
+  AND NOT EXISTS (
+      SELECT 1 FROM users existing
+      WHERE existing.referral_slug = candidates.slug AND existing.id <> u.id
+  );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral_slug
+    ON users(referral_slug) WHERE referral_slug IS NOT NULL;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'chk_users_referral_slug'
+    ) THEN
+        ALTER TABLE users ADD CONSTRAINT chk_users_referral_slug
+            CHECK (
+                referral_slug IS NULL OR
+                referral_slug ~ '^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$'
+            );
+    END IF;
+END $$;
+
+-- Retains previously shared profile referral names after a user renames.
+CREATE TABLE IF NOT EXISTS user_referral_aliases (
+    slug       TEXT PRIMARY KEY,
+    wallet     TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_user_referral_alias_slug
+        CHECK (slug ~ '^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$'),
+    CONSTRAINT fk_user_referral_alias_wallet FOREIGN KEY (wallet)
+        REFERENCES users(wallet) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_referral_aliases_wallet
+    ON user_referral_aliases(wallet);
 
 -- ─── Tokens ────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS tokens (
@@ -640,8 +706,27 @@ BEGIN
 END $$;
 
 -- ─── Referrals ─────────────────────────────────────────────────────────────
+-- Human-readable partner codes map an affiliate campaign to its payout wallet.
+-- reward_bps is capped at the protocol's 1% trading fee (100 bps).
+CREATE TABLE IF NOT EXISTS referral_partners (
+    code              TEXT PRIMARY KEY,
+    display_name      TEXT NOT NULL,
+    wallet            TEXT NOT NULL,
+    reward_bps        SMALLINT NOT NULL DEFAULT 10 CHECK (reward_bps BETWEEN 0 AND 100),
+    active            BOOLEAN NOT NULL DEFAULT TRUE,
+    created_by_wallet TEXT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_referral_partner_code
+        CHECK (code ~ '^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$'),
+    CONSTRAINT fk_referral_partner_wallet FOREIGN KEY (wallet)
+        REFERENCES users(wallet) ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_referral_partners_wallet ON referral_partners(wallet);
+
 -- Tracks wallet-to-wallet referral attribution for revenue sharing.
--- A wallet that arrives via ?ref=<wallet> is attributed to that referrer.
+-- A wallet that arrives via ?ref=<wallet-or-partner-code> is attributed to that referrer.
 -- When the referred wallet trades, a % of the trading fee is credited to
 -- the referrer as a reward (off-chain accounting; USDC payout is v2).
 CREATE TABLE IF NOT EXISTS referrals (
@@ -653,11 +738,30 @@ CREATE TABLE IF NOT EXISTS referrals (
     total_volume_usdc BIGINT NOT NULL DEFAULT 0,  -- 6-dec, lifetime volume from referred
     reward_earned_usdc BIGINT NOT NULL DEFAULT 0, -- 6-dec, accrued referral reward
     first_token_address TEXT,
+    referral_code   TEXT,
+    reward_bps      SMALLINT NOT NULL DEFAULT 10 CHECK (reward_bps BETWEEN 0 AND 100),
     CONSTRAINT fk_referrals_referrer FOREIGN KEY (referrer_wallet)
         REFERENCES users(wallet) ON DELETE RESTRICT,
     CONSTRAINT fk_referrals_referred FOREIGN KEY (referred_wallet)
         REFERENCES users(wallet) ON DELETE RESTRICT
 );
+
+ALTER TABLE referrals ADD COLUMN IF NOT EXISTS referral_code TEXT;
+ALTER TABLE referrals ADD COLUMN IF NOT EXISTS reward_bps SMALLINT NOT NULL DEFAULT 10;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'chk_referrals_reward_bps'
+    ) THEN
+        ALTER TABLE referrals ADD CONSTRAINT chk_referrals_reward_bps
+            CHECK (reward_bps BETWEEN 0 AND 100);
+    END IF;
+END $$;
+
+-- referral_code may be either a normal user slug or a negotiated partner code,
+-- so it intentionally has no foreign key to referral_partners.
+ALTER TABLE referrals DROP CONSTRAINT IF EXISTS fk_referrals_partner_code;
 
 CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_wallet);
 CREATE INDEX IF NOT EXISTS idx_referrals_referred ON referrals(referred_wallet);

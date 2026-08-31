@@ -211,6 +211,7 @@ export interface UserHoldingsResponse {
 export interface UserProfile {
   wallet: string;
   username: string | null;
+  referral_slug: string | null;
   avatar: string | null;
   tokens_launched: number;
   total_volume_usdc: string;
@@ -424,6 +425,13 @@ export const api = {
   getUserProfile: (wallet: string) =>
     fetchApi<UserProfile>(`/users/${wallet.toLowerCase()}`),
 
+  updateUserProfile: (wallet: string, username: string, authToken?: string | null) =>
+    fetchApi<{ wallet: string; username: string; referral_slug: string }>(`/users/me`, {
+      method: 'PATCH',
+      body: JSON.stringify({ username }),
+      headers: authHeaders(authToken, wallet),
+    }),
+
   getUserPnl: (wallet: string, period: '7d' | '30d' | 'all' = 'all') =>
     fetchApi<UserPnlResponse>(`/users/${wallet.toLowerCase()}/pnl?period=${period}`),
 
@@ -536,10 +544,10 @@ export const api = {
     }),
 
   // Referrals
-  attributeReferral: (referrerWallet: string, wallet: string, authToken?: string | null) =>
-    fetchApi<{ attributed: boolean; referrer_wallet: string; already: boolean }>(`/referrals/attribute`, {
+  attributeReferral: (referrer: string, wallet: string, authToken?: string | null) =>
+    fetchApi<{ attributed: boolean; referrer_wallet: string; referral_code: string | null; already: boolean }>(`/referrals/attribute`, {
       method: 'POST',
-      body: JSON.stringify({ referrerWallet }),
+      body: JSON.stringify({ referrer }),
       headers: authHeaders(authToken, wallet),
     }),
 
@@ -550,6 +558,8 @@ export const api = {
       active_referred: number;
       total_volume_usdc: string;
       reward_earned_usdc: string;
+      referral_slug: string | null;
+      partner_codes: Array<{ code: string; display_name: string; reward_bps: number }>;
     }>(`/referrals/${wallet.toLowerCase()}`),
 
   getReferredWallets: (wallet: string, limit = 20, offset = 0) =>

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Query,
   Body,
   Param,
@@ -12,6 +13,7 @@ import {
 import { Request } from 'express';
 import { ReferralService } from './referral.service';
 import { AuthGuard } from '../auth/auth.guard';
+import { AdminGuard } from '../auth/admin.guard';
 
 /**
  * ReferralController — referral attribution + stats endpoints.
@@ -25,7 +27,7 @@ export class ReferralController {
 
   /**
    * POST /referrals/attribute
-   * Body: { referrerWallet: string }
+   * Body: { referrer: string } (wallet address or partner code)
    * Auth: wallet signature (AuthGuard) — the referred wallet is req.wallet.
    *
    * Records that the authenticated wallet was referred by referrerWallet.
@@ -35,15 +37,50 @@ export class ReferralController {
   @UseGuards(AuthGuard)
   async attribute(
     @Req() req: Request & { wallet?: string },
-    @Body() body: { referrerWallet?: string },
+    @Body() body: { referrer?: string; referrerWallet?: string; referrerCode?: string },
     @Query('referrer') referrerQuery?: string,
   ) {
     const referredWallet = req.wallet!;
-    const referrerWallet = body?.referrerWallet || referrerQuery;
-    if (!referrerWallet) {
-      throw new BadRequestException('referrerWallet is required (body or ?referrer= query)');
+    const referrer = body?.referrer || body?.referrerWallet || body?.referrerCode || referrerQuery;
+    if (!referrer) {
+      throw new BadRequestException('referrer is required (body or ?referrer= query)');
     }
-    return this.referralService.attributeReferral(referrerWallet, referredWallet);
+    return this.referralService.attributeReferral(referrer, referredWallet);
+  }
+
+  /** Create a human-readable affiliate code. Admin-only. */
+  @Post('partners')
+  @UseGuards(AdminGuard)
+  async createPartner(
+    @Req() req: Request & { wallet?: string },
+    @Body() body: { code?: string; displayName?: string; wallet?: string; rewardBps?: number },
+  ) {
+    if (!body.code || !body.displayName || !body.wallet) {
+      throw new BadRequestException('code, displayName, and wallet are required');
+    }
+    return this.referralService.createPartner({
+      code: body.code,
+      displayName: body.displayName,
+      wallet: body.wallet,
+      rewardBps: body.rewardBps,
+      createdByWallet: req.wallet,
+    });
+  }
+
+  /** Change affiliate display name, rate, or active status. Admin-only. */
+  @Patch('partners/:code')
+  @UseGuards(AdminGuard)
+  async updatePartner(
+    @Param('code') code: string,
+    @Body() body: { displayName?: string; rewardBps?: number; active?: boolean },
+  ) {
+    return this.referralService.updatePartner(code, body);
+  }
+
+  /** Public partner-code lookup, useful for validating a shared link. */
+  @Get('partners/:code')
+  async getPartner(@Param('code') code: string) {
+    return this.referralService.getPartner(code);
   }
 
   /**

@@ -34,34 +34,83 @@ export class ReferralService {
 
   constructor(private db: DatabaseService) {}
 
+  private normalizePartnerCode(value: string) {
+    if (typeof value !== 'string') {
+      throw new BadRequestException('Referral code is required');
+    }
+    const code = value.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/.test(code)) {
+      throw new BadRequestException(
+        'Referral code must be 3-32 lowercase letters, numbers, or hyphens',
+      );
+    }
+    return code;
+  }
+
+  private validateRewardBps(value: number) {
+    if (!Number.isInteger(value) || value < 0 || value > 100) {
+      throw new BadRequestException('rewardBps must be an integer from 0 to 100');
+    }
+    return value;
+  }
+
+  private async resolveReferrer(referrer: string) {
+    if (isValidEvmAddress(referrer)) {
+      return {
+        wallet: referrer.toLowerCase(),
+        referralCode: null,
+        rewardBps: this.validateRewardBps(this.rewardPctBps),
+      };
+    }
+
+    const code = this.normalizePartnerCode(referrer);
+    const partner = await this.db.queryOne<{ wallet: string; reward_bps: number }>(
+      `SELECT wallet, reward_bps
+       FROM referral_partners
+       WHERE code = $1 AND active = TRUE`,
+      [code],
+    );
+    if (partner) {
+      return {
+        wallet: partner.wallet,
+        referralCode: code,
+        rewardBps: partner.reward_bps,
+      };
+    }
+
+    const user = await this.db.queryOne<{ wallet: string }>(
+      `SELECT wallet FROM users WHERE referral_slug = $1`,
+      [code],
+    );
+    const alias = user ? null : await this.db.queryOne<{ wallet: string }>(
+      `SELECT wallet FROM user_referral_aliases WHERE slug = $1`,
+      [code],
+    );
+    const resolvedUser = user || alias;
+    if (!resolvedUser) throw new NotFoundException('Referral name not found or inactive');
+    return {
+      wallet: resolvedUser.wallet,
+      referralCode: code,
+      rewardBps: this.validateRewardBps(this.rewardPctBps),
+    };
+  }
+
   /**
    * Attribute a referred wallet to a referrer.
    * Called once when a referred user first authenticates.
    * Idempotent: if the referred wallet is already attributed (to anyone),
    * returns ConflictException — attribution is permanent and first-click-wins.
    */
-  async attributeReferral(referrerWallet: string, referredWallet: string) {
-    if (!isValidEvmAddress(referrerWallet) || !isValidEvmAddress(referredWallet)) {
-      throw new BadRequestException('Invalid wallet address');
+  async attributeReferral(referrerValue: string, referredWallet: string) {
+    if (!isValidEvmAddress(referredWallet)) {
+      throw new BadRequestException('Invalid referred wallet address');
     }
-    const referrer = referrerWallet.toLowerCase();
+    const resolved = await this.resolveReferrer(referrerValue);
+    const referrer = resolved.wallet;
     const referred = referredWallet.toLowerCase();
 
     if (referrer === referred) {
       throw new BadRequestException('Cannot refer yourself');
-    }
-
-    // Check if already attributed (to anyone — first-click-wins).
-    const existing = await this.db.queryOne<{ referrer_wallet: string }>(
-      `SELECT referrer_wallet FROM referrals WHERE referred_wallet = $1`,
-      [referred],
-    );
-    if (existing) {
-      if (existing.referrer_wallet === referrer) {
-        // Already attributed to the same referrer — idempotent success.
-        return { attributed: true, referrer_wallet: referrer, already: true };
-      }
-      throw new ConflictException('Wallet already attributed to another referrer');
     }
 
     // Ensure both wallets exist in the users table (the auth flow creates them,
@@ -75,15 +124,143 @@ export class ReferralService {
       [referred],
     );
 
-    await this.db.query(
-      `INSERT INTO referrals (referrer_wallet, referred_wallet)
-       VALUES ($1, $2)
-       ON CONFLICT (referred_wallet) DO NOTHING`,
-      [referrer, referred],
+    const inserted = await this.db.queryOne<{
+      referrer_wallet: string;
+      referral_code: string | null;
+    }>(
+      `INSERT INTO referrals
+         (referrer_wallet, referred_wallet, referral_code, reward_bps)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (referred_wallet) DO NOTHING
+       RETURNING referrer_wallet, referral_code`,
+      [referrer, referred, resolved.referralCode, resolved.rewardBps],
     );
 
+    if (!inserted) {
+      const existing = await this.db.queryOne<{
+        referrer_wallet: string;
+        referral_code: string | null;
+      }>(
+        `SELECT referrer_wallet, referral_code
+         FROM referrals WHERE referred_wallet = $1`,
+        [referred],
+      );
+      if (existing?.referrer_wallet === referrer) {
+        return {
+          attributed: true,
+          referrer_wallet: referrer,
+          referral_code: existing.referral_code,
+          already: true,
+        };
+      }
+      throw new ConflictException('Wallet already attributed to another referrer');
+    }
+
     this.logger.log(`Attributed ${referred} to referrer ${referrer}`);
-    return { attributed: true, referrer_wallet: referrer, already: false };
+    return {
+      attributed: true,
+      referrer_wallet: referrer,
+      referral_code: inserted.referral_code,
+      already: false,
+    };
+  }
+
+  async createPartner(input: {
+    code: string;
+    displayName: string;
+    wallet: string;
+    rewardBps?: number;
+    createdByWallet?: string;
+  }) {
+    const code = this.normalizePartnerCode(input.code);
+    const displayName = input.displayName?.trim();
+    if (!displayName || displayName.length > 80) {
+      throw new BadRequestException('displayName is required and must be at most 80 characters');
+    }
+    if (!isValidEvmAddress(input.wallet)) {
+      throw new BadRequestException('Invalid partner wallet address');
+    }
+    const wallet = input.wallet.toLowerCase();
+    const rewardBps = this.validateRewardBps(input.rewardBps ?? this.rewardPctBps);
+
+    const reservedUser = await this.db.queryOne<{ wallet: string }>(
+      `SELECT wallet FROM users WHERE referral_slug = $1`,
+      [code],
+    );
+    if (reservedUser && reservedUser.wallet !== wallet) {
+      throw new ConflictException('Referral code is already used by a profile');
+    }
+    const reservedAlias = await this.db.queryOne<{ wallet: string }>(
+      `SELECT wallet FROM user_referral_aliases WHERE slug = $1`,
+      [code],
+    );
+    if (reservedAlias && reservedAlias.wallet !== wallet) {
+      throw new ConflictException('Referral code is already used by a previous profile name');
+    }
+
+    await this.db.query(
+      `INSERT INTO users (wallet) VALUES ($1) ON CONFLICT (wallet) DO NOTHING`,
+      [wallet],
+    );
+    try {
+      return await this.db.queryOne(
+        `INSERT INTO referral_partners
+           (code, display_name, wallet, reward_bps, created_by_wallet)
+         VALUES ($1, $2, $3, $4, $5)
+         RETURNING code, display_name, wallet, reward_bps, active, created_at, updated_at`,
+        [code, displayName, wallet, rewardBps, input.createdByWallet || null],
+      );
+    } catch (err: any) {
+      if (err?.code === '23505') {
+        throw new ConflictException('Referral partner code already exists');
+      }
+      throw err;
+    }
+  }
+
+  async updatePartner(
+    codeValue: string,
+    input: { displayName?: string; rewardBps?: number; active?: boolean },
+  ) {
+    const code = this.normalizePartnerCode(codeValue);
+    if (input.displayName !== undefined) {
+      if (typeof input.displayName !== 'string') {
+        throw new BadRequestException('displayName must be a string');
+      }
+      const name = input.displayName.trim();
+      if (!name || name.length > 80) {
+        throw new BadRequestException('displayName must be 1-80 characters');
+      }
+    }
+    const rewardBps = input.rewardBps === undefined
+      ? null
+      : this.validateRewardBps(input.rewardBps);
+    if (input.active !== undefined && typeof input.active !== 'boolean') {
+      throw new BadRequestException('active must be a boolean');
+    }
+    const updated = await this.db.queryOne(
+      `UPDATE referral_partners
+       SET display_name = COALESCE($2, display_name),
+           reward_bps = COALESCE($3, reward_bps),
+           active = COALESCE($4, active),
+           updated_at = NOW()
+       WHERE code = $1
+       RETURNING code, display_name, wallet, reward_bps, active, created_at, updated_at`,
+      [code, input.displayName?.trim() || null, rewardBps, input.active ?? null],
+    );
+    if (!updated) throw new NotFoundException('Referral partner not found');
+    return updated;
+  }
+
+  async getPartner(codeValue: string) {
+    const code = this.normalizePartnerCode(codeValue);
+    const partner = await this.db.queryOne(
+      `SELECT code, display_name, wallet, reward_bps, active, created_at, updated_at
+       FROM referral_partners WHERE code = $1`,
+      [code],
+    );
+    if (!partner) throw new NotFoundException('Referral partner not found');
+    return partner;
   }
 
   /**
@@ -113,7 +290,8 @@ export class ReferralService {
        ), referred AS (
          SELECT r.referred_wallet,
                 COUNT(a.wallet) AS trade_count,
-                COALESCE(SUM(a.volume_usdc), 0) AS volume_usdc
+                COALESCE(SUM(a.volume_usdc), 0) AS volume_usdc,
+                COALESCE(SUM(a.volume_usdc * r.reward_bps / 10000), 0) AS reward_usdc
          FROM referrals r LEFT JOIN activity a ON a.wallet = r.referred_wallet
          WHERE r.referrer_wallet = $1
          GROUP BY r.referred_wallet
@@ -122,9 +300,25 @@ export class ReferralService {
          COUNT(*)::text AS total_referred,
          COUNT(*) FILTER (WHERE trade_count > 0)::text AS active_referred,
          COALESCE(SUM(volume_usdc), 0)::text AS total_volume_usdc,
-         COALESCE(SUM(volume_usdc) * $3::numeric / 10000, 0)::text AS reward_earned_usdc
+         COALESCE(SUM(reward_usdc), 0)::text AS reward_earned_usdc
        FROM referred`,
-      [w, getPublicFactoryAddresses(), this.rewardPctBps],
+      [w, getPublicFactoryAddresses()],
+    );
+
+    const partnerCodes = await this.db.queryRows<{
+      code: string;
+      display_name: string;
+      reward_bps: number;
+    }>(
+      `SELECT code, display_name, reward_bps
+       FROM referral_partners
+       WHERE wallet = $1 AND active = TRUE
+       ORDER BY created_at`,
+      [w],
+    );
+    const user = await this.db.queryOne<{ referral_slug: string | null }>(
+      `SELECT referral_slug FROM users WHERE wallet = $1`,
+      [w],
     );
 
     if (!stats) {
@@ -137,6 +331,8 @@ export class ReferralService {
       active_referred: Number(stats.active_referred),
       total_volume_usdc: stats.total_volume_usdc,
       reward_earned_usdc: stats.reward_earned_usdc,
+      referral_slug: user?.referral_slug ?? null,
+      partner_codes: partnerCodes,
     };
   }
 
@@ -172,7 +368,7 @@ export class ReferralService {
        SELECT r.referred_wallet,
               COUNT(a.wallet)::int AS trade_count,
               COALESCE(SUM(a.volume_usdc), 0)::text AS total_volume_usdc,
-              (COALESCE(SUM(a.volume_usdc), 0) * $3::numeric / 10000)::text AS reward_earned_usdc,
+              COALESCE(SUM(a.volume_usdc * r.reward_bps / 10000), 0)::text AS reward_earned_usdc,
               r.attributed_at,
               (array_agg(a.token_address ORDER BY a.timestamp ASC)
                 FILTER (WHERE a.token_address IS NOT NULL))[1] AS first_token_address
@@ -180,8 +376,8 @@ export class ReferralService {
        WHERE r.referrer_wallet = $1
        GROUP BY r.referred_wallet, r.attributed_at
        ORDER BY r.attributed_at DESC
-       LIMIT $4 OFFSET $5`,
-      [w, getPublicFactoryAddresses(), this.rewardPctBps, limit, offset],
+       LIMIT $3 OFFSET $4`,
+      [w, getPublicFactoryAddresses(), limit, offset],
     );
 
     const count = await this.db.queryOne<{ count: string }>(
@@ -225,7 +421,6 @@ export class ReferralService {
    */
   async recordTrade(referredWallet: string, volumeUsdc: bigint, tokenAddress?: string) {
     const w = referredWallet.toLowerCase();
-    const reward = (volumeUsdc * BigInt(this.rewardPctBps)) / 10_000n;
 
     if (tokenAddress) {
       const visible = await this.db.queryOne<{ visible: boolean }>(
@@ -243,12 +438,15 @@ export class ReferralService {
       `UPDATE referrals
        SET trade_count = trade_count + 1,
            total_volume_usdc = total_volume_usdc + $2,
-           reward_earned_usdc = reward_earned_usdc + $3,
-           first_token_address = COALESCE(first_token_address, $4)
-       WHERE referred_wallet = $1`,
-      [w, volumeUsdc.toString(), reward.toString(), tokenAddress || null],
+           reward_earned_usdc = reward_earned_usdc + ($2 * reward_bps / 10000),
+           first_token_address = COALESCE(first_token_address, $3)
+       WHERE referred_wallet = $1
+       RETURNING reward_bps`,
+      [w, volumeUsdc.toString(), tokenAddress || null],
     );
 
+    const appliedBps = Number((result as any)?.rows?.[0]?.reward_bps ?? 0);
+    const reward = (volumeUsdc * BigInt(appliedBps)) / 10_000n;
     return { updated: (result as any)?.rowCount ?? 0, reward };
   }
 
@@ -275,12 +473,12 @@ export class ReferralService {
        SELECT r.referrer_wallet,
               COUNT(DISTINCT r.referred_wallet)::text AS total_referred,
               COALESCE(SUM(a.volume_usdc), 0)::text AS total_volume_usdc,
-              (COALESCE(SUM(a.volume_usdc), 0) * $2::numeric / 10000)::text AS reward_earned_usdc
+              COALESCE(SUM(a.volume_usdc * r.reward_bps / 10000), 0)::text AS reward_earned_usdc
        FROM referrals r JOIN activity a ON a.wallet = r.referred_wallet
        GROUP BY r.referrer_wallet
        ORDER BY SUM(a.volume_usdc) DESC
-       LIMIT $3`,
-      [getPublicFactoryAddresses(), this.rewardPctBps, limit],
+       LIMIT $2`,
+      [getPublicFactoryAddresses(), limit],
     );
 
     return rows.map((r) => ({

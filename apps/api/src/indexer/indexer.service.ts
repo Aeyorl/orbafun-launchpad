@@ -309,18 +309,17 @@ export class IndexerService {
       );
 
       // Update referral stats for the buyer (if they were referred).
-      // Reward = volume * REFERRAL_REWARD_PCT_BPS / 10000 (default 10 bps = 0.1%).
+      // Each attribution snapshots its partner rate (default 10 bps = 0.1%).
       await client.query(
         `UPDATE referrals
          SET trade_count = trade_count + 1,
              total_volume_usdc = total_volume_usdc + $2,
-             reward_earned_usdc = reward_earned_usdc + ($2 * $3 / 10000),
-             first_token_address = COALESCE(first_token_address, $4)
+             reward_earned_usdc = reward_earned_usdc + ($2 * reward_bps / 10000),
+             first_token_address = COALESCE(first_token_address, $3)
          WHERE referred_wallet = $1`,
         [
           event.buyer.toLowerCase(),
           usdcAmount.toString(),
-          process.env.REFERRAL_REWARD_PCT_BPS || '10',
           event.curveAddress.toLowerCase(),
         ],
       );
@@ -499,13 +498,12 @@ export class IndexerService {
         `UPDATE referrals
          SET trade_count = trade_count + 1,
              total_volume_usdc = total_volume_usdc + $2,
-             reward_earned_usdc = reward_earned_usdc + ($2 * $3 / 10000),
-             first_token_address = COALESCE(first_token_address, $4)
+             reward_earned_usdc = reward_earned_usdc + ($2 * reward_bps / 10000),
+             first_token_address = COALESCE(first_token_address, $3)
          WHERE referred_wallet = $1`,
         [
           event.seller.toLowerCase(),
           usdcAmount.toString(),
-          process.env.REFERRAL_REWARD_PCT_BPS || '10',
           event.curveAddress.toLowerCase(),
         ],
       );

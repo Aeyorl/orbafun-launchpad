@@ -1,12 +1,13 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
 import { api } from '@/lib/api';
 import { formatUsdc, shortenAddress } from '@/lib/utils';
 import { useAccount } from 'wagmi';
+import { useAuth } from '@/lib/use-auth';
 
 /**
  * ReferralPanel — shows on a user's profile page.
@@ -19,11 +20,25 @@ import { useAccount } from 'wagmi';
  * For other profiles (viewing someone else):
  *   - Their referral stats (read-only)
  */
-export function ReferralPanel({ wallet }: { wallet: string }) {
+export function ReferralPanel({
+  wallet,
+  username,
+  referralSlug,
+}: {
+  wallet: string;
+  username: string | null;
+  referralSlug: string | null;
+}) {
   const { address } = useAccount();
+  const { authenticate, authenticating, getAuthToken } = useAuth();
+  const queryClient = useQueryClient();
   const isOwnProfile = address?.toLowerCase() === wallet.toLowerCase();
   const [offset, setOffset] = useState(0);
+  const [nameInput, setNameInput] = useState(username || '');
+  const [savingName, setSavingName] = useState(false);
   const limit = 10;
+
+  useEffect(() => setNameInput(username || ''), [username]);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['referralStats', wallet],
@@ -38,7 +53,32 @@ export function ReferralPanel({ wallet }: { wallet: string }) {
     enabled: !!stats && stats.total_referred > 0,
   });
 
-  const referralLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/?ref=${wallet.toLowerCase()}`;
+  const referralValue = referralSlug || stats?.referral_slug || wallet.toLowerCase();
+  const referralLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/?ref=${referralValue}`;
+
+  const saveUsername = async () => {
+    const nextName = nameInput.trim().replace(/^@/, '');
+    if (!nextName) return;
+    setSavingName(true);
+    try {
+      let token = getAuthToken();
+      if (!token) {
+        await authenticate();
+        token = getAuthToken();
+      }
+      if (!token) throw new Error('Wallet authentication did not complete');
+      await api.updateUserProfile(wallet, nextName, token);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['user', wallet] }),
+        queryClient.invalidateQueries({ queryKey: ['referralStats', wallet] }),
+      ]);
+      toast.success('Profile name and referral link updated');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update profile name');
+    } finally {
+      setSavingName(false);
+    }
+  };
 
   const copyLink = async () => {
     try {
@@ -67,8 +107,36 @@ export function ReferralPanel({ wallet }: { wallet: string }) {
 
       {/* Referral link (only on own profile) */}
       {isOwnProfile && (
-        <div className="bg-bg-input rounded-lg p-3 text-xs text-text-muted break-all font-mono">
-          {referralLink}
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <label htmlFor="referral-name" className="text-xs font-medium text-text-secondary">
+              Profile and referral name
+            </label>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                id="referral-name"
+                value={nameInput}
+                onChange={(event) => setNameInput(event.target.value)}
+                placeholder="Choose a unique name"
+                autoComplete="username"
+                maxLength={32}
+                className="input flex-1 text-sm"
+              />
+              <button
+                onClick={saveUsername}
+                disabled={savingName || authenticating || !nameInput.trim() || nameInput.trim() === username}
+                className="btn-secondary text-xs disabled:opacity-40"
+              >
+                {savingName || authenticating ? 'Saving…' : username ? 'Update name' : 'Set name'}
+              </button>
+            </div>
+            <p className="text-[11px] text-text-muted">
+              3–32 letters, numbers, underscores, or hyphens. Your name must be unique.
+            </p>
+          </div>
+          <div className="bg-bg-input rounded-lg p-3 text-xs text-text-muted break-all font-mono">
+            {referralLink}
+          </div>
         </div>
       )}
 

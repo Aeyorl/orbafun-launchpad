@@ -1,10 +1,34 @@
-import { Controller, Get, Param, Query, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Patch,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { Request } from 'express';
 import { UsersService } from './users.service';
 import { isValidEvmAddress } from '../common/utils';
+import { AuthGuard } from '../auth/auth.guard';
 
 @Controller('users')
 export class UsersController {
   constructor(private usersService: UsersService) {}
+
+  /** Set or change the authenticated user's public name and referral slug. */
+  @Patch('me')
+  @UseGuards(AuthGuard)
+  async updateMe(
+    @Req() req: Request & { wallet?: string },
+    @Body() body: { username?: string },
+  ) {
+    if (!body.username) throw new BadRequestException('username is required');
+    return this.usersService.updateProfile(req.wallet!, { username: body.username });
+  }
 
   /**
    * GET /users/:wallet

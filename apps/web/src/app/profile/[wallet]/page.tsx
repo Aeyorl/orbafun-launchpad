@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
@@ -20,6 +20,8 @@ import {
   UserCircle,
 } from '@phosphor-icons/react';
 import { ARC_EXPLORER_URL } from '@/lib/config';
+import { useAccount } from 'wagmi';
+import { useAuth } from '@/lib/use-auth';
 import {
   formatUsdc,
   shortenAddress,
@@ -37,11 +39,16 @@ type PnlPeriod = '7d' | '30d' | 'all';
 export default function ProfilePage() {
   const params = useParams();
   const wallet = (params.wallet as string)?.toLowerCase();
+  const { address } = useAccount();
+  const { authenticate, authenticating, getAuthToken } = useAuth();
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<ProfileTab>('overview');
   const [pnlPeriod, setPnlPeriod] = useState<PnlPeriod>('all');
   const [copiedAddress, setCopiedAddress] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [setupName, setSetupName] = useState('');
+  const [savingSetup, setSavingSetup] = useState(false);
 
   // Profile data
   const { data: profile, isLoading: isProfileLoading } = useQuery({
@@ -83,6 +90,27 @@ export default function ProfilePage() {
       setTimeout(() => setCopiedAddress(false), 2000);
     } catch {
       toast.error('Failed to copy address');
+    }
+  };
+
+  const createProfile = async () => {
+    const username = setupName.trim().replace(/^@/, '');
+    if (!username) return;
+    setSavingSetup(true);
+    try {
+      let token = getAuthToken();
+      if (!token) {
+        await authenticate();
+        token = getAuthToken();
+      }
+      if (!token) throw new Error('Wallet authentication did not complete');
+      await api.updateUserProfile(wallet, username, token);
+      await queryClient.invalidateQueries({ queryKey: ['user', wallet] });
+      toast.success('Profile created');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create profile');
+    } finally {
+      setSavingSetup(false);
     }
   };
 
@@ -162,18 +190,46 @@ export default function ProfilePage() {
   }
 
   if (!profile) {
+    const isOwnConnectedWallet = address?.toLowerCase() === wallet;
     return (
       <div className="card text-center py-16 max-w-md mx-auto my-12 space-y-4">
         <UserCircle size={40} className="mx-auto" aria-hidden="true" />
         <div>
-          <h1 className="text-2xl font-serif mb-1">User not found</h1>
+          <h1 className="text-2xl font-serif mb-1">
+            {isOwnConnectedWallet ? 'Create your Orba profile' : 'User not found'}
+          </h1>
           <p className="text-sm text-text-muted">
-            This wallet address hasn&apos;t launched any tokens or traded on Orba yet.
+            {isOwnConnectedWallet
+              ? 'Choose the unique name that will appear in your profile and referral link.'
+              : 'This wallet address hasn\'t created an Orba profile yet.'}
           </p>
         </div>
-        <Link href="/explore" className="btn-primary inline-block text-xs px-5 py-2.5 rounded-full font-bold">
-          Explore Active Tokens →
-        </Link>
+        {isOwnConnectedWallet ? (
+          <div className="space-y-3 px-6">
+            <input
+              value={setupName}
+              onChange={(event) => setSetupName(event.target.value)}
+              placeholder="Choose a unique name"
+              autoComplete="username"
+              maxLength={32}
+              className="input w-full text-sm text-left"
+            />
+            <button
+              onClick={createProfile}
+              disabled={!setupName.trim() || savingSetup || authenticating}
+              className="btn-primary w-full text-xs disabled:opacity-40"
+            >
+              {savingSetup || authenticating ? 'Creating…' : 'Create profile'}
+            </button>
+            <p className="text-[11px] text-text-muted">
+              Your link will look like orba.fun/?ref=your-name.
+            </p>
+          </div>
+        ) : (
+          <Link href="/explore" className="btn-primary inline-block text-xs px-5 py-2.5 rounded-full font-bold">
+            Explore Active Tokens →
+          </Link>
+        )}
       </div>
     );
   }
@@ -459,7 +515,11 @@ export default function ProfilePage() {
           </div>
 
           {/* Referral Program Panel */}
-          <ReferralPanel wallet={wallet} />
+          <ReferralPanel
+            wallet={wallet}
+            username={profile.username}
+            referralSlug={profile.referral_slug}
+          />
         </div>
       )}
 
