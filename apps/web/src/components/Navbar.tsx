@@ -20,7 +20,6 @@ const PRIMARY_LINKS = [
   { href: '/', label: 'Discover' },
   { href: '/explore', label: 'Market' },
   { href: '/launch', label: 'Create' },
-  { href: '/agents', label: 'Agents' },
 ] as const;
 
 export function Navbar() {

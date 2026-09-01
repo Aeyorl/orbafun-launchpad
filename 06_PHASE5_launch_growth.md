@@ -30,16 +30,14 @@ relationships.
 |---|---|---|
 | Creation fee | `[CONFIRM]`, doc suggests 5 USDC | `TokenFactory.createToken()` |
 | Trading fee | **1%, split 0.5% creator / 0.5% protocol** (resolved — see DECISION_LOG D19) | `BondingCurve.buy()`/`sell()` — creator fees accrue during bonding curve phase only, claimable anytime |
-| AMM swap fee | `[CONFIRM]`, typically 0.3% if enabled | `AMMPair.sol` — enable only if capturing post-graduation revenue is desired in v1; otherwise leave stripped from the V2 fork |
+| AMM swap fee | **0.3%, retained entirely in AMM reserves** | `AMMPair.swap()` enforces the fee in the invariant. The migration sends all usable LP tokens to `0x...dEaD`, so Orba and creators cannot withdraw the accumulated fee liquidity. |
 | Featured placement | `[CONFIRM]`, doc suggests 100 USDC/day | New: `Featured.sol` or extend `Treasury.sol` — build only when first requested, don't pre-build |
 | Verification badge | `[CONFIRM]`, doc suggests 50 USDC | Same — build on demand |
 | Token boosts | `[CONFIRM]`, doc suggests 20–500 USDC | Same — build on demand |
 
-Only creation fee and trading fee need to exist at launch. AMM swap fee is
-optional for v1 — enabling it creates a post-graduation revenue stream but
-adds complexity to the AMM contract (re-enable the fee logic that was stripped
-from the V2 fork). Decide based on whether post-graduation revenue matters at
-launch or can wait.
+The AMM fee is not protocol revenue. It remains in the pair, increasing the
+reserves represented by permanently burned LP tokens. There is no protocol-fee
+switch and no creator withdrawal path for post-graduation swap fees.
 
 Featured/verification/boosts are monetization features for once there's actual
 traffic to sell placement against — building them before you have users to
@@ -52,7 +50,7 @@ sell to is wasted surface area and wasted attack surface.
 Ship in this order, each gated on the previous actually being used:
 
 1. **Live trade feed** — already built in Phase 3, this is your core virality loop, make sure it's fast and prominent.
-2. **Referral links** — wallet-tagged referral param on launch/trade links, tracked in DB, payout logic simple (e.g. % of trading fee) — build once you have enough volume for referral rewards to be meaningfully non-zero.
+2. **Referral links** — wallet-tagged attribution is built. The displayed reward is off-chain accounting only: a database record of potential reward, not USDC held for the referrer and not a withdrawable balance. Do not market it as payable until a funded claim or distribution process is implemented and published.
 3. **Leaderboards** — top creators, top gainers — cheap to build once the DB has real data, don't build against empty/test data (looks broken, not exciting).
 4. **Share card generation** — auto-generated image (token name, price chart snippet, market cap) for social sharing — genuinely useful for virality, worth prioritizing over meme generator.
 5. **Meme generator** — lowest priority of the growth features, nice-to-have, build last if at all.
@@ -77,6 +75,7 @@ its absence is a trust signal.
 
 - [ ] Twitter/X presence live before first public token launch, not after
 - [ ] Identify 3-5 early creators (communities, KOLs) to seed the first wave of launches — a launchpad with zero tokens on it looks dead, avoid a cold empty landing page
+- [ ] Keep AI-agent navigation and routes hidden, with platform-funded execution disabled, until that product is deliberately relaunched
 - [ ] Have a monitoring plan for the first 48 hours — the monitoring from Phase 2 is live, but have someone watching the dashboard in real time for the first 48h, not just checking in the next morning. Watch: indexer lag, contract gas costs under real load, AMM pair health, support requests.
 - [ ] Confirm Arc mainnet is live and stable before scheduling the launch campaign — don't announce a launch date before the chain is ready
 

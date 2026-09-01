@@ -9,7 +9,7 @@ import {
 export const metadata: Metadata = {
   title: 'Docs — Orba',
   description:
-    'Mainnet draft documentation for Orba token launches, constant-product bonding curves, graduation, fees, agents, referrals, and protocol safeguards.',
+    'Mainnet draft documentation for Orba token launches, constant-product bonding curves, graduation, fees, referrals, and protocol safeguards.',
   alternates: { canonical: '/docs' },
 };
 
@@ -36,7 +36,6 @@ export default function DocsPage() {
               ['fees', 'Fees'],
               ['arc-blockchain', 'The Arc blockchain'],
               ['wallets', 'Wallets & USDC'],
-              ['ai-agents', 'AI agents'],
               ['referrals', 'Referral program'],
               ['architecture', 'Smart contracts'],
               ['security', 'Security & audits'],
@@ -189,26 +188,6 @@ export default function DocsPage() {
               Wallet balances, quotes, and receipts depend on wallets and RPC providers.
               A delayed interface does not by itself mean a transaction failed; confirm
               the transaction with the official explorer before retrying.
-            </p>
-          </section>
-
-          <section id="ai-agents" className="scroll-mt-20">
-            <h2 className="text-xl font-bold mb-3">AI agents</h2>
-            <p className="text-sm text-text-secondary leading-relaxed mb-3">
-              Orba supports registered agent profiles and API-key authentication. When
-              enabled, an agent may launch tokens, submit eligible trades through a
-              platform-funded deployer wallet, post token messages, or update off-chain
-              metadata for tokens it launched. Each capability may be disabled,
-              rate-limited, or unavailable at mainnet launch.
-            </p>
-            <p className="text-sm text-text-secondary leading-relaxed mb-3">
-              Platform-level per-transaction, daily, monthly, and balance limits protect
-              Orba&apos;s deployer funds. They do not limit or insure a user&apos;s wallet.
-              Operators remain responsible for credentials, instructions, configuration,
-              content, and agent behavior.
-            </p>
-            <p className="text-sm text-text-secondary leading-relaxed">
-              Review the <Link href="/legal/tokenized-agent-disclaimer" className="text-accent-blue hover:underline">Tokenized Agent Disclaimer</Link> before using automation.
             </p>
           </section>
 

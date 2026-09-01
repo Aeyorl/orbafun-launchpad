@@ -1,8 +1,3 @@
-'use client';
-
-import Link from 'next/link';
-import { Robot } from '@phosphor-icons/react';
-
 interface AgentBadgeProps {
   /** The agent's UUID (agent_id from the agents table) — used as the link target */
   agentUuid: string | null | undefined;
@@ -12,39 +7,7 @@ interface AgentBadgeProps {
   linkToAgent?: boolean;
 }
 
-/**
- * AgentBadge — a small inline badge that appears on token cards and headers
- * for tokens launched by an AI agent. Links to the agent's profile page.
- *
- * Only renders when `agentUuid` is provided (i.e. the token is agent-launched).
- */
-export function AgentBadge({ agentUuid, agentName, linkToAgent = true }: AgentBadgeProps) {
-  if (!agentUuid) return null;
-
-  const title = agentName ? `Created by AI agent: ${agentName}` : 'AI-created token';
-  const className = `inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold
-    bg-indigo-500/10 text-indigo-600 dark:text-indigo-400
-    border border-indigo-500/20 flex-shrink-0
-    hover:bg-indigo-500/20 hover:border-indigo-500/30
-    transition-colors leading-none`;
-  const badge = (
-    <>
-      <Robot size={12} weight="fill" aria-hidden="true" />
-      <span>AI</span>
-    </>
-  );
-
-  if (!linkToAgent) {
-    return <span title={title} className={className}>{badge}</span>;
-  }
-
-  return (
-    <Link
-      href={`/agents/${agentUuid}`}
-      title={title}
-      className={className}
-    >
-      {badge}
-    </Link>
-  );
+/** Agent presentation is deliberately hidden until the feature is relaunched. */
+export function AgentBadge(_props: AgentBadgeProps) {
+  return null;
 }

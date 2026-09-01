@@ -5,11 +5,10 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { api, Token, SortOption } from '@/lib/api';
 import { TokenGrid } from '@/components/TokenGrid';
-import { AgentBadge } from '@/components/AgentBadge';
 import { SunnySpotlight } from '@/components/SunnySpotlight';
 import { useTokenEvents } from '@/lib/useWebSocket';
-import { formatUsdCompact, formatUsdDirect, formatMarketCap, tokenEmoji, ipfsToGateway } from '@/lib/utils';
-import { ArrowRight, ArrowUpRight, Robot } from '@phosphor-icons/react';
+import { formatUsdCompact, formatMarketCap } from '@/lib/utils';
+import { ArrowRight, ArrowUpRight } from '@phosphor-icons/react';
 
 type Tab = 'newest' | 'market_cap' | 'volume' | 'graduated';
 
@@ -53,13 +52,6 @@ export default function LandingPage() {
   const { data: spotlightData, isLoading: isSpotlightLoading } = useQuery({
     queryKey: ['sunny-spotlight-token', 'all'],
     queryFn: () => api.listTokens({ sort: 'volume', status: 'all', limit: 1 }),
-    refetchInterval: 30_000,
-  });
-
-  // Fetch recently agent-launched tokens for the AI section
-  const { data: agentTokensData } = useQuery({
-    queryKey: ['agent-tokens-homepage'],
-    queryFn: () => api.listTokens({ is_agent: 'true', sort: 'newest', limit: 4 }),
     refetchInterval: 30_000,
   });
 
@@ -174,66 +166,6 @@ export default function LandingPage() {
           </div>
         )}
       </section>
-
-      {/* AI Agent Tokens */}
-      {agentTokensData && agentTokensData.tokens.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-serif font-normal flex items-center gap-2">
-              <Robot size={20} weight="fill" className="text-indigo-500" aria-hidden="true" />
-              <span>AI Agent Tokens</span>
-              <span className="text-xs font-mono text-indigo-500/60 font-semibold tracking-wider">LIVE</span>
-            </h2>
-            <Link
-              href="/explore?is_agent=true"
-              className="text-xs font-medium text-text-muted hover:text-indigo-500 transition-colors"
-            >
-              View all agent tokens →
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {agentTokensData.tokens.map((token) => (
-              <Link
-                key={token.contract_address}
-                href={`/trade/${token.contract_address}`}
-                className="card bg-gradient-to-br from-bg-card to-bg-input border border-indigo-500/10 hover:border-indigo-500/30 p-4 rounded-2xl shadow-subtle-1 hover:shadow-subtle-2 transition-all space-y-2.5 group"
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-bg-base border border-bg-border flex items-center justify-center text-lg overflow-hidden flex-shrink-0 shadow-xs">
-                    {token.image ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={ipfsToGateway(token.image)} alt={token.symbol} className="w-full h-full object-cover" />
-                    ) : (
-                      tokenEmoji(token.symbol)
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-sm text-text-primary group-hover:text-accent-blue transition-colors truncate">
-                        {token.name}
-                      </span>
-                      <AgentBadge agentUuid={token.agent_uuid} agentName={token.agent_name} linkToAgent={false} />
-                    </div>
-                    <span className="text-[11px] font-mono text-text-muted">${token.symbol}</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 text-xs font-mono bg-bg-base/60 p-2 rounded-lg border border-bg-border/60">
-                  <div>
-                    <div className="text-[10px] text-text-muted">Market Cap</div>
-                    <div className="font-bold text-text-primary tabular-nums">{formatMarketCap(token.market_cap)}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[10px] text-text-muted">24h Vol</div>
-                    <div className="font-bold text-accent-blue tabular-nums">{formatUsdDirect(token.volume_24h)}</div>
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
 
       {/* How it works */}
       <section className="grid md:grid-cols-3 gap-4">

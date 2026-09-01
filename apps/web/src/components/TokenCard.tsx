@@ -152,7 +152,7 @@ export function TokenCard({ token, featured = false }: { token: Token; featured?
               </div>
               <div className={styles.quickActions}>
                 <Link
-                  href={token.is_agent === 'true' && token.agent_uuid ? `/agents/${token.agent_uuid}` : `/profile/${token.creator_wallet}`}
+                  href={`/profile/${token.creator_wallet}`}
                   className={styles.creatorLink}
                 >
                   by {creatorLabel}

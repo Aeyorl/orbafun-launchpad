@@ -19,8 +19,8 @@ is sub-second, and there's no second asset to bridge or wrap. Every price you se
   No WETH, no native-token price volatility, no L1 fee spikes.
 - **Pump.fun mechanics, audited internals.** Linear bonding curve with a 1% trade fee, $25,000
   graduation market cap, automatic AMM migration, LP burn, and ownership renunciation.
-- **AI agent–launched tokens.** Registered agents authenticate with API keys and launch tokens
-  through a platform-funded deployer wallet, with per-agent daily/monthly spending limits.
+- **AI-agent subsystem held behind a release wall.** Agent navigation and routes are hidden, and
+  platform-funded execution is disabled until the feature is deliberately relaunched.
 - **Live, real-time.** A direct Arc RPC poller indexes launch/buy/sell events in ~5s and fans them
   out via Redis pub/sub → Socket.IO to every connected client.
 - **Browser-shield-proof.** All wagmi reads route through a same-origin JSON-RPC read proxy on the
@@ -54,7 +54,7 @@ is sub-second, and there's no second asset to bridge or wrap. Every price you se
                                 ▼              • renounce token ownership
                    ┌────────────────────────┐  • mark curve graduated
                    │   AMMPair (Uniswap V2)  │  • zero the bonding curve
-                   │   0% fee                │
+                   │   0.3% LP fee           │
                    └────────────────────────┘
                                 │  post-graduation trading
                                 ▼
@@ -64,8 +64,7 @@ is sub-second, and there's no second asset to bridge or wrap. Every price you se
 ```
 
 The bonding curve is the primary trading venue. The AMM only activates after graduation. The
-`AMMRouter` is built but not yet deployed to testnet — it's only needed once concurrent
-post-graduation swaps matter.
+`AMMRouter` is deployed to testnet and provides atomic post-graduation swaps.
 
 ---
 
@@ -157,7 +156,7 @@ node scripts/e2e-full-flow.js     # launch → buy → sell, ~30s end-to-end
 
 ## Smart contracts
 
-All contracts are in `contracts/src/`. 33/33 Forge tests pass (26 core + 7 AMMRouter).
+All contracts are in `contracts/src/`. The current suite contains 59 passing Forge tests.
 
 | Contract | Role |
 |---|---|
@@ -165,8 +164,8 @@ All contracts are in `contracts/src/`. 33/33 Forge tests pass (26 core + 7 AMMRo
 | `BondingCurve` | USDC-denominated linear bonding curve. Buy/sell with 1% fee → Treasury. `ReentrancyGuard`-protected. Enforces max-wallet + cooldown pre-graduation. |
 | `MemeToken` | Standard ERC-20 with max-wallet and cooldown hooks that are zeroed on graduation. |
 | `LiquidityMigration` | `checkAndMigrate()` — atomic graduation: create AMM pair, add liquidity, burn LP, renounce ownership, mark graduated. |
-| `AMMFactory` / `AMMPair` | Uniswap V2 fork (0% fee, no flash swaps). |
-| `AMMRouter` | `swapExactUSDCForTokens` / `swapExactTokensForUSDC` — atomic `transferFrom + swap`, fixes the concurrent "AMM: K" revert. Built + tested, not yet deployed. |
+| `AMMFactory` / `AMMPair` | Uniswap V2-style pair with a 0.3% fee retained in reserves and no protocol fee switch or flash swaps. |
+| `AMMRouter` | Atomic swap and liquidity entry points; deployed and source-verified on Arc testnet. |
 | `Treasury` | Receives the 1% trade fee. |
 | `SafeUSDC` | Low-level calls for Arc's non-standard `transferFrom` (returns void, not bool). |
 
@@ -270,7 +269,7 @@ Quick summary of surface area:
 
 ```bash
 # Smart contracts (Forge)
-cd contracts && forge test            # 33/33 pass
+cd contracts && forge test            # 59/59 pass
 
 # Type-check
 npm run build                         # builds all workspaces
@@ -299,7 +298,7 @@ Representative results on Arc testnet are recorded in `AGENTS.md` (Phase 4). Hig
 
 | Phase | Status |
 |---|---|
-| 1 — Smart Contracts | Complete. 33/33 tests pass. Deployed to Arc testnet. |
+| 1 — Smart Contracts | Complete. 59/59 tests pass. Remediated stack deployed and source-verified on Arc testnet. |
 | 2 — Backend + Indexer | Complete. API + direct RPC poller + WebSocket verified. |
 | 3 — Frontend | Complete. Next.js 15 app builds, all pages serve, API integration live. |
 | 4 — Testing & Security | Self-audit complete (2 rounds). Load test passed. External audit pending (required for mainnet). |

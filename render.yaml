@@ -41,31 +41,33 @@ services:
       - key: ARC_USDC_ADDRESS
         value: "0x3600000000000000000000000000000000000000"
       - key: ARC_TOKEN_FACTORY_ADDRESS
-        value: "0x3dD9bA8Aa1d92ebfdBE10438618d643757bE64B3"
+        value: "0xD6e64999f94e31a290CE006dD2D8dAEA5846b81E"
       - key: TOKEN_FACTORY_ADDRESSES
-        value: "0x3dD9bA8Aa1d92ebfdBE10438618d643757bE64B3"
+        value: "0xD6e64999f94e31a290CE006dD2D8dAEA5846b81E"
       - key: PUBLIC_TOKEN_FACTORY_ADDRESSES
-        value: "0x3dD9bA8Aa1d92ebfdBE10438618d643757bE64B3"
+        value: "0xD6e64999f94e31a290CE006dD2D8dAEA5846b81E"
       - key: UNCAPPED_TOKEN_FACTORY_ADDRESSES
-        value: "0x3dD9bA8Aa1d92ebfdBE10438618d643757bE64B3"
+        value: "0xD6e64999f94e31a290CE006dD2D8dAEA5846b81E"
       - key: ARC_TREASURY_ADDRESS
-        value: "0x41712d8cebdAfc5b7eac343F2add73288248bd5c"
+        value: "0x26770f604415be9DaBB7211a8d272D4EDB32d9c3"
       - key: ARC_MIGRATOR_ADDRESS
-        value: "0x93E16Bd952E3d60a99E27BB7ED06A612Def7a77d"
+        value: "0x07106479Cd70BE67378dA39afB846b363F00cDfe"
       - key: ARC_AMM_FACTORY_ADDRESS
-        value: "0x9f2E34c3A32819268E6e37c0Cb76F53724F222b1"
+        value: "0x50432933755E3d292eE2d7589c3CFab18f5d87BD"
       - key: ARC_AMM_ROUTER_ADDRESS
-        value: "0x194f27364bAdE80DF0C5b4f31CcE667FF6ea8F39"
+        value: "0x0459984dEE1b0d7b3D031E28f1A68f4DdEC50A6A"
       - key: ARC_TIMELOCK_ADDRESS
-        value: "0x23a038742a12d9D8ABcfF62c5bFA36b608fFe17e"
+        value: "0xDd139CD311278C385cB4d578f76cc51aaece9e7d"
       - key: ADMIN_MULTISIG
         value: "0x33E4bd4561EE669012ff83b4eE5609122838bDcB"
       - key: ARC_POLLER_ENABLED
         value: "true"
       - key: ARC_POLLER_REPLAY_ENABLED
-        value: "false"
+        value: "true"
+      - key: ARC_POLLER_REPLAY_FROM_BLOCK
+        value: "59881981"
       - key: ARC_DEPLOYMENT_BLOCK
-        value: "59870676"
+        value: "59881981"
       - key: AUTH_ALLOW_INSECURE
         value: "false"
       - key: AUTH_SIWE_DOMAINS
