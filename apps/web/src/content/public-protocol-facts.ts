@@ -15,7 +15,7 @@ export const PUBLIC_PROTOCOL_FACTS = {
   creatorShareOfTradeFeeBps: 5_000,
   protocolShareOfTradeFeeBps: 5_000,
   referralAccrualBps: 10,
-  ammSwapFeeBps: 0,
+  ammSwapFeeBps: 30,
   graduationMarketCapUsdc: 30_000,
   liquiditySeedUsdc: 8_500,
   transferPolicy: 'uncapped',

@@ -156,7 +156,7 @@ export default function DocsPage() {
               <div className="flex justify-between gap-4"><span>Token creation</span><span className="font-semibold">{facts.creationFeeUsdc} USDC</span></div>
               <div className="flex justify-between gap-4"><span>Bonding-curve buy or sell</span><span className="font-semibold">{tradeFee}</span></div>
               <div className="flex justify-between gap-4"><span>Creator share</span><span className="font-semibold">{creatorFee} of trade</span></div>
-              <div className="flex justify-between gap-4"><span>Post-graduation AMM swap</span><span className="font-semibold">{formatBps(facts.ammSwapFeeBps)} target protocol fee</span></div>
+              <div className="flex justify-between gap-4"><span>Post-graduation AMM swap</span><span className="font-semibold">{formatBps(facts.ammSwapFeeBps)} retained in pool reserves</span></div>
               <div className="flex justify-between gap-4"><span>Arc network gas</span><span className="font-semibold">variable, paid in native USDC</span></div>
             </div>
           </section>

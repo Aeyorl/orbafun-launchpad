@@ -58,8 +58,8 @@ export default function FeesPage() {
               <span className="font-semibold text-right">{formatBps(facts.bondingCurveTradeFeeBps)}</span>
             </div>
             <div className="flex justify-between gap-4 border-b border-bg-border pb-2">
-              <span className="text-text-muted">Post-graduation AMM protocol fee</span>
-              <span className="font-semibold text-right">{formatBps(facts.ammSwapFeeBps)} target</span>
+              <span className="text-text-muted">Post-graduation AMM LP fee</span>
+              <span className="font-semibold text-right">{formatBps(facts.ammSwapFeeBps)}</span>
             </div>
             <div className="flex justify-between gap-4 border-b border-bg-border pb-2">
               <span className="text-text-muted">Referral accounting accrual</span>
@@ -132,13 +132,15 @@ export default function FeesPage() {
           <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
             <h2 className="font-semibold text-lg">AMM swaps after graduation</h2>
             <span className="text-2xl font-bold text-accent-green tabular-nums">
-              {formatBps(facts.ammSwapFeeBps)} target
+              {formatBps(facts.ammSwapFeeBps)}
             </span>
           </div>
           <p className="text-sm text-text-secondary mb-2">
-            The release candidate&apos;s AMM does not add a protocol swap fee.
-            A zero protocol fee does not make a swap cost-free: users still pay
-            Arc gas and experience pool price impact and slippage.
+            The AMM retains 0.3% of swap input in the pair reserves for liquidity
+            providers. Orba and token creators have no protocol-fee switch or
+            special withdrawal path. Graduation sends its LP tokens to the burn
+            address; later third-party liquidity providers may still mint their own
+            LP tokens and participate in fees earned while they provide liquidity.
           </p>
           <p className="text-sm text-text-secondary">
             The final router, pair bytecode, reserves, and transaction preview must
@@ -226,7 +228,7 @@ export default function FeesPage() {
             Curve trading and its {TRADE_FEE_PCT}% fee stop after successful
             graduation. Previously accrued creator and protocol amounts remain
             subject to their contract claim rules. Trading moves to the AMM, where
-            the target protocol swap fee is {formatBps(facts.ammSwapFeeBps)} and gas,
+            the LP swap fee is {formatBps(facts.ammSwapFeeBps)} and gas,
             slippage, and price impact still apply. Graduation has no separate target
             platform charge.
           </p>

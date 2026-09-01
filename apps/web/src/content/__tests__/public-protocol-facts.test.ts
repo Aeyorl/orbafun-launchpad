@@ -14,6 +14,7 @@ describe('public protocol facts', () => {
   it('formats target fee rates from basis points', () => {
     expect(formatBps(PUBLIC_PROTOCOL_FACTS.bondingCurveTradeFeeBps)).toBe('1%');
     expect(formatBps(PUBLIC_PROTOCOL_FACTS.referralAccrualBps)).toBe('0.1%');
+    expect(formatBps(PUBLIC_PROTOCOL_FACTS.ammSwapFeeBps)).toBe('0.3%');
   });
 
   it('derives creator and protocol shares from the total trade fee', () => {

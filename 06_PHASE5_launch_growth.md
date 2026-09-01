@@ -30,14 +30,16 @@ relationships.
 |---|---|---|
 | Creation fee | `[CONFIRM]`, doc suggests 5 USDC | `TokenFactory.createToken()` |
 | Trading fee | **1%, split 0.5% creator / 0.5% protocol** (resolved — see DECISION_LOG D19) | `BondingCurve.buy()`/`sell()` — creator fees accrue during bonding curve phase only, claimable anytime |
-| AMM swap fee | **0.3%, retained entirely in AMM reserves** | `AMMPair.swap()` enforces the fee in the invariant. The migration sends all usable LP tokens to `0x...dEaD`, so Orba and creators cannot withdraw the accumulated fee liquidity. |
+| AMM swap fee | **0.3%, retained in AMM reserves** | `AMMPair.swap()` enforces the fee in the invariant. The migration sends its LP tokens to `0x...dEaD`; Orba and creators receive no LP and have no protocol-fee withdrawal path. |
 | Featured placement | `[CONFIRM]`, doc suggests 100 USDC/day | New: `Featured.sol` or extend `Treasury.sol` — build only when first requested, don't pre-build |
 | Verification badge | `[CONFIRM]`, doc suggests 50 USDC | Same — build on demand |
 | Token boosts | `[CONFIRM]`, doc suggests 20–500 USDC | Same — build on demand |
 
-The AMM fee is not protocol revenue. It remains in the pair, increasing the
-reserves represented by permanently burned LP tokens. There is no protocol-fee
-switch and no creator withdrawal path for post-graduation swap fees.
+The AMM fee is not protocol revenue. It remains in the pair and increases its
+reserves. The graduation LP is permanently burned. `AMMPair.mint()` still permits
+later third parties to provide proportional liquidity and receive their own LP,
+so those LP holders can participate in fees earned while they provide liquidity.
+There is no protocol-fee switch or creator withdrawal path.
 
 Featured/verification/boosts are monetization features for once there's actual
 traffic to sell placement against — building them before you have users to
