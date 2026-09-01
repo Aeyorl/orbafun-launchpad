@@ -6,20 +6,19 @@ pragma solidity ^0.8.26;
 /// @dev Adapted for Arc: no WETH wrapping, pairs use ERC-20 tokens directly.
 ///      Used as the graduation target for BondingCurve tokens. See DECISION_LOG
 ///      D6, D7 (own AMM, no WUSDC, use ERC-20 USDC directly).
-///      This is a minimal fork — no fee-on-switch, no protocol fee. The pair
+///      This is a minimal fork — no protocol fee. The pair
 ///      contract (AMMPair) holds the actual liquidity and swap logic.
 import {Ownable} from "solady/auth/Ownable.sol";
 import {AMMPair} from "./AMMPair.sol";
 
 contract AMMFactory is Ownable {
-    /// @notice Fee setter (v1: no swap fee on the AMM itself — fees are captured
-    ///         on the bonding curve only. This is reserved for future use.)
-    address public feeSetter;
-
     /// @notice Contracts allowed to create canonical Orba pairs.
     /// @dev Restricting pair creation prevents an attacker from initializing a
     ///      launch token's canonical pair before graduation and retaining LP.
     mapping(address => bool) public pairCreators;
+
+    /// @notice Routers allowed to perform swaps on canonical pairs.
+    mapping(address => bool) public routers;
 
     /// @notice All pairs created by this factory.
     mapping(address => mapping(address => address)) public getPair;
@@ -27,6 +26,7 @@ contract AMMFactory is Ownable {
 
     event PairCreated(address indexed token0, address indexed token1, address pair, uint256);
     event PairCreatorSet(address indexed account, bool allowed);
+    event RouterSet(address indexed router, bool allowed);
 
     error IdenticalAddresses();
     error PairExists();
@@ -35,7 +35,6 @@ contract AMMFactory is Ownable {
 
     constructor() {
         _initializeOwner(msg.sender);
-        feeSetter = msg.sender;
         pairCreators[msg.sender] = true;
     }
 
@@ -65,6 +64,13 @@ contract AMMFactory is Ownable {
         if (account == address(0)) revert ZeroAddress();
         pairCreators[account] = allowed;
         emit PairCreatorSet(account, allowed);
+    }
+
+    /// @notice Authorize or revoke an atomic swap router.
+    function setRouter(address router, bool allowed) external onlyOwner {
+        if (router == address(0) || (allowed && router.code.length == 0)) revert ZeroAddress();
+        routers[router] = allowed;
+        emit RouterSet(router, allowed);
     }
 
     /// @notice Total pairs created.

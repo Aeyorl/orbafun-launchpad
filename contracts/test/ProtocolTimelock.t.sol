@@ -73,6 +73,27 @@ contract ProtocolTimelockTest is Test {
         timelock.execute(address(target), 0, data, SALT);
     }
 
+    function test_ExpiredOperationCannotExecuteAndCanBeCleanedUp() public {
+        bytes memory data = abi.encodeCall(TimelockTarget.setValue, (11));
+        bytes32 operationId = timelock.queue(address(target), 0, data, SALT);
+        vm.warp(block.timestamp + DELAY + timelock.GRACE_PERIOD() + 1);
+
+        vm.expectRevert(ProtocolTimelock.OperationExpiredError.selector);
+        timelock.execute(address(target), 0, data, SALT);
+
+        vm.prank(address(0xBEEF));
+        timelock.expire(operationId);
+        assertEq(timelock.readyAt(operationId), 0);
+    }
+
+    function test_OperationCannotBeExpiredDuringGracePeriod() public {
+        bytes memory data = abi.encodeCall(TimelockTarget.setValue, (12));
+        bytes32 operationId = timelock.queue(address(target), 0, data, SALT);
+        vm.warp(block.timestamp + DELAY + timelock.GRACE_PERIOD());
+        vm.expectRevert(ProtocolTimelock.OperationNotReady.selector);
+        timelock.expire(operationId);
+    }
+
     function test_AdminAndDelayChangesMustUseTimelock() public {
         vm.expectRevert(ProtocolTimelock.Unauthorized.selector);
         timelock.updateDelay(72 hours);

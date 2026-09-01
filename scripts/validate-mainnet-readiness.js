@@ -61,9 +61,13 @@ requireExact('MONITORING_ENABLED', 'true');
 requireExact('UPSTASH_ALERTS_CONFIGURED', 'true');
 requireExact('MAINNET_CONFIGURATION_APPROVED', 'true');
 requireExact('INCIDENT_CONTACTS_CONFIGURED', 'true');
+requireExact('CONTRACT_SOURCES_VERIFIED', 'true');
+requireExact('PRODUCTION_GRADUATION_TEST_PASSED', 'true');
 
 const rpcUrls = requireValue('ARC_RPC_URLS');
+const explorerApiUrl = requireValue('ARC_EXPLORER_API_URL');
 requireSecureUrl('ARC_RPC_URLS', rpcUrls, 'https:');
+requireSecureUrl('ARC_EXPLORER_API_URL', explorerApiUrl, 'https:');
 requireSecureUrl('ARC_WS_URL', requireValue('ARC_WS_URL'), 'wss:');
 requireSecureUrl('REDIS_URL', requireValue('REDIS_URL'), 'rediss:');
 requireSecureUrl('ALERT_WEBHOOK_URL', requireValue('ALERT_WEBHOOK_URL'), 'https:');
@@ -101,7 +105,23 @@ for (const name of [
   'PLATFORM_DEPLOYER_DAILY_LIMIT_MICRO_USDC',
   'PLATFORM_DEPLOYER_MONTHLY_LIMIT_MICRO_USDC',
   'REDIS_KEY_WARN_COUNT',
+  'PRODUCTION_GRADUATION_EVIDENCE_URL',
 ]) requireValue(name);
+
+requireSecureUrl(
+  'PRODUCTION_GRADUATION_EVIDENCE_URL',
+  process.env.PRODUCTION_GRADUATION_EVIDENCE_URL || '',
+  'https:',
+);
+
+for (const name of [
+  'PRODUCTION_GRADUATION_TX_HASH',
+  'PRODUCTION_AMM_BUY_TX_HASH',
+  'PRODUCTION_AMM_SELL_TX_HASH',
+]) {
+  const value = requireValue(name);
+  if (value && !/^0x[0-9a-fA-F]{64}$/.test(value)) errors.push(`${name} is not a transaction hash`);
+}
 
 if (process.env.DEPLOYER_PRIVATE_KEY) {
   errors.push('DEPLOYER_PRIVATE_KEY must not exist in a mainnet environment');
@@ -147,6 +167,22 @@ async function rpc(method, params) {
   throw lastError || new Error('No RPC URL configured');
 }
 
+async function requireVerifiedSource(addressName) {
+  const address = process.env[addressName];
+  if (!addressPattern.test(address || '') || !explorerApiUrl) return;
+  const response = await fetch(
+    `${explorerApiUrl.replace(/\/$/, '')}/api/v2/smart-contracts/${address}`,
+    { headers: { accept: 'application/json' } },
+  );
+  if (!response.ok) throw new Error(`${addressName} explorer lookup returned HTTP ${response.status}`);
+  const contract = await response.json();
+  if (contract.is_verified !== true) {
+    errors.push(`${addressName} source is not verified on the configured explorer`);
+  } else {
+    checks.push(`${addressName} source verified on explorer`);
+  }
+}
+
 async function main() {
   const configuredChainId = Number.parseInt(process.env.ARC_CHAIN_ID || '', 10);
   if (!Number.isSafeInteger(configuredChainId) || configuredChainId <= 0) {
@@ -189,6 +225,7 @@ async function main() {
         } else if (expected) {
           checks.push(`${label} bytecode hash matches`);
         }
+        await requireVerifiedSource(addressName);
       }
     } catch (error) {
       errors.push(`Mainnet RPC verification failed: ${error.message}`);

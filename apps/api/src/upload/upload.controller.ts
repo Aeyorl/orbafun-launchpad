@@ -8,10 +8,15 @@ import {
   Get,
   UseInterceptors,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { Request } from 'express';
+import { createHash } from 'node:crypto';
+import sharp from 'sharp';
 import { AuthGuard } from '../auth/auth.guard';
+import { RedisService } from '../redis/redis.service';
 
 /**
  * UploadController — handles token image uploads to Pinata IPFS.
@@ -36,11 +41,22 @@ import { AuthGuard } from '../auth/auth.guard';
  * If PINATA_JWT is not set, the endpoint returns 503 Service Unavailable
  * and the frontend falls back to the URL input field.
  */
-const PINATA_JWT = process.env.PINATA_JWT;
 const PINATA_GATEWAY = process.env.PINATA_GATEWAY || 'https://gateway.pinata.cloud';
 const PINATA_API = 'https://api.pinata.cloud/pinning/pinFileToIPFS';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_IMAGE_PIXELS = 20_000_000;
+const MAX_IMAGE_DIMENSION = 4_096;
+const UPLOAD_WALLET_DAILY_FILES = positiveIntEnv('UPLOAD_WALLET_DAILY_FILES', 12);
+const UPLOAD_WALLET_DAILY_BYTES = positiveIntEnv(
+  'UPLOAD_WALLET_DAILY_BYTES',
+  30 * 1024 * 1024,
+);
+const UPLOAD_GLOBAL_DAILY_FILES = positiveIntEnv('UPLOAD_GLOBAL_DAILY_FILES', 2_000);
+const UPLOAD_GLOBAL_DAILY_BYTES = positiveIntEnv(
+  'UPLOAD_GLOBAL_DAILY_BYTES',
+  2 * 1024 * 1024 * 1024,
+);
 const ALLOWED_TYPES = new Set([
   'image/png',
   'image/jpeg',
@@ -49,24 +65,14 @@ const ALLOWED_TYPES = new Set([
   'image/webp',
 ]);
 
-// Magic byte signatures for image format validation (prevents MIME spoofing).
-const MAGIC_BYTES: Record<string, number[]> = {
-  'image/png': [0x89, 0x50, 0x4e, 0x47],
-  'image/jpeg': [0xff, 0xd8, 0xff],
-  'image/jpg': [0xff, 0xd8, 0xff],
-  'image/gif': [0x47, 0x49, 0x46, 0x38],
-  'image/webp': [0x52, 0x49, 0x46, 0x46], // "RIFF" — WebP container
-};
-
-/**
- * Verify file magic bytes match the declared MIME type.
- * Prevents uploading malicious files with a spoofed Content-Type.
- */
-function verifyMagicBytes(buffer: Buffer, mimetype: string): boolean {
-  const expected = MAGIC_BYTES[mimetype];
-  if (!expected) return false;
-  if (buffer.length < expected.length) return false;
-  return expected.every((byte, i) => buffer[i] === byte);
+function positiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
 }
 
 /**
@@ -87,11 +93,13 @@ function sanitizeFilename(name: string): string {
 export class UploadController {
   private readonly logger = new Logger(UploadController.name);
 
+  constructor(private readonly redis: RedisService) {}
+
   /** Health check — lets the frontend know if uploads are available. */
   @Get('status')
   @SkipThrottle()
   status() {
-    return { enabled: !!PINATA_JWT, gateway: PINATA_GATEWAY };
+    return { enabled: !!process.env.PINATA_JWT, gateway: PINATA_GATEWAY };
   }
 
   /**
@@ -119,8 +127,12 @@ export class UploadController {
       },
     }),
   )
-  async uploadImage(@UploadedFile() file: any) {
-    if (!PINATA_JWT) {
+  async uploadImage(
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: Request & { wallet?: string },
+  ) {
+    const pinataJwt = process.env.PINATA_JWT;
+    if (!pinataJwt) {
       throw new HttpException(
         'Image upload is not configured (PINATA_JWT missing). Use a URL instead.',
         HttpStatus.SERVICE_UNAVAILABLE,
@@ -130,25 +142,89 @@ export class UploadController {
       throw new HttpException('No file uploaded', HttpStatus.BAD_REQUEST);
     }
 
-    // Verify magic bytes match the declared MIME type (prevents MIME spoofing).
-    if (!verifyMagicBytes(file.buffer, file.mimetype)) {
+    // Decode and re-encode instead of trusting short magic-byte prefixes. This
+    // rejects malformed/polyglot RIFF inputs, strips metadata, and bounds image
+    // decompression before any content is persisted by the platform.
+    let canonicalImage: Buffer;
+    try {
+      const result = await sharp(file.buffer, {
+        animated: false,
+        failOn: 'warning',
+        limitInputPixels: MAX_IMAGE_PIXELS,
+      })
+        .rotate()
+        .resize({
+          width: MAX_IMAGE_DIMENSION,
+          height: MAX_IMAGE_DIMENSION,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 88, effort: 4 })
+        .toBuffer({ resolveWithObject: true });
+      if (!result.info.width || !result.info.height || result.data.length > MAX_FILE_SIZE) {
+        throw new Error('Canonical image exceeds upload limits');
+      }
+      canonicalImage = result.data;
+    } catch {
       throw new HttpException(
-        `File content does not match declared type (${file.mimetype}). Possible spoofing attempt.`,
+        'Image could not be safely decoded or exceeds pixel/dimension limits',
         HttpStatus.BAD_REQUEST,
       );
     }
 
-    const safeName = sanitizeFilename(file.originalname);
+    const wallet = req.wallet?.toLowerCase();
+    if (!wallet) {
+      throw new HttpException('Authenticated wallet missing', HttpStatus.UNAUTHORIZED);
+    }
+    const contentHash = createHash('sha256').update(canonicalImage).digest('hex');
+    const cachedCid = await this.redis.get(`upload:content:${contentHash}`);
+    if (cachedCid) {
+      return {
+        uri: `ipfs://${cachedCid}`,
+        gateway: `${PINATA_GATEWAY}/ipfs/${cachedCid}`,
+        deduplicated: true,
+      };
+    }
+
+    const day = new Date().toISOString().slice(0, 10);
+    const quotaReserved = await this.redis.reserveFixedWindowQuota(
+      [
+        `upload:quota:${day}:wallet:${wallet}:files`,
+        `upload:quota:${day}:wallet:${wallet}:bytes`,
+        `upload:quota:${day}:global:files`,
+        `upload:quota:${day}:global:bytes`,
+      ],
+      [1, canonicalImage.length, 1, canonicalImage.length],
+      [
+        UPLOAD_WALLET_DAILY_FILES,
+        UPLOAD_WALLET_DAILY_BYTES,
+        UPLOAD_GLOBAL_DAILY_FILES,
+        UPLOAD_GLOBAL_DAILY_BYTES,
+      ],
+      48 * 60 * 60,
+    );
+    if (quotaReserved === null) {
+      throw new HttpException(
+        'Upload quota service unavailable',
+        HttpStatus.SERVICE_UNAVAILABLE,
+      );
+    }
+    if (!quotaReserved) {
+      throw new HttpException('Daily upload quota exceeded', HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    const safeName = sanitizeFilename(file.originalname).replace(/\.[^.]+$/, '') + '.webp';
 
     // Forward to Pinata as multipart/form-data.
     const form = new FormData();
-    form.append('file', new Blob([file.buffer], { type: file.mimetype }), safeName);
+    const uploadBytes = Uint8Array.from(canonicalImage);
+    form.append('file', new Blob([uploadBytes], { type: 'image/webp' }), safeName);
 
     try {
       const res = await fetch(PINATA_API, {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${PINATA_JWT}`,
+          Authorization: `Bearer ${pinataJwt}`,
         },
         body: form,
       });
@@ -170,6 +246,8 @@ export class UploadController {
           HttpStatus.INTERNAL_SERVER_ERROR,
         );
       }
+
+      await this.redis.set(`upload:content:${contentHash}`, cid, 30 * 24 * 60 * 60);
 
       this.logger.log(`Uploaded image to IPFS: ${cid} (${safeName})`);
       return {

@@ -19,6 +19,11 @@
  * ~$10 USDC cost for 5 buy + 5 sell swaps.
  */
 require('dotenv').config();
+if (process.env.ALLOW_UNSAFE_DIRECT_AMM_TEST !== 'true') {
+  throw new Error(
+    'This legacy script uses direct transfer-then-swap and is disabled. Use scripts/e2e-graduation.js with the authorized AMMRouter.',
+  );
+}
 const {
   createWalletClient,
   createPublicClient,

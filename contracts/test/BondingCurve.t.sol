@@ -55,6 +55,7 @@ contract BondingCurveTest is Test {
         ammFactory = new AMMFactory();
         migrator = new LiquidityMigration(address(factory), address(ammFactory));
         router = new AMMRouter(address(ammFactory));
+        ammFactory.setRouter(address(router), true);
 
         // Wire migrator into factory (so new curves get the migrator address).
         ammFactory.setPairCreator(address(migrator), true);
@@ -312,6 +313,9 @@ contract BondingCurveTest is Test {
 
         // Create pair.
         address pair = ammFactory.createPair(token, USDC);
+        // This test contract stands in for an atomic router for this low-level
+        // pair invariant test. Production pairs authorize only AMMRouter.
+        ammFactory.setRouter(address(this), true);
         assertTrue(pair != address(0), "pair created");
 
         // Add liquidity: 100 USDC + half the bought tokens.
@@ -332,7 +336,9 @@ contract BondingCurveTest is Test {
 
         uint256 swapAmount = 10 * 10 ** 6;
         assertTrue(usdc.transfer(pair, swapAmount), "swap input transfer");
-        uint256 expectedOut = (swapAmount * tokenReserve) / (usdcReserve + swapAmount);
+        uint256 amountInWithFee = swapAmount * 997;
+        uint256 expectedOut =
+            (amountInWithFee * tokenReserve) / (usdcReserve * 1_000 + amountInWithFee);
         if (usdcIsToken0) {
             AMMPair(pair).swap(0, expectedOut, address(this));
         } else {

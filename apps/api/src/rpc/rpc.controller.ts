@@ -1,5 +1,7 @@
-import { Body, Controller, HttpException, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, HttpException, HttpStatus, Post, Req } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
+import { Request } from 'express';
+import { RedisService } from '../redis/redis.service';
 
 /**
  * RpcController — JSON-RPC read proxy for the frontend.
@@ -43,10 +45,14 @@ const ALLOWED_METHODS = new Set([
   'net_version',
   'web3_clientVersion',
 ]);
-const MAX_BATCH_SIZE = 20;
+const MAX_BATCH_SIZE = 10;
 const MAX_LOG_BLOCK_RANGE = 2_000n;
 const MAX_LOG_ADDRESSES = 50;
 const MAX_RPC_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_HEAVY_METHODS_PER_BATCH = 4;
+const MAX_CALLDATA_BYTES = 16 * 1024;
+const MAX_CALL_GAS = 5_000_000n;
+const RPC_WEIGHT_LIMIT_PER_MINUTE = 300;
 
 const RPC_URLS = (
   process.env.ARC_RPC_URLS ||
@@ -67,9 +73,11 @@ if (RPC_URLS.length === 0) {
 export class RpcController {
   private rpcIndex = 0;
 
+  constructor(private readonly redis: RedisService) {}
+
   @Post()
-  @Throttle({ default: { ttl: 60_000, limit: 300 } })
-  async proxy(@Body() body: any): Promise<any> {
+  @Throttle({ default: { ttl: 60_000, limit: 120 } })
+  async proxy(@Body() body: any, @Req() req: Request): Promise<any> {
     // Support single requests and JSON-RPC batches.
     const requests = Array.isArray(body) ? body : [body];
     if (requests.length === 0 || requests.length > MAX_BATCH_SIZE) {
@@ -78,20 +86,54 @@ export class RpcController {
         HttpStatus.BAD_REQUEST,
       );
     }
-    for (const req of requests) {
+    for (const item of requests) {
       if (
-        !req ||
-        req.jsonrpc !== '2.0' ||
-        typeof req.method !== 'string' ||
-        !ALLOWED_METHODS.has(req.method) ||
-        (req.params !== undefined && !Array.isArray(req.params))
+        !item ||
+        item.jsonrpc !== '2.0' ||
+        typeof item.method !== 'string' ||
+        !ALLOWED_METHODS.has(item.method) ||
+        (item.params !== undefined && !Array.isArray(item.params))
       ) {
         throw new HttpException(
-          `Method not allowed: ${req?.method ?? 'unknown'}`,
+          `Method not allowed: ${item?.method ?? 'unknown'}`,
           HttpStatus.FORBIDDEN,
         );
       }
-      if (req.method === 'eth_getLogs') this.validateLogFilter(req.params?.[0]);
+      if (item.method === 'eth_getLogs') this.validateLogFilter(item.params?.[0]);
+      if (item.method === 'eth_call' || item.method === 'eth_estimateGas') {
+        this.validateCall(item.params?.[0]);
+      }
+    }
+    const heavyCount = requests.filter(
+      (item) => item.method === 'eth_call' || item.method === 'eth_estimateGas',
+    ).length;
+    if (heavyCount > MAX_HEAVY_METHODS_PER_BATCH) {
+      throw new HttpException(
+        `RPC batch may contain at most ${MAX_HEAVY_METHODS_PER_BATCH} execution calls`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const requestWeight = requests.reduce((total, item) => {
+      if (item.method === 'eth_estimateGas' || item.method === 'eth_getLogs') return total + 10;
+      if (item.method === 'eth_call') return total + 5;
+      if (item.method === 'eth_getBlockByHash' || item.method === 'eth_getBlockByNumber') {
+        return total + 3;
+      }
+      return total + 1;
+    }, 0);
+    const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
+    const budgetReserved = await this.redis.reserveFixedWindowQuota(
+      [`rpc:budget:${clientIp}`],
+      [requestWeight],
+      [RPC_WEIGHT_LIMIT_PER_MINUTE],
+      60,
+    );
+    if (budgetReserved === null) {
+      throw new HttpException('RPC quota service unavailable', HttpStatus.SERVICE_UNAVAILABLE);
+    }
+    if (!budgetReserved) {
+      throw new HttpException('RPC weighted rate limit exceeded', HttpStatus.TOO_MANY_REQUESTS);
     }
 
     // Try each provider once, rotating on rate-limit or network errors.
@@ -174,6 +216,29 @@ export class RpcController {
         `eth_getLogs block range must be explicit and at most ${MAX_LOG_BLOCK_RANGE} blocks`,
         HttpStatus.BAD_REQUEST,
       );
+    }
+  }
+
+  private validateCall(call: any): void {
+    if (!call || typeof call !== 'object' || Array.isArray(call)) {
+      throw new HttpException('RPC execution call must be an object', HttpStatus.BAD_REQUEST);
+    }
+    if (typeof call.to !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(call.to)) {
+      throw new HttpException('RPC execution call requires a valid target', HttpStatus.BAD_REQUEST);
+    }
+    const data = call.data ?? call.input ?? '0x';
+    if (
+      typeof data !== 'string' ||
+      !/^0x(?:[0-9a-fA-F]{2})*$/.test(data) ||
+      (data.length - 2) / 2 > MAX_CALLDATA_BYTES
+    ) {
+      throw new HttpException('RPC execution calldata is invalid or too large', HttpStatus.BAD_REQUEST);
+    }
+    if (call.gas !== undefined) {
+      const gas = this.parseBlockNumber(call.gas);
+      if (gas === null || gas > MAX_CALL_GAS) {
+        throw new HttpException('RPC execution gas exceeds the proxy cap', HttpStatus.BAD_REQUEST);
+      }
     }
   }
 

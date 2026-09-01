@@ -119,6 +119,57 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     return result === 'OK';
   }
 
+  /**
+   * Atomically reserve one or more fixed-window counters.
+   *
+   * Every counter is checked before any counter is incremented, so callers do
+   * not leave partially-consumed quota when a wallet or global budget is
+   * already exhausted. A null result means Redis is unavailable and security-
+   * sensitive callers should fail closed.
+   */
+  async reserveFixedWindowQuota(
+    keys: string[],
+    increments: number[],
+    limits: number[],
+    ttlSeconds: number,
+  ): Promise<boolean | null> {
+    if (!this.connected) return null;
+    if (
+      keys.length === 0 ||
+      keys.length !== increments.length ||
+      keys.length !== limits.length ||
+      !Number.isSafeInteger(ttlSeconds) ||
+      ttlSeconds <= 0 ||
+      increments.some((value) => !Number.isSafeInteger(value) || value <= 0) ||
+      limits.some((value) => !Number.isSafeInteger(value) || value <= 0)
+    ) {
+      throw new Error('Invalid fixed-window quota configuration');
+    }
+
+    const count = keys.length;
+    const result = await this.client.eval(
+      `for i = 1, #KEYS do
+         local current = tonumber(redis.call('GET', KEYS[i]) or '0')
+         local increment = tonumber(ARGV[i])
+         local limit = tonumber(ARGV[#KEYS + i])
+         if current + increment > limit then return 0 end
+       end
+       for i = 1, #KEYS do
+         redis.call('INCRBY', KEYS[i], ARGV[i])
+         if redis.call('TTL', KEYS[i]) < 0 then
+           redis.call('EXPIRE', KEYS[i], ARGV[#KEYS * 2 + 1])
+         end
+       end
+       return 1`,
+      count,
+      ...keys,
+      ...increments.map(String),
+      ...limits.map(String),
+      String(ttlSeconds),
+    );
+    return Number(result) === 1;
+  }
+
   async getDel(key: string): Promise<string | null> {
     if (!this.connected) return null;
     return this.client.getdel(key);

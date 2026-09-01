@@ -25,6 +25,11 @@
  * ~$20 USDC cost for 10 concurrent swappers.
  */
 require('dotenv').config();
+if (process.env.ALLOW_UNSAFE_DIRECT_AMM_TEST !== 'true') {
+  throw new Error(
+    'This legacy direct-pair contention reproducer is disabled. Use scripts/e2e-graduation.js with the authorized AMMRouter.',
+  );
+}
 const {
   createWalletClient,
   createPublicClient,

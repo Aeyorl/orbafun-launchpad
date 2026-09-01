@@ -35,6 +35,7 @@ contract AMMRouterTest is Test {
         // Deploy factory + router.
         ammFactory = new AMMFactory();
         router = new AMMRouter(address(ammFactory));
+        ammFactory.setRouter(address(router), true);
 
         // Deploy a test token (plain ERC-20, no cooldown/max-wallet).
         token = new MockToken();
@@ -137,6 +138,15 @@ contract AMMRouterTest is Test {
         vm.prank(swapper1);
         vm.expectRevert(AMMRouter.InvalidPair.selector);
         router.swapExactUSDCForTokens(10 * 10 ** 6, 0, block.timestamp, address(roguePair), swapper1);
+    }
+
+    function testDirectPairSwapReverts() public {
+        usdc.mint(swapper1, 10 * 10 ** 6);
+        vm.prank(swapper1);
+        usdc.transfer(address(pair), 10 * 10 ** 6);
+        vm.prank(swapper1);
+        vm.expectRevert(AMMPair.UnauthorizedRouter.selector);
+        pair.swap(0, 1, swapper1);
     }
 
     function testPairWithoutUsdcReverts() public {

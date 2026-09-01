@@ -8,9 +8,8 @@ pragma solidity ^0.8.26;
 ///         swappers double-spend price impact).
 ///         The router does `transferFrom` + `swap` in a single transaction,
 ///         so reserves are read atomically and the invariant holds.
-/// @dev No multi-hop, no WETH wrapping, no fee-on-switch — Orba's AMM is a
-///      minimal Uniswap V2 fork with 0% swap fee (fees are captured on the
-///      bonding curve only). Two single-hop swap functions:
+/// @dev No multi-hop, no WETH wrapping, no fee-on-switch. Orba's AMM charges
+///      a 0.3% liquidity-provider fee. Two single-hop swap functions:
 ///        - swapExactUSDCForTokens(amountIn, amountOutMin, pair, to)
 ///        - swapExactTokensForUSDC(amountIn, amountOutMin, pair, to)
 ///      Caller must have approved the router to spend `amountIn` of the input
@@ -124,8 +123,7 @@ contract AMMRouter {
     // ─── Internal helpers ──────────────────────────────────────────────────
 
     /// @dev Given an input amount and the pair's reserves, compute the output
-    ///      amount using the constant-product formula (0% fee — see AMMPair).
-    ///      amountOut = (amountIn * reserveOut) / (reserveIn + amountIn)
+    ///      amount using the constant-product formula with a 0.3% LP fee.
     function _getOutput(address tokenIn, uint256 amountIn, address pair)
         internal
         view
@@ -136,9 +134,8 @@ contract AMMRouter {
             ? (uint256(reserve0), uint256(reserve1))
             : (uint256(reserve1), uint256(reserve0));
         if (reserveIn == 0 || reserveOut == 0) revert InsufficientOutputAmount();
-        // No swap fee on this AMM (v1). If a fee is added later, multiply
-        // amountIn by (10000 - feeBps) / 10000 before this calculation.
-        return (amountIn * reserveOut) / (reserveIn + amountIn);
+        uint256 amountInWithFee = amountIn * 997;
+        return (amountInWithFee * reserveOut) / (reserveIn * 1_000 + amountInWithFee);
     }
 
     /// @dev Execute the swap on the pair. Routes the output to the correct

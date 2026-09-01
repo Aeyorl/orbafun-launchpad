@@ -73,6 +73,7 @@ const ACTIVE_ARC_CHAIN = ARC_CHAIN_ID === arc.id ? arc : arcTestnet;
 const IS_ARC_MAINNET = ARC_CHAIN_ID === arc.id;
 const DEPLOYER_ACTIONS_ENABLED = process.env.DEPLOYER_ACTIONS_ENABLED === 'true';
 const DEPLOYER_SIGNER_PROVIDER = process.env.DEPLOYER_SIGNER_PROVIDER || 'local';
+export const MAX_AGENT_SLIPPAGE_BPS = 1_000n;
 
 function positiveBigIntEnv(name: string): bigint | undefined {
   const raw = process.env[name];
@@ -83,6 +84,14 @@ function positiveBigIntEnv(name: string): bigint | undefined {
     return value;
   } catch {
     throw new Error(`${name} must be a positive integer in micro-USDC`);
+  }
+}
+
+export function assertAgentSlippage(slippageBps: bigint): void {
+  if (slippageBps < 0n || slippageBps > MAX_AGENT_SLIPPAGE_BPS) {
+    throw new Error(
+      `slippageBps must be between 0 and ${MAX_AGENT_SLIPPAGE_BPS.toString()}`,
+    );
   }
 }
 
@@ -678,6 +687,7 @@ export class DeployerService implements OnModuleInit {
     slippageBps: bigint = 500n, // 5% default
     intentId?: string,
   ): Promise<TradeResult> {
+    assertAgentSlippage(slippageBps);
     if (!this.isConfigured()) {
       throw new Error('Deployer wallet not configured');
     }
@@ -802,6 +812,7 @@ export class DeployerService implements OnModuleInit {
     slippageBps: bigint = 500n, // 5% default
     intentId?: string,
   ): Promise<TradeResult> {
+    assertAgentSlippage(slippageBps);
     if (!this.isConfigured()) {
       throw new Error('Deployer wallet not configured');
     }

@@ -49,6 +49,7 @@ export class ArcEventPollerService implements OnModuleInit {
   /** Curve addresses to watch for Buy/Sell/Graduated events (dynamic). */
   private curveAddresses: Set<string> = new Set();
   private ammPairAddresses: Set<string> = new Set();
+  private ammPairAssets: Map<string, { token0: string; token1: string }> = new Map();
   private readonly migratorAddresses: Set<string>;
 
   /** Last block we've fully processed. */
@@ -488,6 +489,7 @@ export class ArcEventPollerService implements OnModuleInit {
         // Graduated(address indexed token, address indexed ammPair, uint256 lpUsdc, uint256 lpTokens)
         const token = topicToAddress(log.topics[1]);
         const ammPair = topicToAddress(log.topics[2]);
+        this.registerAmmPair(token, ammPair);
         const decoded = decodeUintData(log.data);
         const lpUsdc = decoded[0];
         const lpTokens = decoded[1];
@@ -506,6 +508,7 @@ export class ArcEventPollerService implements OnModuleInit {
         // TokenGraduated(address indexed token, address indexed ammPair)
         const token = topicToAddress(log.topics[1]);
         const ammPair = topicToAddress(log.topics[2]);
+        this.registerAmmPair(token, ammPair);
 
         // Redundant with BondingCurve.Graduated but idempotent.
         await this.indexerService.processEvent({
@@ -522,13 +525,16 @@ export class ArcEventPollerService implements OnModuleInit {
         // TokenMigrated(address indexed token, address indexed ammPair, uint256 lpBurned)
         const decoded = decodeUintData(log.data);
         if (decoded.length < 1) throw new Error('Malformed TokenMigrated log');
+        const token = topicToAddress(log.topics[1]);
+        const ammPair = topicToAddress(log.topics[2]);
+        this.registerAmmPair(token, ammPair);
         await this.indexerService.processEvent({
           type: 'TokenMigrated',
           txHash,
           blockNumber: Number(blockNumber),
           logIndex,
-          token: topicToAddress(log.topics[1]),
-          ammPair: topicToAddress(log.topics[2]),
+          token,
+          ammPair,
           lpBurned: decoded[0],
         } as any);
       } else if (topic === TOPIC_SWAP) {
@@ -576,6 +582,11 @@ export class ArcEventPollerService implements OnModuleInit {
 
     const swapIndex = hexToBigInt(swapLog.logIndex);
     const pairAddress = swapLog.address.toLowerCase();
+    const assets = this.ammPairAssets.get(pairAddress);
+    if (!assets) {
+      throw new Error(`Unknown AMM pair assets for ${pairAddress}`);
+    }
+    const expectedInputToken = output0 > 0n ? assets.token1 : assets.token0;
 
     // Some public Arc providers return a null receipt for older transactions
     // even though other providers still retain it. A null response is valid
@@ -587,25 +598,33 @@ export class ArcEventPollerService implements OnModuleInit {
         'eth_getTransactionReceipt',
         [swapLog.transactionHash],
       );
-      const transfer = receipt?.logs
+      const transfers = receipt?.logs
         ?.filter((candidate) =>
+          candidate.address.toLowerCase() === expectedInputToken
+          &&
           candidate.topics[0]?.toLowerCase() === TOPIC_TRANSFER
           && candidate.topics.length >= 3
           && topicToAddress(candidate.topics[2]) === pairAddress
           && hexToBigInt(candidate.logIndex) < swapIndex,
         )
-        .sort(compareLogs)
-        .at(-1);
-      if (!transfer) continue;
+        .sort(compareLogs);
+      if (!transfers?.length) continue;
 
-      const inputAmount = decodeUintData(transfer.data)[0];
-      if (!inputAmount || inputAmount === '0') {
+      const traders = new Set(transfers.map((transfer) => topicToAddress(transfer.topics[1])));
+      if (traders.size !== 1) {
+        throw new Error(`Ambiguous AMM input traders for ${swapLog.transactionHash}`);
+      }
+      const inputAmount = transfers.reduce(
+        (total, transfer) => total + BigInt(decodeUintData(transfer.data)[0] || '0'),
+        0n,
+      );
+      if (inputAmount === 0n) {
         throw new Error(`Invalid AMM input transfer for ${swapLog.transactionHash}`);
       }
       return {
-        amount0In: output1 > 0n ? inputAmount : '0',
-        amount1In: output0 > 0n ? inputAmount : '0',
-        trader: topicToAddress(transfer.topics[1]),
+        amount0In: output1 > 0n ? inputAmount.toString() : '0',
+        amount1In: output0 > 0n ? inputAmount.toString() : '0',
+        trader: Array.from(traders)[0],
       };
     }
 
@@ -767,8 +786,24 @@ export class ArcEventPollerService implements OnModuleInit {
     }
   }
   private async loadAmmPairAddresses(): Promise<void> {
-    const rows = await this.db.queryRows<{ amm_pair_address: string }>(`SELECT amm_pair_address FROM graduations WHERE amm_pair_address IS NOT NULL`);
-    for (const row of rows) this.ammPairAddresses.add(row.amm_pair_address.toLowerCase());
+    const rows = await this.db.queryRows<{ amm_pair_address: string; contract_address: string }>(
+      `SELECT g.amm_pair_address, t.contract_address
+       FROM graduations g
+       JOIN tokens t ON t.id = g.token_id
+       WHERE g.amm_pair_address IS NOT NULL`,
+    );
+    for (const row of rows) this.registerAmmPair(row.contract_address, row.amm_pair_address);
+  }
+
+  private registerAmmPair(tokenAddress: string, pairAddress: string): void {
+    const token = tokenAddress.toLowerCase();
+    const pair = pairAddress.toLowerCase();
+    const usdc = (
+      process.env.ARC_USDC_ADDRESS || '0x3600000000000000000000000000000000000000'
+    ).toLowerCase();
+    const [token0, token1] = token < usdc ? [token, usdc] : [usdc, token];
+    this.ammPairAddresses.add(pair);
+    this.ammPairAssets.set(pair, { token0, token1 });
   }
 
   private async loadLastBlock(): Promise<void> {

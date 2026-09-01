@@ -6,6 +6,7 @@ pragma solidity ^0.8.26;
 contract ProtocolTimelock {
     uint64 public constant MIN_DELAY = 24 hours;
     uint64 public constant MAX_DELAY = 30 days;
+    uint64 public constant GRACE_PERIOD = 14 days;
 
     address public admin;
     uint64 public delay;
@@ -22,6 +23,7 @@ contract ProtocolTimelock {
     );
     event OperationCancelled(bytes32 indexed operationId);
     event OperationExecuted(bytes32 indexed operationId, address indexed target, uint256 value);
+    event OperationExpired(bytes32 indexed operationId);
     event AdminUpdated(address indexed oldAdmin, address indexed newAdmin);
     event DelayUpdated(uint64 oldDelay, uint64 newDelay);
 
@@ -31,6 +33,7 @@ contract ProtocolTimelock {
     error OperationAlreadyQueued();
     error OperationNotQueued();
     error OperationNotReady();
+    error OperationExpiredError();
     error CallFailed(bytes reason);
     error ReentrantExecution();
 
@@ -82,6 +85,17 @@ contract ProtocolTimelock {
         emit OperationCancelled(operationId);
     }
 
+    /// @notice Delete an operation that was not executed during its grace period.
+    /// @dev Permissionless cleanup prevents stale privileged calls remaining executable forever.
+    function expire(bytes32 operationId) external {
+        uint64 eta = readyAt[operationId];
+        if (eta == 0) revert OperationNotQueued();
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp <= uint256(eta) + GRACE_PERIOD) revert OperationNotReady();
+        delete readyAt[operationId];
+        emit OperationExpired(operationId);
+    }
+
     function execute(address target, uint256 value, bytes calldata data, bytes32 salt)
         external
         payable
@@ -94,6 +108,8 @@ contract ProtocolTimelock {
         // Validator timestamp tolerance is negligible relative to the 24-hour minimum delay.
         // forge-lint: disable-next-line(block-timestamp)
         if (block.timestamp < eta) revert OperationNotReady();
+        // forge-lint: disable-next-line(block-timestamp)
+        if (block.timestamp > uint256(eta) + GRACE_PERIOD) revert OperationExpiredError();
         delete readyAt[operationId];
         executing = true;
         (bool ok, bytes memory response) = target.call{value: value}(data);

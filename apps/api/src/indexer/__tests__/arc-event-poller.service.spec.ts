@@ -181,7 +181,7 @@ describe('ArcEventPollerService checkpoint safety', () => {
     const { service } = make();
     const processEvent = jest.fn().mockResolvedValue(undefined);
     service.indexerService = { processEvent };
-    service.ammPairAddresses.add(pair);
+    service.registerAmmPair(token, pair);
 
     const word = (value: bigint) => value.toString(16).padStart(64, '0');
     const topicAddress = (address: string) => `0x${address.slice(2).padStart(64, '0')}`;
@@ -246,7 +246,7 @@ describe('ArcEventPollerService checkpoint safety', () => {
     const { service } = make();
     const processEvent = jest.fn().mockResolvedValue(undefined);
     service.indexerService = { processEvent };
-    service.ammPairAddresses.add(pair);
+    service.registerAmmPair(token, pair);
 
     const word = (value: bigint) => value.toString(16).padStart(64, '0');
     const topicAddress = (address: string) => `0x${address.slice(2).padStart(64, '0')}`;
@@ -281,6 +281,56 @@ describe('ArcEventPollerService checkpoint safety', () => {
     });
 
     expect(service.rpcCall).toHaveBeenCalledTimes(2);
+    expect(processEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'Swap', trader, amount0In: '0', amount1In: '500',
+    }));
+  });
+
+  it('ignores a forged later Transfer emitted by an unrelated token', async () => {
+    const pair = '0x3000000000000000000000000000000000000003';
+    const router = '0x4000000000000000000000000000000000000004';
+    const trader = '0x5000000000000000000000000000000000000005';
+    const token = '0x6000000000000000000000000000000000000006';
+    const attackerToken = '0x7000000000000000000000000000000000000007';
+    const { service } = make();
+    const processEvent = jest.fn().mockResolvedValue(undefined);
+    service.indexerService = { processEvent };
+    service.registerAmmPair(token, pair);
+
+    const word = (value: bigint) => value.toString(16).padStart(64, '0');
+    const topicAddress = (address: string) => `0x${address.slice(2).padStart(64, '0')}`;
+    const transfer = (address: string, amount: bigint, logIndex: string) => ({
+      address,
+      topics: [
+        keccak256(toBytes('Transfer(address,address,uint256)')),
+        topicAddress(trader),
+        topicAddress(pair),
+      ],
+      data: `0x${word(amount)}`,
+      blockNumber: '0x2a',
+      transactionHash: '0xabc',
+      logIndex,
+    });
+    service.rpcCall = jest.fn().mockResolvedValue({
+      logs: [
+        transfer(token, 500n, '0x2'),
+        transfer(attackerToken, 10n ** 39n, '0x3'),
+      ],
+    });
+
+    await service.processLog({
+      address: pair,
+      topics: [
+        keccak256(toBytes('Swap(address,address,uint256,uint256,uint256,uint256)')),
+        topicAddress(router),
+        topicAddress(trader),
+      ],
+      data: `0x${word(0n)}${word(0n)}${word(100n)}${word(0n)}`,
+      blockNumber: '0x2a',
+      transactionHash: '0xabc',
+      logIndex: '0x4',
+    });
+
     expect(processEvent).toHaveBeenCalledWith(expect.objectContaining({
       type: 'Swap', trader, amount0In: '0', amount1In: '500',
     }));

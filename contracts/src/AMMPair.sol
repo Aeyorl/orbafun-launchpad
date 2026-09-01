@@ -20,9 +20,17 @@ interface IERC20Minimal {
     function balanceOf(address account) external view returns (uint256);
 }
 
+interface IAMMFactoryAuthorization {
+    function routers(address router) external view returns (bool);
+}
+
 contract AMMPair is ERC20, ReentrancyGuard {
     address public immutable token0;
     address public immutable token1;
+    address public immutable factory;
+
+    uint256 private constant FEE_DENOMINATOR = 1_000;
+    uint256 private constant SWAP_FEE = 3;
 
     uint112 private reserve0;
     uint112 private reserve1;
@@ -44,10 +52,12 @@ contract AMMPair is ERC20, ReentrancyGuard {
     error InvalidToken();
     error TransferFailed();
     error ZeroAmount();
+    error UnauthorizedRouter();
 
     constructor(address token0_, address token1_) {
         token0 = token0_;
         token1 = token1_;
+        factory = msg.sender;
     }
 
     /// @notice Current reserves.
@@ -127,28 +137,40 @@ contract AMMPair is ERC20, ReentrancyGuard {
         emit Burn(msg.sender, amount0, amount1, to);
     }
 
-    /// @notice Swap tokens. Caller must have transferred input tokens first.
-    /// @dev Constant-product: x*y=k. No fee (v1 — fees on bonding curve only).
+    /// @notice Swap tokens after an authorized router atomically transfers input.
+    /// @dev Constant-product with a 0.3% LP fee.
     ///      amount0Out/amount1Out are the tokens to send to `to`.
     ///      Input is inferred from reserve change after transfer.
     function swap(uint256 amount0Out, uint256 amount1Out, address to) external nonReentrant {
+        if (!IAMMFactoryAuthorization(factory).routers(msg.sender)) revert UnauthorizedRouter();
         if (amount0Out == 0 && amount1Out == 0) revert InsufficientOutputAmount();
 
         (uint112 _reserve0, uint112 _reserve1,) = (reserve0, reserve1, 0);
         if (amount0Out >= _reserve0 || amount1Out >= _reserve1) revert InsufficientLiquidity();
 
-        uint256 balance0 = IERC20Minimal(token0).balanceOf(address(this)) - amount0Out;
-        uint256 balance1 = IERC20Minimal(token1).balanceOf(address(this)) - amount1Out;
-
-        // Invariant check: k must not decrease.
-        // balance0 * balance1 >= reserve0 * reserve1
-        require(balance0 * balance1 >= uint256(_reserve0) * uint256(_reserve1), "AMM: K");
-
         if (amount0Out > 0) _safeTransfer(token0, to, amount0Out);
         if (amount1Out > 0) _safeTransfer(token1, to, amount1Out);
 
+        uint256 balance0 = IERC20Minimal(token0).balanceOf(address(this));
+        uint256 balance1 = IERC20Minimal(token1).balanceOf(address(this));
+        uint256 amount0In = balance0 > uint256(_reserve0) - amount0Out
+            ? balance0 - (uint256(_reserve0) - amount0Out)
+            : 0;
+        uint256 amount1In = balance1 > uint256(_reserve1) - amount1Out
+            ? balance1 - (uint256(_reserve1) - amount1Out)
+            : 0;
+        if (amount0In == 0 && amount1In == 0) revert ZeroAmount();
+
+        uint256 balance0Adjusted = balance0 * FEE_DENOMINATOR - amount0In * SWAP_FEE;
+        uint256 balance1Adjusted = balance1 * FEE_DENOMINATOR - amount1In * SWAP_FEE;
+        require(
+            balance0Adjusted * balance1Adjusted
+                >= uint256(_reserve0) * uint256(_reserve1) * FEE_DENOMINATOR ** 2,
+            "AMM: K"
+        );
+
         _update(balance0, balance1);
-        emit Swap(msg.sender, to, 0, 0, amount0Out, amount1Out); // Simplified: amounts in inferred off-chain
+        emit Swap(msg.sender, to, amount0In, amount1In, amount0Out, amount1Out);
     }
 
     /// @notice Force reserves to match balances (after direct token transfers).

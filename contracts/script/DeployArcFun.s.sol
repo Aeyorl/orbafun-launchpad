@@ -48,6 +48,7 @@ contract DeployOrba is Script {
 
         AMMRouter ammRouter = new AMMRouter(address(ammFactory));
         console.log("AMMRouter deployed:", address(ammRouter));
+        ammFactory.setRouter(address(ammRouter), true);
 
         // 3. TokenFactory — creates tokens + bonding curves.
         //    Treasury is the protocol fee recipient.

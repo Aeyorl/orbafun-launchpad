@@ -12,6 +12,11 @@ async function bootstrap() {
   }
   const app = await NestFactory.create(AppModule);
 
+  // Render terminates TLS one hop in front of the API. Trust exactly that hop
+  // so Express/Nest throttling keys requests by the real client address rather
+  // than grouping every caller under the reverse proxy's internal address.
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
   // Security headers — helmet sets X-Content-Type-Options, X-Frame-Options,
   // Strict-Transport-Security, Content-Security-Policy, etc.
   // We loosen CSP for the API since it serves JSON (not HTML), and allow

@@ -17,7 +17,7 @@ import { AgentsService, AgentLaunchRequest } from './agents.service';
 import { ApiKeyGuard } from './api-key.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { AuthGuard } from '../auth/auth.guard';
-import { DeployerService } from './deployer.service';
+import { DeployerService, MAX_AGENT_SLIPPAGE_BPS } from './deployer.service';
 import { TemplateService } from './template.service';
 import { TipService } from './tip.service';
 import { safeBigInt } from '../common/utils';
@@ -224,7 +224,14 @@ export class AgentsController {
     let slippageBps: bigint | undefined;
     try {
       usdcAmount = safeBigInt(body.usdcAmount, { requirePositive: true });
-      slippageBps = body.slippageBps ? safeBigInt(body.slippageBps) : undefined;
+      slippageBps = body.slippageBps !== undefined
+        ? safeBigInt(body.slippageBps)
+        : undefined;
+      if (slippageBps !== undefined && slippageBps > MAX_AGENT_SLIPPAGE_BPS) {
+        throw new Error(
+          `slippageBps must be between 0 and ${MAX_AGENT_SLIPPAGE_BPS.toString()}`,
+        );
+      }
     } catch (err) {
       throw new BadRequestException((err as Error).message);
     }
@@ -252,7 +259,14 @@ export class AgentsController {
     let slippageBps: bigint | undefined;
     try {
       tokenAmount = safeBigInt(body.tokenAmount, { requirePositive: true });
-      slippageBps = body.slippageBps ? safeBigInt(body.slippageBps) : undefined;
+      slippageBps = body.slippageBps !== undefined
+        ? safeBigInt(body.slippageBps)
+        : undefined;
+      if (slippageBps !== undefined && slippageBps > MAX_AGENT_SLIPPAGE_BPS) {
+        throw new Error(
+          `slippageBps must be between 0 and ${MAX_AGENT_SLIPPAGE_BPS.toString()}`,
+        );
+      }
     } catch (err) {
       throw new BadRequestException((err as Error).message);
     }

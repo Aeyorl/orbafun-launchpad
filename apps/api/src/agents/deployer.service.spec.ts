@@ -1,4 +1,4 @@
-import { extractBuyTokensOut } from './deployer.service';
+import { assertAgentSlippage, extractBuyTokensOut } from './deployer.service';
 
 describe('extractBuyTokensOut', () => {
   const curve = '0x1111111111111111111111111111111111111111';
@@ -28,5 +28,14 @@ describe('extractBuyTokensOut', () => {
     expect(() => extractBuyTokensOut([], curve, buyer)).toThrow(
       'Authoritative BuyV2 event not found',
     );
+  });
+});
+
+describe('assertAgentSlippage', () => {
+  it('accepts 0-10% and rejects wider execution tolerance', () => {
+    expect(() => assertAgentSlippage(0n)).not.toThrow();
+    expect(() => assertAgentSlippage(1_000n)).not.toThrow();
+    expect(() => assertAgentSlippage(1_001n)).toThrow('between 0 and 1000');
+    expect(() => assertAgentSlippage(-1n)).toThrow('between 0 and 1000');
   });
 });
