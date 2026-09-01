@@ -1,7 +1,13 @@
-import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import type { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
 import { TokensService } from '../tokens/tokens.service';
+import { generateReferralCode } from '../referrals/referral-code';
 import { refreshWalletStats } from './wallet-intelligence';
 import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factory-scope';
 
@@ -22,6 +28,7 @@ export interface UserHolding {
 export interface UserProfile {
   wallet: string;
   username: string | null;
+  referral_code: string | null;
   referral_slug: string | null;
   avatar: string | null;
   tokens_launched: number;
@@ -93,7 +100,8 @@ export class UsersService {
     const profile: UserProfile = {
       wallet: user.wallet,
       username: user.username,
-      referral_slug: user.referral_slug,
+      referral_code: user.referral_code,
+      referral_slug: user.referral_code,
       avatar: user.avatar,
       tokens_launched: launchedTokens.total,
       total_volume_usdc: tradeStats?.total_usdc_volume?.toString() || '0',
@@ -111,8 +119,43 @@ export class UsersService {
     return profile;
   }
 
-  async updateProfile(wallet: string, input: { username: string }) {
+  async updateProfile(
+    wallet: string,
+    input: { username?: string; avatar?: string | null },
+  ) {
     const normalizedWallet = wallet.toLowerCase();
+    const hasUsername = input.username !== undefined;
+    const hasAvatar = input.avatar !== undefined;
+    if (!hasUsername && !hasAvatar) {
+      throw new BadRequestException('username or avatar is required');
+    }
+    const avatar = hasAvatar ? this.normalizeAvatar(input.avatar) : undefined;
+
+    if (!hasUsername) {
+      await this.db.query(
+        `INSERT INTO users (wallet) VALUES ($1) ON CONFLICT (wallet) DO NOTHING`,
+        [normalizedWallet],
+      );
+      const updated = await this.db.queryOne<{
+        wallet: string;
+        username: string | null;
+        referral_code: string | null;
+        referral_slug: string | null;
+        avatar: string | null;
+      }>(
+        `UPDATE users
+         SET avatar = $2
+         WHERE wallet = $1
+         RETURNING wallet, username, referral_code,
+                   referral_code AS referral_slug, avatar`,
+        [normalizedWallet, avatar ?? null],
+      );
+      await this.redis.del(
+        `user:${this.scopeCacheKey()}:${normalizedWallet}`,
+      );
+      return updated;
+    }
+
     if (typeof input.username !== 'string') {
       throw new BadRequestException('username is required');
     }
@@ -122,59 +165,117 @@ export class UsersService {
         'Username must be 3-32 letters, numbers, underscores, or hyphens',
       );
     }
-    const referralSlug = username.toLowerCase().replaceAll('_', '-');
-
-    const reservedPartner = await this.db.queryOne<{ wallet: string }>(
-      `SELECT wallet FROM referral_partners WHERE code = $1`,
-      [referralSlug],
-    );
-    if (reservedPartner && reservedPartner.wallet !== normalizedWallet) {
-      throw new ConflictException('That username is already in use');
-    }
-    const reservedAlias = await this.db.queryOne<{ wallet: string }>(
-      `SELECT wallet FROM user_referral_aliases WHERE slug = $1`,
-      [referralSlug],
-    );
-    if (reservedAlias && reservedAlias.wallet !== normalizedWallet) {
-      throw new ConflictException('That username is already in use');
-    }
-
-    await this.db.query(
-      `INSERT INTO users (wallet) VALUES ($1) ON CONFLICT (wallet) DO NOTHING`,
-      [normalizedWallet],
-    );
+    const client = await this.db.connect();
     try {
-      const current = await this.db.queryOne<{ referral_slug: string | null }>(
-        `SELECT referral_slug FROM users WHERE wallet = $1`,
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO users (wallet) VALUES ($1) ON CONFLICT (wallet) DO NOTHING`,
         [normalizedWallet],
       );
-      if (current?.referral_slug && current.referral_slug !== referralSlug) {
-        await this.db.query(
-          `INSERT INTO user_referral_aliases (slug, wallet)
-           VALUES ($1, $2)
-           ON CONFLICT (slug) DO NOTHING`,
-          [current.referral_slug, normalizedWallet],
+      const currentResult = await client.query<{
+        referral_code: string | null;
+      }>(
+        `SELECT referral_code
+         FROM users
+         WHERE wallet = $1
+         FOR UPDATE`,
+        [normalizedWallet],
+      );
+      let referralCode = currentResult.rows[0]?.referral_code ?? null;
+      if (!referralCode) {
+        referralCode = await this.allocateReferralCode(
+          client,
+          username,
+          normalizedWallet,
         );
       }
-      const updated = await this.db.queryOne<{
+
+      await client.query(
+        `UPDATE users
+         SET username = $2,
+             referral_code = COALESCE(referral_code, $3)
+         WHERE wallet = $1`,
+        [normalizedWallet, username, referralCode],
+      );
+      if (hasAvatar) {
+        await client.query(
+          `UPDATE users SET avatar = $2 WHERE wallet = $1`,
+          [normalizedWallet, avatar ?? null],
+        );
+      }
+
+      const updatedResult = await client.query<{
         wallet: string;
         username: string;
+        referral_code: string;
         referral_slug: string;
+        avatar: string | null;
       }>(
-        `UPDATE users
-         SET username = $2, referral_slug = $3
-         WHERE wallet = $1
-         RETURNING wallet, username, referral_slug`,
-        [normalizedWallet, username, referralSlug],
+        `SELECT wallet, username, referral_code,
+                referral_code AS referral_slug, avatar
+         FROM users WHERE wallet = $1`,
+        [normalizedWallet],
       );
-      await this.redis.del(`user:${normalizedWallet}`);
-      return updated;
-    } catch (err: any) {
-      if (err?.code === '23505') {
-        throw new ConflictException('That username is already in use');
-      }
+      await client.query('COMMIT');
+      await this.redis.del(
+        `user:${this.scopeCacheKey()}:${normalizedWallet}`,
+      );
+      return updatedResult.rows[0];
+    } catch (err) {
+      await client.query('ROLLBACK');
       throw err;
+    } finally {
+      client.release();
     }
+  }
+
+  private async allocateReferralCode(
+    client: PoolClient,
+    username: string,
+    wallet: string,
+  ) {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const candidate = generateReferralCode(username);
+      const reserved = await client.query<{ code: string }>(
+        `INSERT INTO referral_code_registry (code, wallet, kind)
+         VALUES ($1, $2, 'profile')
+         ON CONFLICT (code) DO NOTHING
+         RETURNING code`,
+        [candidate, wallet],
+      );
+      if (reserved.rows[0]) return candidate;
+    }
+    throw new ServiceUnavailableException(
+      'Could not allocate a referral code. Please try again.',
+    );
+  }
+
+  private normalizeAvatar(value: string | null | undefined): string | null {
+    if (value === null || value === '') return null;
+    if (typeof value !== 'string') {
+      throw new BadRequestException('avatar must be an image URI');
+    }
+    const avatar = value.trim();
+    if (!avatar) return null;
+    if (avatar.length > 2048) {
+      throw new BadRequestException('avatar URI is too long');
+    }
+    if (
+      /^ipfs:\/\/[A-Za-z0-9]+(?:\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?$/.test(
+        avatar,
+      )
+    ) {
+      return avatar;
+    }
+    try {
+      const url = new URL(avatar);
+      if (url.protocol === 'https:' && !url.username && !url.password) return avatar;
+    } catch {
+      // Fall through to the public validation error below.
+    }
+    throw new BadRequestException(
+      'avatar must be an IPFS URI or HTTPS image URL',
+    );
   }
 
   async getWalletStats(wallet: string) {

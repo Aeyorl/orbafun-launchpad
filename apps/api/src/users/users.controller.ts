@@ -19,15 +19,17 @@ import { AuthGuard } from '../auth/auth.guard';
 export class UsersController {
   constructor(private usersService: UsersService) {}
 
-  /** Set or change the authenticated user's public name and referral slug. */
+  /** Set or change the authenticated user's public profile fields. */
   @Patch('me')
   @UseGuards(AuthGuard)
   async updateMe(
     @Req() req: Request & { wallet?: string },
-    @Body() body: { username?: string },
+    @Body() body: { username?: string; avatar?: string | null },
   ) {
-    if (!body.username) throw new BadRequestException('username is required');
-    return this.usersService.updateProfile(req.wallet!, { username: body.username });
+    if (body?.username === undefined && body?.avatar === undefined) {
+      throw new BadRequestException('username or avatar is required');
+    }
+    return this.usersService.updateProfile(req.wallet!, body);
   }
 
   /**

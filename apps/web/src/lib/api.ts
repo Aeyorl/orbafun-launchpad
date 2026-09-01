@@ -211,6 +211,7 @@ export interface UserHoldingsResponse {
 export interface UserProfile {
   wallet: string;
   username: string | null;
+  referral_code: string | null;
   referral_slug: string | null;
   avatar: string | null;
   tokens_launched: number;
@@ -425,10 +426,20 @@ export const api = {
   getUserProfile: (wallet: string) =>
     fetchApi<UserProfile>(`/users/${wallet.toLowerCase()}`),
 
-  updateUserProfile: (wallet: string, username: string, authToken?: string | null) =>
-    fetchApi<{ wallet: string; username: string; referral_slug: string }>(`/users/me`, {
+  updateUserProfile: (
+    wallet: string,
+    update: string | { username?: string; avatar?: string | null },
+    authToken?: string | null,
+  ) =>
+    fetchApi<{
+      wallet: string;
+      username: string | null;
+      referral_code: string | null;
+      referral_slug: string | null;
+      avatar: string | null;
+    }>(`/users/me`, {
       method: 'PATCH',
-      body: JSON.stringify({ username }),
+      body: JSON.stringify(typeof update === 'string' ? { username: update } : update),
       headers: authHeaders(authToken, wallet),
     }),
 
@@ -558,6 +569,7 @@ export const api = {
       active_referred: number;
       total_volume_usdc: string;
       reward_earned_usdc: string;
+      referral_code: string | null;
       referral_slug: string | null;
       partner_codes: Array<{ code: string; display_name: string; reward_bps: number }>;
     }>(`/referrals/${wallet.toLowerCase()}`),

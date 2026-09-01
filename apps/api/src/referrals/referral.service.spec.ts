@@ -6,18 +6,28 @@ describe('ReferralService partner attribution', () => {
   const referredWallet = '0x0000000000000000000000000000000000000022';
 
   function harness() {
+    const client = {
+      query: jest.fn(async () => ({ rows: [], rowCount: 1 })),
+      release: jest.fn(),
+    };
     const db = {
       query: jest.fn(async () => ({ rows: [], rowCount: 1 })),
       queryOne: jest.fn(),
       queryRows: jest.fn<Promise<any[]>, any[]>(async () => []),
+      connect: jest.fn(async () => client),
     };
-    return { db, service: new ReferralService(db as any) };
+    return { client, db, service: new ReferralService(db as any) };
   }
 
   it('resolves a readable partner code and snapshots its reward rate', async () => {
     const { db, service } = harness();
     db.queryOne
-      .mockResolvedValueOnce({ wallet: partnerWallet, reward_bps: 20 })
+      .mockResolvedValueOnce({
+        wallet: partnerWallet,
+        kind: 'partner',
+        reward_bps: 20,
+        active: true,
+      })
       .mockResolvedValueOnce({ referrer_wallet: partnerWallet, referral_code: 'spyzer' });
 
     await expect(service.attributeReferral('Spyzer', referredWallet)).resolves.toEqual({
@@ -33,24 +43,51 @@ describe('ReferralService partner attribution', () => {
     );
   });
 
-  it('resolves every named profile through its unique referral slug', async () => {
+  it('resolves a permanent profile referral code through the registry', async () => {
     const { db, service } = harness();
     db.queryOne
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ wallet: partnerWallet })
-      .mockResolvedValueOnce({ referrer_wallet: partnerWallet, referral_code: 'regular-user' });
+      .mockResolvedValueOnce({
+        wallet: partnerWallet,
+        kind: 'profile',
+        reward_bps: null,
+        active: null,
+      })
+      .mockResolvedValueOnce({
+        referrer_wallet: partnerWallet,
+        referral_code: 'regular-user-7k3p',
+      });
 
-    await expect(service.attributeReferral('Regular-User', referredWallet)).resolves.toEqual({
+    await expect(service.attributeReferral('Regular-User-7K3P', referredWallet)).resolves.toEqual({
       attributed: true,
       referrer_wallet: partnerWallet,
-      referral_code: 'regular-user',
+      referral_code: 'regular-user-7k3p',
       already: false,
     });
 
     expect(db.queryOne).toHaveBeenLastCalledWith(
       expect.stringContaining('INSERT INTO referrals'),
-      [partnerWallet, referredWallet, 'regular-user', 10],
+      [partnerWallet, referredWallet, 'regular-user-7k3p', 10],
     );
+  });
+
+  it('keeps an old plain-name alias resolving to the same wallet', async () => {
+    const { db, service } = harness();
+    db.queryOne
+      .mockResolvedValueOnce({
+        wallet: partnerWallet,
+        kind: 'legacy',
+        reward_bps: null,
+        active: null,
+      })
+      .mockResolvedValueOnce({
+        referrer_wallet: partnerWallet,
+        referral_code: 'mason',
+      });
+
+    await expect(service.attributeReferral('mason', referredWallet)).resolves.toMatchObject({
+      referrer_wallet: partnerWallet,
+      referral_code: 'mason',
+    });
   });
 
   it('keeps first-click attribution when a competing referral races the insert', async () => {
@@ -77,6 +114,20 @@ describe('ReferralService partner attribution', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('rejects a partner code already reserved by any referral source', async () => {
+    const { client, service } = harness();
+
+    await expect(
+      service.createPartner({
+        code: 'mason-7k3p',
+        displayName: 'Mason Partner',
+        wallet: partnerWallet,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+    expect(client.release).toHaveBeenCalled();
+  });
+
   it('uses each attribution reward rate when computing referral totals', async () => {
     const { db, service } = harness();
     db.queryOne
@@ -86,7 +137,7 @@ describe('ReferralService partner attribution', () => {
         total_volume_usdc: '1000000',
         reward_earned_usdc: '2000',
       })
-      .mockResolvedValueOnce({ referral_slug: 'spyzer' });
+      .mockResolvedValueOnce({ referral_code: 'spyzer-7k3p' });
 
     await service.getReferralStats(partnerWallet);
 

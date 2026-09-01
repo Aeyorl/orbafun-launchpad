@@ -13,10 +13,10 @@ import { getPublicFactoryAddresses, publicFactoryClause } from '../common/factor
  * ReferralService — tracks wallet-to-wallet referral attribution.
  *
  * Flow:
- *   1. User shares a referral link: https://orba.fun/?ref=<referrerWallet>
- *   2. Visitor's browser stores the referrer wallet in localStorage.
+ *   1. User shares a referral link: https://orba.fun/?ref=<permanentCode>
+ *   2. Visitor's browser stores the code in localStorage.
  *   3. When the visitor first authenticates (connects wallet + signs in),
- *      the frontend calls POST /referrals/attribute with the referrer wallet.
+ *      the frontend calls POST /referrals/attribute with the code.
  *   4. The API records the attribution (one row per referred wallet — unique).
  *   5. The indexer updates trade_count, total_volume_usdc, and reward_earned_usdc
  *      on each trade by the referred wallet (see arc-event-poller.service.ts).
@@ -64,34 +64,30 @@ export class ReferralService {
     }
 
     const code = this.normalizePartnerCode(referrer);
-    const partner = await this.db.queryOne<{ wallet: string; reward_bps: number }>(
-      `SELECT wallet, reward_bps
-       FROM referral_partners
-       WHERE code = $1 AND active = TRUE`,
+    const reserved = await this.db.queryOne<{
+      wallet: string;
+      kind: 'profile' | 'legacy' | 'partner';
+      reward_bps: number | null;
+      active: boolean | null;
+    }>(
+      `SELECT registry.wallet, registry.kind,
+              partner.reward_bps, partner.active
+       FROM referral_code_registry registry
+       LEFT JOIN referral_partners partner
+         ON partner.code = registry.code AND registry.kind = 'partner'
+       WHERE registry.code = $1`,
       [code],
     );
-    if (partner) {
-      return {
-        wallet: partner.wallet,
-        referralCode: code,
-        rewardBps: partner.reward_bps,
-      };
+    if (!reserved || (reserved.kind === 'partner' && !reserved.active)) {
+      throw new NotFoundException('Referral code not found or inactive');
     }
-
-    const user = await this.db.queryOne<{ wallet: string }>(
-      `SELECT wallet FROM users WHERE referral_slug = $1`,
-      [code],
-    );
-    const alias = user ? null : await this.db.queryOne<{ wallet: string }>(
-      `SELECT wallet FROM user_referral_aliases WHERE slug = $1`,
-      [code],
-    );
-    const resolvedUser = user || alias;
-    if (!resolvedUser) throw new NotFoundException('Referral name not found or inactive');
     return {
-      wallet: resolvedUser.wallet,
+      wallet: reserved.wallet,
       referralCode: code,
-      rewardBps: this.validateRewardBps(this.rewardPctBps),
+      rewardBps:
+        reserved.kind === 'partner'
+          ? this.validateRewardBps(reserved.reward_bps ?? this.rewardPctBps)
+          : this.validateRewardBps(this.rewardPctBps),
     };
   }
 
@@ -183,38 +179,40 @@ export class ReferralService {
     const wallet = input.wallet.toLowerCase();
     const rewardBps = this.validateRewardBps(input.rewardBps ?? this.rewardPctBps);
 
-    const reservedUser = await this.db.queryOne<{ wallet: string }>(
-      `SELECT wallet FROM users WHERE referral_slug = $1`,
-      [code],
-    );
-    if (reservedUser && reservedUser.wallet !== wallet) {
-      throw new ConflictException('Referral code is already used by a profile');
-    }
-    const reservedAlias = await this.db.queryOne<{ wallet: string }>(
-      `SELECT wallet FROM user_referral_aliases WHERE slug = $1`,
-      [code],
-    );
-    if (reservedAlias && reservedAlias.wallet !== wallet) {
-      throw new ConflictException('Referral code is already used by a previous profile name');
-    }
-
-    await this.db.query(
-      `INSERT INTO users (wallet) VALUES ($1) ON CONFLICT (wallet) DO NOTHING`,
-      [wallet],
-    );
+    const client = await this.db.connect();
     try {
-      return await this.db.queryOne(
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO users (wallet) VALUES ($1) ON CONFLICT (wallet) DO NOTHING`,
+        [wallet],
+      );
+      const reservation = await client.query(
+        `INSERT INTO referral_code_registry (code, wallet, kind)
+         VALUES ($1, $2, 'partner')
+         ON CONFLICT (code) DO NOTHING
+         RETURNING code`,
+        [code, wallet],
+      );
+      if (!reservation.rows[0]) {
+        throw new ConflictException('Referral code is already in use');
+      }
+      const created = await client.query(
         `INSERT INTO referral_partners
            (code, display_name, wallet, reward_bps, created_by_wallet)
          VALUES ($1, $2, $3, $4, $5)
          RETURNING code, display_name, wallet, reward_bps, active, created_at, updated_at`,
         [code, displayName, wallet, rewardBps, input.createdByWallet || null],
       );
+      await client.query('COMMIT');
+      return created.rows[0];
     } catch (err: any) {
+      await client.query('ROLLBACK');
       if (err?.code === '23505') {
         throw new ConflictException('Referral partner code already exists');
       }
       throw err;
+    } finally {
+      client.release();
     }
   }
 
@@ -316,8 +314,8 @@ export class ReferralService {
        ORDER BY created_at`,
       [w],
     );
-    const user = await this.db.queryOne<{ referral_slug: string | null }>(
-      `SELECT referral_slug FROM users WHERE wallet = $1`,
+    const user = await this.db.queryOne<{ referral_code: string | null }>(
+      `SELECT referral_code FROM users WHERE wallet = $1`,
       [w],
     );
 
@@ -331,7 +329,8 @@ export class ReferralService {
       active_referred: Number(stats.active_referred),
       total_volume_usdc: stats.total_volume_usdc,
       reward_earned_usdc: stats.reward_earned_usdc,
-      referral_slug: user?.referral_slug ?? null,
+      referral_code: user?.referral_code ?? null,
+      referral_slug: user?.referral_code ?? null,
       partner_codes: partnerCodes,
     };
   }

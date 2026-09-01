@@ -9,6 +9,7 @@ require('dotenv').config({ path: '../../.env' });
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
+const { migratePermanentReferralCodes } = require('./referral-code-migration');
 
 function roleIdentifier(value) {
   if (!/^[a-z_][a-z0-9_]{0,62}$/.test(value)) {
@@ -117,9 +118,11 @@ async function main() {
   try {
     await client.query('BEGIN');
     await client.query(schema);
+    const migratedProfiles = await migratePermanentReferralCodes(client);
     await provisionRuntimeRole(client);
     await client.query('COMMIT');
     console.log('Schema applied successfully.');
+    console.log(`Permanent referral codes migrated: ${migratedProfiles}`);
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('Migration failed:', err.message);

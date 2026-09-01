@@ -8,10 +8,12 @@ import toast from 'react-hot-toast';
 import { api, UserHolding, Token } from '@/lib/api';
 import { TokenCard } from '@/components/TokenCard';
 import { ReferralPanel } from '@/components/ReferralPanel';
+import { ImageUploader } from '@/components/ImageUploader';
 import { WalletBadge } from '@/components/WalletBadge';
 import {
   ArrowSquareOut,
   Briefcase,
+  Camera,
   Copy,
   Flag,
   LinkSimple,
@@ -49,6 +51,11 @@ export default function ProfilePage() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [setupName, setSetupName] = useState('');
   const [savingSetup, setSavingSetup] = useState(false);
+  const [editingAvatar, setEditingAvatar] = useState(false);
+  const [avatarDraft, setAvatarDraft] = useState('');
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [savingAvatar, setSavingAvatar] = useState(false);
+  const isOwnProfile = address?.toLowerCase() === wallet;
 
   // Profile data
   const { data: profile, isLoading: isProfileLoading } = useQuery({
@@ -111,6 +118,26 @@ export default function ProfilePage() {
       toast.error(err instanceof Error ? err.message : 'Failed to create profile');
     } finally {
       setSavingSetup(false);
+    }
+  };
+
+  const saveAvatar = async () => {
+    setSavingAvatar(true);
+    try {
+      let token = getAuthToken();
+      if (!token) {
+        await authenticate();
+        token = getAuthToken();
+      }
+      if (!token) throw new Error('Wallet authentication did not complete');
+      await api.updateUserProfile(wallet, { avatar: avatarDraft || null }, token);
+      await queryClient.invalidateQueries({ queryKey: ['user', wallet] });
+      setEditingAvatar(false);
+      toast.success(avatarDraft ? 'Profile photo updated' : 'Profile photo removed');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update profile photo');
+    } finally {
+      setSavingAvatar(false);
     }
   };
 
@@ -190,26 +217,25 @@ export default function ProfilePage() {
   }
 
   if (!profile) {
-    const isOwnConnectedWallet = address?.toLowerCase() === wallet;
     return (
       <div className="card text-center py-16 max-w-md mx-auto my-12 space-y-4">
         <UserCircle size={40} className="mx-auto" aria-hidden="true" />
         <div>
           <h1 className="text-2xl font-serif mb-1">
-            {isOwnConnectedWallet ? 'Create your Orba profile' : 'User not found'}
+            {isOwnProfile ? 'Create your Orba profile' : 'User not found'}
           </h1>
           <p className="text-sm text-text-muted">
-            {isOwnConnectedWallet
-              ? 'Choose the unique name that will appear in your profile and referral link.'
+            {isOwnProfile
+              ? 'Choose a profile name. Orba will create a permanent unique referral code for you.'
               : 'This wallet address hasn\'t created an Orba profile yet.'}
           </p>
         </div>
-        {isOwnConnectedWallet ? (
+        {isOwnProfile ? (
           <div className="space-y-3 px-6">
             <input
               value={setupName}
               onChange={(event) => setSetupName(event.target.value)}
-              placeholder="Choose a unique name"
+              placeholder="Choose a profile name"
               autoComplete="username"
               maxLength={32}
               className="input w-full text-sm text-left"
@@ -222,7 +248,7 @@ export default function ProfilePage() {
               {savingSetup || authenticating ? 'Creating…' : 'Create profile'}
             </button>
             <p className="text-[11px] text-text-muted">
-              Your link will look like orba.fun/?ref=your-name.
+              Your permanent link will look like orba.fun/?ref=your-name-7k3p.
             </p>
           </div>
         ) : (
@@ -247,13 +273,33 @@ export default function ProfilePage() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
           {/* Identity & Avatar */}
           <div className="flex items-center gap-4">
-            {/* Auto-generated Identicon Avatar */}
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent-blue via-accent-peach to-accent-sienna/40 border border-bg-border flex items-center justify-center text-2xl font-bold font-mono text-white shadow-sm flex-shrink-0">
-              {profile.avatar ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={ipfsToGateway(profile.avatar)} alt={wallet} className="w-full h-full rounded-2xl object-cover" />
-              ) : (
-                shortenAddress(wallet).slice(2, 4).toUpperCase()
+            {/* Profile avatar — editable only by the connected wallet owner. */}
+            <div className="relative flex-shrink-0">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent-blue via-accent-peach to-accent-sienna/40 border border-bg-border flex items-center justify-center text-2xl font-bold font-mono text-white shadow-sm overflow-hidden">
+                {profile.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={ipfsToGateway(profile.avatar)}
+                    alt={`${profile.username || shortenAddress(wallet)} profile`}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  shortenAddress(wallet).slice(2, 4).toUpperCase()
+                )}
+              </div>
+              {isOwnProfile && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAvatarDraft(profile.avatar || '');
+                    setEditingAvatar((open) => !open);
+                  }}
+                  className="absolute -right-2 -bottom-2 w-7 h-7 rounded-full bg-text-primary text-bg-base border-2 border-bg-card flex items-center justify-center shadow-subtle-1 hover:opacity-85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-blue"
+                  aria-label="Change profile photo"
+                  title="Change profile photo"
+                >
+                  <Camera size={14} weight="bold" aria-hidden="true" />
+                </button>
               )}
             </div>
 
@@ -392,6 +438,43 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        {isOwnProfile && editingAvatar && (
+          <div className="max-w-md space-y-4 border-t border-bg-border/60 pt-4">
+            <ImageUploader
+              value={avatarDraft}
+              onChange={setAvatarDraft}
+              onUploadingChange={setAvatarUploading}
+              symbol={profile.username || shortenAddress(wallet)}
+              label="Profile photo"
+            />
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={saveAvatar}
+                disabled={avatarUploading || savingAvatar || authenticating}
+                className="btn-primary text-xs px-4 py-2 disabled:opacity-40"
+              >
+                {avatarUploading
+                  ? 'Uploading…'
+                  : savingAvatar || authenticating
+                    ? 'Saving…'
+                    : 'Save profile photo'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAvatarDraft(profile.avatar || '');
+                  setEditingAvatar(false);
+                }}
+                disabled={avatarUploading || savingAvatar}
+                className="btn-secondary text-xs px-4 py-2 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 2. COMPACT CREATOR + TRADER STATS ROW */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-bg-border/60">
           <StatCard label="Tokens Created" value={String(profile.tokens_launched)} />
@@ -518,7 +601,7 @@ export default function ProfilePage() {
           <ReferralPanel
             wallet={wallet}
             username={profile.username}
-            referralSlug={profile.referral_slug}
+            referralCode={profile.referral_code || profile.referral_slug}
           />
         </div>
       )}

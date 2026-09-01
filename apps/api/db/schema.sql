@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
     wallet      TEXT NOT NULL UNIQUE,        -- checksummed address, lowercase
     username    TEXT,
     referral_slug TEXT,
+    referral_code TEXT,
     avatar      TEXT,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     -- Aggregated stats (updated by indexer on each trade)
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_wallet ON users(wallet);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_slug TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT;
 
 -- Backfill readable slugs for existing named profiles. Duplicate or short names
 -- receive a wallet suffix so every resulting link remains unambiguous.
@@ -33,7 +35,9 @@ WITH normalized AS (
         wallet,
         TRIM(BOTH '-' FROM REGEXP_REPLACE(LOWER(username), '[^a-z0-9]+', '-', 'g')) AS base
     FROM users
-    WHERE username IS NOT NULL AND referral_slug IS NULL
+    WHERE username IS NOT NULL
+      AND referral_slug IS NULL
+      AND referral_code IS NULL
 ), ranked AS (
     SELECT
         id,
@@ -62,6 +66,9 @@ WHERE u.id = candidates.id
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral_slug
     ON users(referral_slug) WHERE referral_slug IS NOT NULL;
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral_code
+    ON users(referral_code) WHERE referral_code IS NOT NULL;
+
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -75,7 +82,36 @@ BEGIN
     END IF;
 END $$;
 
--- Retains previously shared profile referral names after a user renames.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'chk_users_referral_code'
+    ) THEN
+        ALTER TABLE users ADD CONSTRAINT chk_users_referral_code
+            CHECK (
+                referral_code IS NULL OR
+                referral_code ~ '^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$'
+            );
+    END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION prevent_referral_code_change()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.referral_code IS NOT NULL
+       AND NEW.referral_code IS DISTINCT FROM OLD.referral_code THEN
+        RAISE EXCEPTION 'referral_code is permanent once assigned';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_users_permanent_referral_code ON users;
+CREATE TRIGGER trg_users_permanent_referral_code
+    BEFORE UPDATE OF referral_code ON users
+    FOR EACH ROW EXECUTE FUNCTION prevent_referral_code_change();
+
+-- Retains plain-name links shared before permanent suffixed codes were added.
 CREATE TABLE IF NOT EXISTS user_referral_aliases (
     slug       TEXT PRIMARY KEY,
     wallet     TEXT NOT NULL,
@@ -725,6 +761,23 @@ CREATE TABLE IF NOT EXISTS referral_partners (
 
 CREATE INDEX IF NOT EXISTS idx_referral_partners_wallet ON referral_partners(wallet);
 
+-- One reservation namespace for permanent profile codes, preserved legacy
+-- aliases, and affiliate partner codes. The primary key prevents collisions
+-- across all three sources, including concurrent profile creation.
+CREATE TABLE IF NOT EXISTS referral_code_registry (
+    code       TEXT PRIMARY KEY,
+    wallet     TEXT NOT NULL,
+    kind       TEXT NOT NULL CHECK (kind IN ('profile', 'legacy', 'partner')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT chk_referral_code_registry_code
+        CHECK (code ~ '^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$'),
+    CONSTRAINT fk_referral_code_registry_wallet FOREIGN KEY (wallet)
+        REFERENCES users(wallet) ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_referral_code_registry_wallet
+    ON referral_code_registry(wallet);
+
 -- Tracks wallet-to-wallet referral attribution for revenue sharing.
 -- A wallet that arrives via ?ref=<wallet-or-partner-code> is attributed to that referrer.
 -- When the referred wallet trades, a % of the trading fee is credited to
@@ -759,7 +812,7 @@ BEGIN
     END IF;
 END $$;
 
--- referral_code may be either a normal user slug or a negotiated partner code,
+-- referral_code may be a permanent profile code, legacy alias, or partner code,
 -- so it intentionally has no foreign key to referral_partners.
 ALTER TABLE referrals DROP CONSTRAINT IF EXISTS fk_referrals_partner_code;
 

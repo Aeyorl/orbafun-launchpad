@@ -23,11 +23,11 @@ import { useAuth } from '@/lib/use-auth';
 export function ReferralPanel({
   wallet,
   username,
-  referralSlug,
+  referralCode,
 }: {
   wallet: string;
   username: string | null;
-  referralSlug: string | null;
+  referralCode: string | null;
 }) {
   const { address } = useAccount();
   const { authenticate, authenticating, getAuthToken } = useAuth();
@@ -53,7 +53,8 @@ export function ReferralPanel({
     enabled: !!stats && stats.total_referred > 0,
   });
 
-  const referralValue = referralSlug || stats?.referral_slug || wallet.toLowerCase();
+  const referralValue =
+    referralCode || stats?.referral_code || stats?.referral_slug || wallet.toLowerCase();
   const referralLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/?ref=${referralValue}`;
 
   const saveUsername = async () => {
@@ -72,7 +73,7 @@ export function ReferralPanel({
         queryClient.invalidateQueries({ queryKey: ['user', wallet] }),
         queryClient.invalidateQueries({ queryKey: ['referralStats', wallet] }),
       ]);
-      toast.success('Profile name and referral link updated');
+      toast.success('Profile name updated. Your referral link is unchanged.');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to update profile name');
     } finally {
@@ -110,28 +111,46 @@ export function ReferralPanel({
         <div className="space-y-3">
           <div className="space-y-1.5">
             <label htmlFor="referral-name" className="text-xs font-medium text-text-secondary">
-              Profile and referral name
+              Profile name
             </label>
             <div className="flex flex-col sm:flex-row gap-2">
               <input
                 id="referral-name"
                 value={nameInput}
                 onChange={(event) => setNameInput(event.target.value)}
-                placeholder="Choose a unique name"
+                placeholder="Choose a profile name"
                 autoComplete="username"
                 maxLength={32}
                 className="input flex-1 text-sm"
               />
               <button
                 onClick={saveUsername}
-                disabled={savingName || authenticating || !nameInput.trim() || nameInput.trim() === username}
+                disabled={
+                  savingName ||
+                  authenticating ||
+                  !nameInput.trim() ||
+                  nameInput.trim() === username
+                }
                 className="btn-secondary text-xs disabled:opacity-40"
               >
-                {savingName || authenticating ? 'Saving…' : username ? 'Update name' : 'Set name'}
+                {savingName || authenticating
+                  ? 'Saving…'
+                  : username
+                    ? 'Update name'
+                    : 'Set name'}
               </button>
             </div>
             <p className="text-[11px] text-text-muted">
-              3–32 letters, numbers, underscores, or hyphens. Your name must be unique.
+              3–32 letters, numbers, underscores, or hyphens. Display names may repeat.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium text-text-secondary">
+              Permanent referral code
+            </p>
+            <p className="text-[11px] text-text-muted">
+              Created from your first profile name. It never changes when you
+              rename your profile.
             </p>
           </div>
           <div className="bg-bg-input rounded-lg p-3 text-xs text-text-muted break-all font-mono">

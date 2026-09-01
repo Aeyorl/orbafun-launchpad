@@ -6,6 +6,13 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { useState } from 'react';
 import { ImageUploader } from '../ImageUploader';
 
+vi.mock('@/lib/use-auth', () => ({
+  useAuth: () => ({
+    authenticate: vi.fn(),
+    getAuthToken: () => 'test-auth-token',
+  }),
+}));
+
 beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:local-preview');
   URL.revokeObjectURL = vi.fn();
@@ -45,7 +52,7 @@ describe('ImageUploader', () => {
     }
 
     const { container } = render(<ControlledUploader />);
-    await screen.findByRole('button', { name: /upload token image/i });
+    await screen.findByRole('button', { name: /upload upload avatar/i });
 
     const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(fileInput, {

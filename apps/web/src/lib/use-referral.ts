@@ -5,15 +5,15 @@ import { useAuth } from './use-auth';
 import { api } from './api';
 
 /**
- * useReferral — captures the ?ref=<wallet-or-partner-code> query param on first visit,
+ * useReferral — captures the ?ref=<wallet-or-referral-code> query param on first visit,
  * stores it in localStorage, and attributes the referral to the API once
  * the user authenticates (connects wallet + signs in).
  *
  * Flow:
- *   1. User visits https://orba.fun/?ref=0xABC... (shared link)
- *   2. This hook stores 0xABC... in localStorage as 'orbafun_referrer'
+ *   1. User visits https://orba.fun/?ref=mason-7k3p (shared link)
+ *   2. This hook stores the code in localStorage as 'orbafun_referrer'
  *   3. When the user authenticates (useAuth returns a token), the hook
- *      calls POST /referrals/attribute with the stored referrer wallet.
+ *      calls POST /referrals/attribute with the stored code.
  *   4. On success (or conflict), the referrer is cleared from localStorage.
  *
  * First-click-wins: if the wallet was already attributed to someone else,
@@ -35,8 +35,9 @@ export function useReferral() {
     const refFromUrl = params.get('ref');
     const normalized = refFromUrl?.trim().toLowerCase();
     const isWallet = !!normalized && /^0x[a-f0-9]{40}$/.test(normalized);
-    const isPartnerCode = !!normalized && /^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/.test(normalized);
-    if (normalized && (isWallet || isPartnerCode)) {
+    const isReferralCode =
+      !!normalized && /^[a-z0-9][a-z0-9-]{1,30}[a-z0-9]$/.test(normalized);
+    if (normalized && (isWallet || isReferralCode)) {
       localStorage.setItem(REFERRER_KEY, normalized);
       setReferrer(normalized);
       // Clean the URL (remove ?ref= so it doesn't get re-shared with the
