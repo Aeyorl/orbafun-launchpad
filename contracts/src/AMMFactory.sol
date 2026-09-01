@@ -16,24 +16,33 @@ contract AMMFactory is Ownable {
     ///         on the bonding curve only. This is reserved for future use.)
     address public feeSetter;
 
+    /// @notice Contracts allowed to create canonical Orba pairs.
+    /// @dev Restricting pair creation prevents an attacker from initializing a
+    ///      launch token's canonical pair before graduation and retaining LP.
+    mapping(address => bool) public pairCreators;
+
     /// @notice All pairs created by this factory.
     mapping(address => mapping(address => address)) public getPair;
     address[] public allPairs;
 
     event PairCreated(address indexed token0, address indexed token1, address pair, uint256);
+    event PairCreatorSet(address indexed account, bool allowed);
 
     error IdenticalAddresses();
     error PairExists();
     error ZeroAddress();
+    error UnauthorizedPairCreator();
 
     constructor() {
         _initializeOwner(msg.sender);
         feeSetter = msg.sender;
+        pairCreators[msg.sender] = true;
     }
 
     /// @notice Create a new AMM pair for two tokens.
     /// @dev Token order is deterministic (token0 < token1 by address).
     function createPair(address tokenA, address tokenB) external returns (address pair) {
+        if (!pairCreators[msg.sender]) revert UnauthorizedPairCreator();
         if (tokenA == tokenB) revert IdenticalAddresses();
         (address token0, address token1) = tokenA < tokenB ? (tokenA, tokenB) : (tokenB, tokenA);
         if (token0 == address(0)) revert ZeroAddress();
@@ -48,6 +57,14 @@ contract AMMFactory is Ownable {
         allPairs.push(pair);
 
         emit PairCreated(token0, token1, pair, allPairs.length);
+    }
+
+    /// @notice Authorize or revoke a canonical pair creator.
+    /// @dev The graduation migrator should be authorized during deployment.
+    function setPairCreator(address account, bool allowed) external onlyOwner {
+        if (account == address(0)) revert ZeroAddress();
+        pairCreators[account] = allowed;
+        emit PairCreatorSet(account, allowed);
     }
 
     /// @notice Total pairs created.

@@ -116,6 +116,7 @@ contract ArcIntegrationTest is Test {
         ammFactory = new AMMFactory();
         factory = new TokenFactory(address(treasury));
         migrator = new LiquidityMigration(address(factory), address(ammFactory));
+        ammFactory.setPairCreator(address(migrator), true);
         factory.setMigrator(address(migrator));
         vm.stopPrank();
 

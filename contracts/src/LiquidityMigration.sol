@@ -58,6 +58,7 @@ contract LiquidityMigration is Ownable {
     error NotTokenFactory();
     error TransferFailed();
     error LiquidityAddFailed();
+    error PairAlreadyInitialized();
 
     constructor(address factory_, address ammFactory_) {
         _initializeOwner(msg.sender);
@@ -80,11 +81,12 @@ contract LiquidityMigration is Ownable {
             || curve.tokensSold() >= curve.SUPPLY_ON_CURVE();
         if (!shouldGraduate) revert NotGraduated();
 
-        // 1. Create AMM pair (token + USDC) if it doesn't exist.
+        // 1. Create a fresh canonical AMM pair. A pre-existing pair is never
+        //    accepted: older permissionless factories allowed an attacker to
+        //    seed it and retain LP before graduation.
         address pair = ammFactory.getPair(tokenAddress, USDC);
-        if (pair == address(0)) {
-            pair = ammFactory.createPair(tokenAddress, USDC);
-        }
+        if (pair != address(0)) revert PairAlreadyInitialized();
+        pair = ammFactory.createPair(tokenAddress, USDC);
         tokenToAmmPair[tokenAddress] = pair;
 
         uint256 tokenBalanceBefore = IMemeTokenMigrate(tokenAddress).balanceOf(address(this));
@@ -101,12 +103,16 @@ contract LiquidityMigration is Ownable {
         uint256 usdcAmount = IERC20Minimal(USDC).balanceOf(address(this)) - usdcBalanceBefore;
 
         if (tokenAmount > 0 && usdcAmount > 0) {
-            // Transfer tokens + USDC to the pair, then mint LP.
-            if (!IMemeTokenMigrate(tokenAddress).transfer(pair, tokenAmount)) revert TransferFailed();
-            if (!SafeUSDC.transfer(pair, usdcAmount)) revert TransferFailed();
+            // Approve exact amounts, then let the pair pull both assets and
+            // mint atomically. This removes the staged-balance race window.
+            if (!IMemeTokenMigrate(tokenAddress).approve(pair, tokenAmount)) revert TransferFailed();
+            if (!SafeUSDC.approve(pair, usdcAmount)) revert TransferFailed();
 
-            // Mint LP tokens to this contract.
-            AMMPair(pair).mint(address(this));
+            if (AMMPair(pair).token0() == tokenAddress) {
+                AMMPair(pair).mint(address(this), tokenAmount, usdcAmount, 0);
+            } else {
+                AMMPair(pair).mint(address(this), usdcAmount, tokenAmount, 0);
+            }
         }
 
         // 4. Burn LP tokens — transfer to 0x...dEaD.

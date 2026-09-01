@@ -7,9 +7,11 @@ import {
   Logger,
   Get,
   UseInterceptors,
+  UseGuards,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { AuthGuard } from '../auth/auth.guard';
 
 /**
  * UploadController — handles token image uploads to Pinata IPFS.
@@ -98,6 +100,7 @@ export class UploadController {
    * Returns: { uri: 'ipfs://<cid>', gateway: 'https://...' }
    */
   @Post('image')
+  @UseGuards(AuthGuard)
   @Throttle({ default: { ttl: 60_000, limit: 10 } }) // 10 uploads/min per IP
   @UseInterceptors(
     FileInterceptor('file', {

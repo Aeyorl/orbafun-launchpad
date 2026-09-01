@@ -57,6 +57,7 @@ contract BondingCurveTest is Test {
         router = new AMMRouter(address(ammFactory));
 
         // Wire migrator into factory (so new curves get the migrator address).
+        ammFactory.setPairCreator(address(migrator), true);
         factory.setMigrator(address(migrator));
 
         // Approve factory to spend USDC for creation fees.
@@ -296,8 +297,7 @@ contract BondingCurveTest is Test {
         buy(buyer1, 100 * 10 ** 6);
 
         uint256 treasuryUsdcBefore = usdc.balanceOf(address(treasury));
-        vm.prank(address(treasury));
-        curveContract.claimProtocolFees();
+        treasury.claimProtocolFees(curve);
 
         assertGt(usdc.balanceOf(address(treasury)), treasuryUsdcBefore, "treasury received fees");
     }
@@ -317,9 +317,11 @@ contract BondingCurveTest is Test {
         // Add liquidity: 100 USDC + half the bought tokens.
         uint256 liqUsdc = 100 * 10 ** 6;
         uint256 liqTokens = tokensForLiq / 2;
-        assertTrue(usdc.transfer(pair, liqUsdc), "USDC liquidity transfer");
-        assertTrue(tokenContract.transfer(pair, liqTokens), "token liquidity transfer");
-        uint256 lp = AMMPair(pair).mint(address(this));
+        usdc.approve(pair, liqUsdc);
+        tokenContract.approve(pair, liqTokens);
+        uint256 lp = USDC < token
+            ? AMMPair(pair).mint(address(this), liqUsdc, liqTokens, 0)
+            : AMMPair(pair).mint(address(this), liqTokens, liqUsdc, 0);
         assertGt(lp, 0, "LP minted");
 
         // Swap: 10 USDC for tokens.
@@ -449,6 +451,76 @@ contract BondingCurveTest is Test {
         launchToken(); // fresh token, not graduated, market cap ~$4K
         vm.expectRevert(); // NotGraduated
         migrator.checkAndMigrate(token);
+    }
+
+    function test_AttackerCannotPreCreateGraduationPair() public {
+        launchToken();
+        vm.prank(address(0xBAD));
+        vm.expectRevert(AMMFactory.UnauthorizedPairCreator.selector);
+        ammFactory.createPair(token, USDC);
+    }
+
+    function test_MigrationRejectsAnyPreInitializedPair() public {
+        launchToken();
+        ammFactory.createPair(token, USDC);
+
+        bool migrationBlocked;
+        for (uint256 i = 0; i < 100 && !curveContract.graduated(); i++) {
+            address w = address(uint160(0x40000 + i));
+            usdc.mint(w, 200 * 10 ** 6);
+            vm.startPrank(w);
+            usdc.approve(curve, type(uint256).max);
+            try curveContract.buy(100 * 10 ** 6, 0) {} catch (bytes memory reason) {
+                bytes4 selector;
+                assembly {
+                    selector := mload(add(reason, 32))
+                }
+                if (selector == LiquidityMigration.PairAlreadyInitialized.selector) {
+                    migrationBlocked = true;
+                }
+            }
+            vm.stopPrank();
+            if (migrationBlocked) break;
+        }
+
+        assertTrue(migrationBlocked, "threshold buy rejects a pre-initialized pair");
+        assertFalse(curveContract.graduated(), "failed migration rolls back graduation");
+    }
+
+    function test_CooldownCannotBeBypassedByRotatingSpenders() public {
+        launchToken();
+        uint256 tokensOut = buy(buyer1, 50 * 10 ** 6);
+        address spender1 = address(0x51);
+        address spender2 = address(0x52);
+
+        vm.prank(buyer1);
+        tokenContract.approve(spender1, tokensOut);
+        vm.prank(buyer1);
+        tokenContract.approve(spender2, tokensOut);
+
+        vm.prank(spender1);
+        tokenContract.transferFrom(buyer1, buyer2, tokensOut / 4);
+
+        vm.prank(spender2);
+        vm.expectRevert();
+        tokenContract.transferFrom(buyer1, buyer2, tokensOut / 4);
+    }
+
+    function test_TreasuryCanSweepGraduatedCurve() public {
+        launchToken();
+        for (uint256 i = 0; i < 100 && !curveContract.graduated(); i++) {
+            address w = address(uint160(0x30000 + i));
+            usdc.mint(w, 200 * 10 ** 6);
+            vm.startPrank(w);
+            usdc.approve(curve, type(uint256).max);
+            try curveContract.buy(100 * 10 ** 6, 0) {} catch {}
+            vm.stopPrank();
+        }
+        assertTrue(curveContract.graduated(), "threshold buy migrates automatically");
+
+        uint256 beforeBalance = usdc.balanceOf(address(treasury));
+        treasury.sweepExcessUsdc(curve);
+        assertGt(usdc.balanceOf(address(treasury)), beforeBalance, "treasury receives excess");
     }
 
     /// @notice Test: creation fee is charged and goes to treasury.

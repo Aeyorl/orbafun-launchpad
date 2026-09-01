@@ -16,14 +16,21 @@ interface IERC20Minimal {
     function balanceOf(address account) external view returns (uint256);
 }
 
+interface IBondingCurveTreasuryActions {
+    function claimProtocolFees() external;
+    function sweepExcessUsdc() external;
+}
+
 contract Treasury is Ownable {
     /// @notice USDC contract address on Arc (6-dec ERC-20).
     address public constant USDC = 0x3600000000000000000000000000000000000000;
 
     /// @notice Emitted when USDC is withdrawn.
     event Withdrawn(address indexed to, uint256 amount);
+    event CurveActionExecuted(address indexed curve, bytes4 indexed selector);
 
     error TransferFailed();
+    error InvalidCurve();
 
     constructor() {
         _initializeOwner(msg.sender);
@@ -55,5 +62,19 @@ contract Treasury is Ownable {
     /// @notice USDC balance of this treasury.
     function usdcBalance() external view returns (uint256) {
         return IERC20Minimal(USDC).balanceOf(address(this));
+    }
+
+    /// @notice Claim protocol fees from a curve owned by this Treasury.
+    function claimProtocolFees(address curve) external onlyOwner {
+        if (curve == address(0) || curve.code.length == 0) revert InvalidCurve();
+        IBondingCurveTreasuryActions(curve).claimProtocolFees();
+        emit CurveActionExecuted(curve, IBondingCurveTreasuryActions.claimProtocolFees.selector);
+    }
+
+    /// @notice Sweep post-graduation excess USDC from a curve owned by this Treasury.
+    function sweepExcessUsdc(address curve) external onlyOwner {
+        if (curve == address(0) || curve.code.length == 0) revert InvalidCurve();
+        IBondingCurveTreasuryActions(curve).sweepExcessUsdc();
+        emit CurveActionExecuted(curve, IBondingCurveTreasuryActions.sweepExcessUsdc.selector);
     }
 }

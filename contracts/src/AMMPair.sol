@@ -5,10 +5,9 @@ pragma solidity ^0.8.26;
 /// @notice Minimal Uniswap-V2-style constant-product AMM pair.
 /// @dev Adapted for Arc: no WETH, no flash loans, no flash swaps, no
 ///      fee-on-switch, no protocol fee. Core swap/liquidity/burn logic only.
-///      LP tokens are standard ERC-20 (minted on addLiquidity, burned on
-///      removeLiquidity or burn). LP burn to 0x...dEaD for graduation uses
-///      the burn() function which sends LP to msg.sender (then migrator
-///      transfers to 0x...dEaD). See DECISION_LOG D6, D7, D8.
+///      LP tokens are standard ERC-20. Liquidity deposits and withdrawals pull
+///      assets from the caller atomically, so no globally staged balances can
+///      be claimed by a front-runner. See DECISION_LOG D6, D7, D8.
 ///      Audit note: this is a minimal fork of audited Uniswap V2 core logic.
 ///      Modifications: removed fee-on-switch, removed flash loans, removed
 ///      price oracles, simplified. Core invariant (x*y=k) preserved.
@@ -44,6 +43,7 @@ contract AMMPair is ERC20, ReentrancyGuard {
     error InsufficientLiquidity();
     error InvalidToken();
     error TransferFailed();
+    error ZeroAmount();
 
     constructor(address token0_, address token1_) {
         token0 = token0_;
@@ -55,15 +55,30 @@ contract AMMPair is ERC20, ReentrancyGuard {
         return (reserve0, reserve1, blockTimestampLast);
     }
 
-    /// @notice Mint LP tokens for providing liquidity.
-    /// @dev Caller must have transferred token0 and token1 to this pair first.
+    /// @notice Atomically deposit both assets and mint LP tokens.
+    /// @dev Caller must approve this pair for both desired amounts.
     ///      LP minted = min(amount0 * totalSupply / reserve0, amount1 * totalSupply / reserve1).
     ///      First liquidity sets LP supply = sqrt(amount0 * amount1).
-    function mint(address to) external nonReentrant returns (uint256 liquidity) {
+    function mint(
+        address to,
+        uint256 amount0Desired,
+        uint256 amount1Desired,
+        uint256 minLiquidity
+    )
+        external
+        nonReentrant
+        returns (uint256 liquidity)
+    {
+        if (amount0Desired == 0 || amount1Desired == 0) revert ZeroAmount();
+
+        uint256 balance0Before = IERC20Minimal(token0).balanceOf(address(this));
+        uint256 balance1Before = IERC20Minimal(token1).balanceOf(address(this));
+        _safeTransferFrom(token0, msg.sender, address(this), amount0Desired);
+        _safeTransferFrom(token1, msg.sender, address(this), amount1Desired);
         uint256 balance0 = IERC20Minimal(token0).balanceOf(address(this));
         uint256 balance1 = IERC20Minimal(token1).balanceOf(address(this));
-        uint256 amount0 = balance0 - reserve0;
-        uint256 amount1 = balance1 - reserve1;
+        uint256 amount0 = balance0 - balance0Before;
+        uint256 amount1 = balance1 - balance1Before;
 
         uint256 _totalSupply = totalSupply();
         if (_totalSupply == 0) {
@@ -73,27 +88,36 @@ contract AMMPair is ERC20, ReentrancyGuard {
         } else {
             liquidity = min((amount0 * _totalSupply) / reserve0, (amount1 * _totalSupply) / reserve1);
         }
-        if (liquidity == 0) revert InsufficientLiquidityMinted();
+        if (liquidity == 0 || liquidity < minLiquidity) revert InsufficientLiquidityMinted();
 
         _mint(to, liquidity);
         _update(balance0, balance1);
         emit Mint(msg.sender, amount0, amount1);
     }
 
-    /// @notice Burn LP tokens and return the underlying tokens.
-    /// @dev LP tokens are burned from this contract's balance (caller must have
-    ///      transferred LP here first). Underlying tokens sent to `to`.
-    function burn(address to) external nonReentrant returns (uint256 amount0, uint256 amount1) {
+    /// @notice Atomically burn the caller's LP and return the underlying assets.
+    function burn(
+        uint256 liquidity,
+        address to,
+        uint256 minAmount0,
+        uint256 minAmount1
+    )
+        external
+        nonReentrant
+        returns (uint256 amount0, uint256 amount1)
+    {
+        if (liquidity == 0) revert ZeroAmount();
         uint256 balance0 = IERC20Minimal(token0).balanceOf(address(this));
         uint256 balance1 = IERC20Minimal(token1).balanceOf(address(this));
-        uint256 liquidity = balanceOf(address(this));
 
         uint256 _totalSupply = totalSupply();
         amount0 = (liquidity * balance0) / _totalSupply;
         amount1 = (liquidity * balance1) / _totalSupply;
-        if (amount0 == 0 || amount1 == 0) revert InsufficientLiquidityBurned();
+        if (
+            amount0 == 0 || amount1 == 0 || amount0 < minAmount0 || amount1 < minAmount1
+        ) revert InsufficientLiquidityBurned();
 
-        _burn(address(this), liquidity);
+        _burn(msg.sender, liquidity);
         _safeTransfer(token0, to, amount0);
         _safeTransfer(token1, to, amount1);
         balance0 = IERC20Minimal(token0).balanceOf(address(this));
@@ -146,7 +170,16 @@ contract AMMPair is ERC20, ReentrancyGuard {
     }
 
     function _safeTransfer(address token, address to, uint256 amount) internal {
-        if (!IERC20Minimal(token).transfer(to, amount)) revert TransferFailed();
+        (bool success, bytes memory data) =
+            token.call(abi.encodeWithSignature("transfer(address,uint256)", to, amount));
+        if (!success || (data.length > 0 && !abi.decode(data, (bool)))) revert TransferFailed();
+    }
+
+    function _safeTransferFrom(address token, address from, address to, uint256 amount) internal {
+        (bool success, bytes memory data) = token.call(
+            abi.encodeWithSignature("transferFrom(address,address,uint256)", from, to, amount)
+        );
+        if (!success || (data.length > 0 && !abi.decode(data, (bool)))) revert TransferFailed();
     }
 
     function min(uint256 a, uint256 b) internal pure returns (uint256) {
