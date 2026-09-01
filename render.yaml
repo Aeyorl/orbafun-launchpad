@@ -63,9 +63,7 @@ services:
       - key: ARC_POLLER_ENABLED
         value: "true"
       - key: ARC_POLLER_REPLAY_ENABLED
-        value: "true"
-      - key: ARC_POLLER_REPLAY_FROM_BLOCK
-        value: "59881981"
+        value: "false"
       - key: ARC_DEPLOYMENT_BLOCK
         value: "59881981"
       - key: AUTH_ALLOW_INSECURE

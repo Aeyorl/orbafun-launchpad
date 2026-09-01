@@ -39,3 +39,19 @@ Read-only on-chain checks confirmed:
 
 The Foundry broadcast evidence is stored under
 `contracts/broadcast/DeployArcFun.s.sol/5042002/`.
+
+## Live cutover canary
+
+After the API replayed from the deployment block, a bounded public testnet
+canary completed the full launch, buy, sell, and indexing path:
+
+- Token: [`0x9a7832d459285a68328edede2c4881308931446c`](https://testnet.arcscan.app/address/0x9a7832d459285a68328edede2c4881308931446c)
+- Curve: [`0xe0096c9a3334a9bce0fb239425339bc167a30b8e`](https://testnet.arcscan.app/address/0xe0096c9a3334a9bce0fb239425339bc167a30b8e)
+- Launch: [`0xa829d4241bb3d57b7858da795cd907a3402d27896586e1dbc8be2cdfe06688a4`](https://testnet.arcscan.app/tx/0xa829d4241bb3d57b7858da795cd907a3402d27896586e1dbc8be2cdfe06688a4)
+- Buy: [`0xbabd55a2afffab3bca16153bf77c7d4ad35bb8670a12163e3a2e4b1b1dd8db7e`](https://testnet.arcscan.app/tx/0xbabd55a2afffab3bca16153bf77c7d4ad35bb8670a12163e3a2e4b1b1dd8db7e)
+- Sell: [`0x204f1ab14dd635dbba45d14133a6bd48834ec23541f9f41a2c8d1edf05885119`](https://testnet.arcscan.app/tx/0x204f1ab14dd635dbba45d14133a6bd48834ec23541f9f41a2c8d1edf05885119)
+- Buy indexing lag: approximately `7.2s`
+- Sell indexing lag: approximately `7.2s`
+
+The API readiness endpoint returned healthy PostgreSQL, Redis, and RPC checks.
+The one-time replay flag was disabled after this canary completed.
