@@ -51,5 +51,30 @@ vulnerabilities exist.
 - AMMFactory reports the new migrator as an authorized pair creator and the
   deployment EOA as unauthorized.
 
-The public API and web cutover, bounded indexer replay, and live transaction
-canary are tracked separately from this immutable deployment evidence.
+## Public cutover verification
+
+- GitHub `master` advanced to release commit `963df8d`.
+- Vercel production deployment `dpl_2Q9XPzC3LXavMNMASB4KmTTc39yL` reached
+  `Ready` and received the `orba.fun` and `www.orba.fun` aliases.
+- `GET /health/ready` returned HTTP 200 with `x-ratelimit-limit: 30`.
+- Unauthenticated `POST /upload/image` returned HTTP 401.
+- The one-release indexer replay started at block `59870676`. After the new
+  factory events were indexed, the replay override was disabled so subsequent
+  restarts use the persisted high-water mark.
+
+### Live launch, buy, and sell canary
+
+| Item | Value |
+| --- | --- |
+| Token | `0xb2eeeb34fda66fa82d722cdc778d0ef4cae7622f` |
+| Bonding curve | `0xb11073e4e4ade82b46d2bf86707d105a7d911846` |
+| Launch transaction | `0x6db3a2d7cf539732b98c948bfee3ad7bfa398e56e8e5f76be3741bd5861d03c3` |
+| Buy transaction | `0x287efb8656a375cd1d3a290ccbb8621a04d45eccacc2bdf91ff93e29bef6fb50` |
+| Sell transaction | `0x2f8092354efae9076228dbccc570ea696980c50057d640b0a9b8168629e983f6` |
+
+The launch appeared in the public API after 15 seconds. The buy and sell each
+appeared after 7.3 seconds. The production-threshold graduation path was covered
+by the 56-test local Foundry suite, including automatic migration and the
+pre-created-pair regression. It was not repeated against this deployed factory
+because the testnet wallet did not hold the roughly 9,000 USDC required to reach
+the production graduation threshold.

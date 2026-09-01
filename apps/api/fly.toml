@@ -29,8 +29,7 @@ primary_region = "iad"  # Washington, DC — closest to Arc RPC endpoints
   ARC_TIMELOCK_ADDRESS = "0x23a038742a12d9D8ABcfF62c5bFA36b608fFe17e"
   ADMIN_MULTISIG = "0x33E4bd4561EE669012ff83b4eE5609122838bDcB"
   ARC_POLLER_ENABLED = "true"
-  ARC_POLLER_REPLAY_ENABLED = "true"
-  ARC_POLLER_REPLAY_FROM_BLOCK = "59870676"
+  ARC_POLLER_REPLAY_ENABLED = "false"
   ARC_DEPLOYMENT_BLOCK = "59870676"
   # AUTH_ALLOW_INSECURE must be "false" for production — set to true only
   # for testnet if wallet signature auth is not yet wired up on the frontend.
