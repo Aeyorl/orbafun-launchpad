@@ -31,6 +31,7 @@ import {
   formatMarketCap,
   formatPrice,
   bondingCurveProgress,
+  ipfsGatewayUrls,
   ipfsToGateway,
   tokenEmoji,
 } from '@/lib/utils';
@@ -55,6 +56,10 @@ export default function ProfilePage() {
   const [avatarDraft, setAvatarDraft] = useState('');
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [savingAvatar, setSavingAvatar] = useState(false);
+  const [avatarAttempt, setAvatarAttempt] = useState<{
+    avatar: string | null;
+    index: number;
+  }>({ avatar: null, index: 0 });
   const isOwnProfile = address?.toLowerCase() === wallet;
 
   // Profile data
@@ -265,6 +270,10 @@ export default function ProfilePage() {
   const totalPnl = pnlData?.total_pnl;
   const holdingsList = holdingsData?.holdings || [];
   const totalPortfolioValue = holdingsData?.total_value_usdc || '0';
+  const avatarSources = ipfsGatewayUrls(profile.avatar);
+  const avatarSourceIndex =
+    avatarAttempt.avatar === profile.avatar ? avatarAttempt.index : 0;
+  const avatarSource = avatarSources[avatarSourceIndex];
 
   return (
     <div className="max-w-5xl mx-auto space-y-5 pb-16">
@@ -276,12 +285,18 @@ export default function ProfilePage() {
             {/* Profile avatar — editable only by the connected wallet owner. */}
             <div className="relative flex-shrink-0">
               <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-accent-blue via-accent-peach to-accent-sienna/40 border border-bg-border flex items-center justify-center text-2xl font-bold font-mono text-white shadow-sm overflow-hidden">
-                {profile.avatar ? (
+                {avatarSource ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={ipfsToGateway(profile.avatar)}
+                    src={avatarSource}
                     alt={`${profile.username || shortenAddress(wallet)} profile`}
                     className="w-full h-full object-cover"
+                    onError={() => {
+                      setAvatarAttempt({
+                        avatar: profile.avatar,
+                        index: avatarSourceIndex + 1,
+                      });
+                    }}
                   />
                 ) : (
                   shortenAddress(wallet).slice(2, 4).toUpperCase()

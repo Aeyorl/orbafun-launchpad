@@ -70,13 +70,18 @@ describe('TokenCard', () => {
 
   it('uses the supplied token image when present', () => {
     render(<TokenCard token={createMockToken({ image: 'ipfs://QmTest123' })} />);
-    expect(screen.getByRole('img')).toHaveAttribute('src', 'https://gateway.pinata.cloud/ipfs/QmTest123');
+    expect(screen.getByRole('img')).toHaveAttribute(
+      'src',
+      'https://silver-tricky-kite-593.mypinata.cloud/ipfs/QmTest123',
+    );
   });
 
   it('tries alternate IPFS gateways before generic artwork', () => {
     render(<TokenCard token={createMockToken({ image: 'ipfs://QmTest123' })} />);
     const artwork = screen.getByRole('img');
 
+    fireEvent.error(artwork);
+    expect(artwork).toHaveAttribute('src', 'https://gateway.pinata.cloud/ipfs/QmTest123');
     fireEvent.error(artwork);
     expect(artwork).toHaveAttribute('src', 'https://dweb.link/ipfs/QmTest123');
     fireEvent.error(artwork);

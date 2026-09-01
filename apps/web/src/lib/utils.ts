@@ -111,9 +111,10 @@ export function shortenAddress(addr: string): string {
   return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 }
 
-const DEFAULT_IPFS_GATEWAY = 'https://gateway.pinata.cloud';
+const DEFAULT_IPFS_GATEWAY = 'https://silver-tricky-kite-593.mypinata.cloud';
 const FALLBACK_IPFS_GATEWAYS = [
   DEFAULT_IPFS_GATEWAY,
+  'https://gateway.pinata.cloud',
   'https://dweb.link',
   'https://ipfs.io',
 ];

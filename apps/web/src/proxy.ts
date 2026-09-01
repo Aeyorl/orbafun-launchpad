@@ -8,6 +8,7 @@ const ARC_RPC_HOSTS = [
 ];
 
 const IPFS_GATEWAYS = [
+  'https://silver-tricky-kite-593.mypinata.cloud',
   'https://gateway.pinata.cloud',
   'https://ipfs.io',
   'https://cloudflare-ipfs.com',

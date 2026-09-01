@@ -81,6 +81,11 @@ describe('ImageUploader', () => {
     const preview = await screen.findByRole('img', { name: 'Upload Avatar' });
     expect(preview).toHaveAttribute(
       'src',
+      'https://silver-tricky-kite-593.mypinata.cloud/ipfs/QmExistingImage',
+    );
+    fireEvent.error(preview);
+    expect(preview).toHaveAttribute(
+      'src',
       'https://gateway.pinata.cloud/ipfs/QmExistingImage',
     );
     fireEvent.error(preview);

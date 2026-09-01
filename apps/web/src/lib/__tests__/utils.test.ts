@@ -290,7 +290,7 @@ describe('shortenAddress', () => {
 describe('ipfsToGateway', () => {
   it('converts ipfs:// to https gateway URL', () => {
     expect(ipfsToGateway('ipfs://QmTest123'))
-      .toBe('https://gateway.pinata.cloud/ipfs/QmTest123');
+      .toBe('https://silver-tricky-kite-593.mypinata.cloud/ipfs/QmTest123');
   });
 
   it('leaves HTTPS URLs unchanged', () => {
@@ -300,6 +300,7 @@ describe('ipfsToGateway', () => {
 
   it('provides alternate gateways in retry order', () => {
     expect(ipfsGatewayUrls('ipfs://QmTest123')).toEqual([
+      'https://silver-tricky-kite-593.mypinata.cloud/ipfs/QmTest123',
       'https://gateway.pinata.cloud/ipfs/QmTest123',
       'https://dweb.link/ipfs/QmTest123',
       'https://ipfs.io/ipfs/QmTest123',
@@ -308,7 +309,7 @@ describe('ipfsToGateway', () => {
 
   it('normalizes ipfs://ipfs/ URIs without duplicating the path', () => {
     expect(ipfsToGateway('ipfs://ipfs/QmTest123/image.png'))
-      .toBe('https://gateway.pinata.cloud/ipfs/QmTest123/image.png');
+      .toBe('https://silver-tricky-kite-593.mypinata.cloud/ipfs/QmTest123/image.png');
   });
 
   it('handles null/undefined/empty', () => {
