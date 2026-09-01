@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { UploadSimple } from '@phosphor-icons/react';
 import { ipfsToGateway } from '@/lib/utils';
+import { useAuth } from '@/lib/use-auth';
 
 
 /**
@@ -32,18 +33,21 @@ export function ImageUploader({
   symbol,
   label = 'Token Logo',
   shape = 'round',
+  onUploadingChange,
 }: {
   value: string;
   onChange: (uri: string) => void;
   symbol?: string;
   label?: string;
   shape?: 'round' | 'wide';
+  onUploadingChange?: (uploading: boolean) => void;
 }) {
   const [uploadEnabled, setUploadEnabled] = useState<boolean | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
+  const { authenticate, getAuthToken } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Guards against the preview-sync useEffect overwriting the local blob URL
   // while an IPFS upload is in progress. Without this, uploading a PFP can
@@ -108,11 +112,20 @@ export function ImageUploader({
 
       isUploadingRef.current = true;
       setUploading(true);
+      onUploadingChange?.(true);
       try {
+        let authToken = getAuthToken();
+        if (!authToken) {
+          await authenticate();
+          authToken = getAuthToken();
+        }
+        if (!authToken) throw new Error('Wallet authentication is required to upload');
+
         const form = new FormData();
         form.append('file', file);
         const res = await fetch(`${API_URL}/upload/image`, {
           method: 'POST',
+          headers: { 'x-auth-token': authToken },
           body: form,
         });
         if (!res.ok) {
@@ -132,12 +145,13 @@ export function ImageUploader({
       } finally {
         isUploadingRef.current = false;
         setUploading(false);
+        onUploadingChange?.(false);
         // Note: we do NOT revoke the blob URL here — mobile browsers reclaim
         // revoked URLs when backgrounded, causing the preview to vanish.
         // Cleanup happens on unmount or when a new file replaces it.
       }
     },
-    [onChange],
+    [authenticate, getAuthToken, onChange, onUploadingChange],
   );
 
   const onDrop = useCallback(
@@ -267,7 +281,7 @@ export function ImageUploader({
               ? 'border-accent-green bg-accent-green/5'
               : 'hover:border-accent-green/30 hover:bg-bg-hover'
           }`}
-          aria-label="Upload token image — click or drag a file"
+          aria-label={`Upload ${label.toLowerCase()} — click or drag a file`}
         >
           <UploadSimple size={28} className="mb-2" aria-hidden="true" />
           <p className="text-sm text-text-secondary">

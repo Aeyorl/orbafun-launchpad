@@ -46,9 +46,13 @@ contract AMMRouterTest is Test {
         // Seed liquidity: 1000 USDC + 1,000,000 tokens.
         usdc.mint(address(this), 1000 * 10 ** 6);
         token.mint(address(this), 1_000_000 * 10 ** 18);
-        usdc.transfer(pairAddr, 1000 * 10 ** 6);
-        token.transfer(pairAddr, 1_000_000 * 10 ** 18);
-        pair.mint(address(this));
+        usdc.approve(pairAddr, 1000 * 10 ** 6);
+        token.approve(pairAddr, 1_000_000 * 10 ** 18);
+        if (USDC < address(token)) {
+            pair.mint(address(this), 1000 * 10 ** 6, 1_000_000 * 10 ** 18, 0);
+        } else {
+            pair.mint(address(this), 1_000_000 * 10 ** 18, 1000 * 10 ** 6, 0);
+        }
 
         // Fund swappers with USDC + tokens.
         usdc.mint(swapper1, 100 * 10 ** 6);
@@ -192,5 +196,44 @@ contract AMMRouterTest is Test {
         // Later swaps get less output (price impact from earlier swaps).
         assertGt(out1, out2, "out1 > out2 (price impact)");
         assertGt(out2, out3, "out2 > out3 (price impact)");
+    }
+
+    function testStagedDepositCannotBeClaimedByFrontRunner() public {
+        usdc.mint(swapper1, 10 * 10 ** 6);
+        vm.prank(swapper1);
+        usdc.transfer(address(pair), 10 * 10 ** 6);
+
+        vm.prank(swapper2);
+        vm.expectRevert(AMMPair.TransferFailed.selector);
+        pair.mint(swapper2, 1, 1, 0);
+    }
+
+    function testLiquidityBurnIsAtomicForLpOwner() public {
+        uint256 liquidity = pair.balanceOf(address(this)) / 10;
+        uint256 usdcBefore = usdc.balanceOf(address(this));
+        uint256 tokenBefore = token.balanceOf(address(this));
+        pair.burn(liquidity, address(this), 0, 0);
+        assertGt(usdc.balanceOf(address(this)), usdcBefore);
+        assertGt(token.balanceOf(address(this)), tokenBefore);
+    }
+
+    function testLiquidityMintEnforcesMinimumLp() public {
+        usdc.mint(address(this), 1 * 10 ** 6);
+        token.mint(address(this), 1_000 * 10 ** 18);
+        usdc.approve(address(pair), 1 * 10 ** 6);
+        token.approve(address(pair), 1_000 * 10 ** 18);
+
+        vm.expectRevert(AMMPair.InsufficientLiquidityMinted.selector);
+        if (USDC < address(token)) {
+            pair.mint(address(this), 1 * 10 ** 6, 1_000 * 10 ** 18, type(uint256).max);
+        } else {
+            pair.mint(address(this), 1_000 * 10 ** 18, 1 * 10 ** 6, type(uint256).max);
+        }
+    }
+
+    function testLiquidityBurnEnforcesMinimumOutputs() public {
+        uint256 liquidity = pair.balanceOf(address(this)) / 10;
+        vm.expectRevert(AMMPair.InsufficientLiquidityBurned.selector);
+        pair.burn(liquidity, address(this), type(uint256).max, type(uint256).max);
     }
 }

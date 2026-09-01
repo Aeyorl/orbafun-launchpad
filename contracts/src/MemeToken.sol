@@ -25,7 +25,7 @@ contract MemeToken is ERC20, Ownable {
     /// @dev Graduation disables the transfer cooldown and renounces ownership.
     bool public graduated;
 
-    /// @notice Last block a wallet transferred tokens.
+    /// @notice Last block tokens left an owner's balance.
     mapping(address => uint256) public lastTxBlock;
 
     string private _name;
@@ -61,10 +61,10 @@ contract MemeToken is ERC20, Ownable {
     function _beforeTokenTransfer(address from, address to, uint256) internal override {
         if (!graduated && msg.sender != bondingCurve && from != address(0) && to != address(0)) {
             uint256 currentBlock = block.number;
-            if (lastTxBlock[msg.sender] != 0 && currentBlock - lastTxBlock[msg.sender] < COOLDOWN_BLOCKS) {
-                revert CooldownActive(lastTxBlock[msg.sender], currentBlock);
+            if (lastTxBlock[from] != 0 && currentBlock - lastTxBlock[from] < COOLDOWN_BLOCKS) {
+                revert CooldownActive(lastTxBlock[from], currentBlock);
             }
-            lastTxBlock[msg.sender] = currentBlock;
+            lastTxBlock[from] = currentBlock;
         }
     }
 

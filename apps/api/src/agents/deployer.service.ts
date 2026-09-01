@@ -198,6 +198,27 @@ const USDC_ADDRESS = requiredMainnetAddress(
 const TOKEN_CREATED_EVENT_TOPIC = keccak256(
   toHex('TokenCreated(address,address,address,string,string,string,uint256)'),
 );
+const BUY_V2_EVENT_TOPIC = keccak256(
+  toHex('BuyV2(address,uint256,uint256,uint256,uint256,uint256)'),
+);
+
+export function extractBuyTokensOut(
+  logs: Array<{ address: string; topics: readonly string[]; data: string }>,
+  curveAddress: string,
+  buyerAddress: string,
+): bigint {
+  const expectedBuyerTopic = buyerAddress.toLowerCase().replace(/^0x/, '').padStart(64, '0');
+  for (const log of logs) {
+    if (log.address.toLowerCase() !== curveAddress.toLowerCase()) continue;
+    if (log.topics[0]?.toLowerCase() !== BUY_V2_EVENT_TOPIC.toLowerCase()) continue;
+    if (log.topics[1]?.toLowerCase().replace(/^0x/, '') !== expectedBuyerTopic) continue;
+
+    const data = log.data.replace(/^0x/, '');
+    if (data.length < 64 * 5) break;
+    return BigInt(`0x${data.slice(64 * 3, 64 * 4)}`);
+  }
+  throw new Error('Authoritative BuyV2 event not found in transaction receipt');
+}
 
 const RPC_URLS = (
   process.env.ARC_RPC_URLS ||
@@ -644,9 +665,15 @@ export class DeployerService implements OnModuleInit {
 
     this.logger.log(`Buy confirmed, gas: ${receipt.gasUsed}`);
 
+    const tokensOut = extractBuyTokensOut(
+      receipt.logs,
+      curve,
+      this.account.address,
+    );
+
     return {
       txHash: buyTx as string,
-      tokenAmount: quote as bigint, // tokens received (approx — actual may differ slightly)
+      tokenAmount: tokensOut,
       usdcAmount,
       gasUsed: receipt.gasUsed,
     };

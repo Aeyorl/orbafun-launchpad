@@ -1,10 +1,9 @@
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
-import { SkipThrottle } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
 
 @Controller('health')
-@SkipThrottle()
 export class HealthController {
   constructor(
     private readonly database: DatabaseService,
@@ -17,6 +16,7 @@ export class HealthController {
   }
 
   @Get('ready')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
   async ready() {
     const expectedChainId = Number(process.env.ARC_CHAIN_ID || 5_042_002);
     const checks = { postgres: false, redis: false, rpc: false };

@@ -59,6 +59,8 @@ contract DeployOrba is Script {
         console.log("LiquidityMigration deployed:", address(migrator));
 
         // 5. Wire migrator into factory (so new curves get the migrator address).
+        ammFactory.setPairCreator(address(migrator), true);
+        ammFactory.setPairCreator(deployer, false);
         factory.setMigrator(address(migrator));
         factory.setPauseGuardian(adminMultisig);
         console.log("Migrator wired into factory");
