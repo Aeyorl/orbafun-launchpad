@@ -56,10 +56,12 @@ export const ARC_TESTNET = {
 export const ARC_MAINNET_CONTRACTS = {
   USDC_ERC20: "0x3600000000000000000000000000000000000000", // 6 decimals (Arc system contract — same address as testnet)
   USDC_NATIVE_EMITTER: "0xfffffffffffffffffffffffffffffffffffffffe", // 18 decimals (EIP-7708)
-  AMM_FACTORY: "", // TODO: deploy to mainnet
-  TOKEN_FACTORY: "", // TODO: deploy to mainnet
-  TREASURY: "", // TODO: deploy to mainnet
-  MIGRATOR: "", // TODO: deploy to mainnet
+  // Deployed 2026-09-16 via DeployArcFun.s.sol (block ~21,125,xxx, txs on arc-scan.org).
+  // Owned by deployer EOA 0x74E9...f337 (no Safe/timelock on mainnet yet).
+  AMM_FACTORY: "0x7B43cEDAA3e96c98D6f8c981d9d8BF4bFB443A7c",
+  TOKEN_FACTORY: "0x8e5710fc5a3f2aA69104AC1b57E6916F7634701B",
+  TREASURY: "0xD81C2CDa790231a8e701911175519d3521F1d51c",
+  MIGRATOR: "0xd5F18F71FdFB6eB8fC49b32b2B264aC162F31525",
 } as const;
 
 // Contract addresses on Arc Testnet

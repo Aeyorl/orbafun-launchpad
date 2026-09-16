@@ -19,13 +19,31 @@ contract DeployOrba is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
-        address adminMultisig = vm.envAddress("ADMIN_MULTISIG");
+        // ADMIN_MULTISIG: a deployed Safe that becomes timelock admin + pause
+        // guardian. OPTIONAL — if unset (or not a contract), the deployer EOA
+        // fills both roles temporarily; transfer to a Safe later via the
+        // timelock once a Safe exists on this network.
+        address adminMultisig = vm.envOr("ADMIN_MULTISIG", address(0));
         uint64 timelockDelay = uint64(vm.envOr("TIMELOCK_DELAY_SECONDS", uint256(48 hours)));
-        require(block.chainid == 5_042_002, "This script deploys to Arc testnet only");
         require(
-            adminMultisig != address(0) && adminMultisig.code.length > 0,
-            "ADMIN_MULTISIG must be a deployed Safe"
+            block.chainid == 5_042_002 || block.chainid == 5_042,
+            "This script deploys to Arc testnet (5042002) or mainnet (5042) only"
         );
+        bool hasSafe = adminMultisig != address(0) && adminMultisig.code.length > 0;
+        if (!hasSafe) {
+            adminMultisig = deployer;
+            console.log("NOTE: no deployed Safe found (ADMIN_MULTISIG unset or EOA).");
+            console.log("       Deployer EOA will act as pause guardian.");
+        }
+        // DEPLOY_WITH_TIMELOCK: defaults to true when a Safe exists. Set to
+        // "false" to deploy contracts owned directly by the deployer EOA
+        // (no timelock). Ownership can be transferred to a Safe+timelock later.
+        bool withTimelock = vm.envOr("DEPLOY_WITH_TIMELOCK", true) && hasSafe;
+        if (!withTimelock) {
+            console.log("NOTE: DEPLOY_WITH_TIMELOCK=false or no Safe -> contracts");
+            console.log("       will be owned by the deployer EOA. Transfer them to a");
+            console.log("       Safe-administered timelock once one exists.");
+        }
 
         console.log("=== Orba Contract Deployment ===");
         console.log("Deployer:", deployer);
@@ -35,8 +53,15 @@ contract DeployOrba is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        ProtocolTimelock timelock = new ProtocolTimelock(adminMultisig, timelockDelay);
-        console.log("ProtocolTimelock deployed:", address(timelock));
+        address owner = deployer; // final owner of all privileged contracts
+        ProtocolTimelock timelock;
+        if (withTimelock) {
+            timelock = new ProtocolTimelock(adminMultisig, timelockDelay);
+            console.log("ProtocolTimelock deployed:", address(timelock));
+            owner = address(timelock);
+        } else {
+            console.log("Skipping ProtocolTimelock (no-timelock mode).");
+        }
 
         // 1. Treasury — receives creation fees + protocol fees.
         Treasury treasury = new Treasury();
@@ -63,15 +88,20 @@ contract DeployOrba is Script {
         ammFactory.setPairCreator(address(migrator), true);
         ammFactory.setPairCreator(deployer, false);
         factory.setMigrator(address(migrator));
-        factory.setPauseGuardian(adminMultisig);
+        if (hasSafe) {
+            // The guardian must be a contract (the Safe); an EOA is rejected.
+            // Without a Safe the owner can still pause/unpause directly.
+            factory.setPauseGuardian(adminMultisig);
+        }
         console.log("Migrator wired into factory");
 
-        // 6. Transfer every privileged contract to the protocol timelock.
-        treasury.transferOwnership(address(timelock));
-        ammFactory.transferOwnership(address(timelock));
-        factory.transferOwnership(address(timelock));
-        migrator.transferOwnership(address(timelock));
-        console.log("Ownership transferred to timelock:", address(timelock));
+        // 6. Transfer every privileged contract to the protocol owner
+        //    (timelock when deployed, otherwise the deployer EOA).
+        treasury.transferOwnership(owner);
+        ammFactory.transferOwnership(owner);
+        factory.transferOwnership(owner);
+        migrator.transferOwnership(owner);
+        console.log("Ownership transferred to:", owner);
         console.log("Emergency pause guardian:", adminMultisig);
 
         vm.stopBroadcast();
@@ -87,7 +117,8 @@ contract DeployOrba is Script {
         console.log("  ARC_AMM_ROUTER_ADDRESS=", address(ammRouter));
         console.log("  ARC_TIMELOCK_ADDRESS=", address(timelock));
         console.log("");
-        console.log("Verify on explorer: https://testnet.arcscan.app");
+        console.log("Verify on explorer:");
+        console.log(block.chainid == 5_042 ? "  https://arc-scan.org" : "  https://testnet.arcscan.app");
 
         // Log the addresses in a machine-readable format too.
         console.log("");
