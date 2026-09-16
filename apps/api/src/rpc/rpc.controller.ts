@@ -52,8 +52,8 @@ const RPC_URLS = (
   process.env.ARC_RPC_URLS ||
   process.env.ARC_RPC_URL ||
   (Number(process.env.ARC_CHAIN_ID || 5_042_002) === 5_042
-    ? ''
-    : 'https://rpc.testnet.arc.network,https://rpc.drpc.testnet.arc.network,https://rpc.quicknode.testnet.arc.network,https://rpc.blockdaemon.testnet.arc.network')
+    ? 'https://rpc.mainnet.arc.io,https://rpc.drpc.mainnet.arc.io,https://rpc.quicknode.mainnet.arc.io,https://rpc.blockdaemon.mainnet.arc.io'
+    : 'https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io')
 )
   .split(',')
   .map((u) => u.trim())

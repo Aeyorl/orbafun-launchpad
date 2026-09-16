@@ -53,7 +53,7 @@ AI Agent-Launched Tokens (MVP) — complete. Agents can register, authenticate
   - `POST /agents/tokens/:address/sell` — sell tokens via deployer wallet (any token)
   Admin auth: AdminGuard checks wallet signature + ADMIN_WALLETS allowlist (env).
   Frontend: /agents browse page + /agents/:agentId profile page with launches.
-  Deployer wallet pays 5 USDC creation fee + gas per launch. Spending limits
+  Deployer wallet pays gas per launch (creation fee is 0 — launching is free). Spending limits
   (daily/monthly) enforced per agent, including buy trades. See `apps/api/src/agents/`.
 Phase 4 (Testing & Security) — self-audit complete (2 rounds), load test passed.
   Security audit: 2 rounds of deep audit across contracts, API, and frontend.
@@ -301,10 +301,19 @@ Phase 5 (Optional Features) — 4 features built, smoke-tested, shipped.
   reported chain — if the wallet is misconfigured or on a different network,
   reads silently fail. `TradePanel.tsx`, `launch/page.tsx`, and `Navbar.tsx`
   also detect wrong-network and show a "Switch to Arc Testnet" button.
-- **Arc mainnet**: chain ID `5042` (testnet is `5042002`). Mainnet is live but
-  has no public RPC endpoints yet (viem ships `arc` with empty `rpcUrls`).
-  Requires private/paid endpoints and contract redeployment. Not used in this
-  project — all dev/test runs against testnet.
+- **Arc mainnet**: chain ID `5042` (testnet is `5042002`). **Mainnet is public
+  since 2026-09-16** — 4 open RPC endpoints, no API key (live-tested,
+  `eth_chainId` → 0x13b2 on each):
+  - `https://rpc.mainnet.arc.io` (Circle primary)
+  - `https://rpc.drpc.mainnet.arc.io`
+  - `https://rpc.quicknode.mainnet.arc.io` (+ `wss://rpc.quicknode.mainnet.arc.io`)
+  - `https://rpc.blockdaemon.mainnet.arc.io` (+ `wss://.../websocket`)
+  Independent explorer/gateway: `https://arc-scan.org` / `https://rpc.arc-scan.org`
+  (third-party, metered, no trace_/debug_). Alchemy also supports Arc mainnet
+  (`arc-mainnet.g.alchemy.com`) — enable the network for your app first.
+  Protocol contracts must be (re)deployed to mainnet before the app boots:
+  mainnet contract addresses in `.env` / `ARC_MAINNET_CONTRACTS`
+  (packages/shared) are intentionally empty and the app fails closed.
 
 ## Commands
 ```bash

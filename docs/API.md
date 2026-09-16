@@ -1,4 +1,4 @@
-# Orba API Reference
+﻿# Orba API Reference
 
 REST + WebSocket API for the Orba launchpad. The API is a NestJS 10 service running on port
 `4000` (override with `API_PORT`). Base URL for all endpoints below is `http://localhost:4000`
@@ -49,7 +49,7 @@ Source: every controller lives under `apps/api/src/<module>/<module>.controller.
   (18-dec) are likewise decimal strings.
 - **Pagination** uses `limit` + `offset` query params. Defaults vary per endpoint; max is
   usually 100. Responses for paginated endpoints return `{ items, total, limit, offset }`
-  (shape may vary slightly by service — see per-endpoint notes).
+  (shape may vary slightly by service â€” see per-endpoint notes).
 - **Timestamps** are Unix milliseconds unless otherwise noted.
 
 ---
@@ -76,14 +76,14 @@ it's enabled. See `apps/api/src/main.ts`.
 ```bash
 # 1. Get a nonce
 curl http://localhost:4000/auth/nonce
-# → { "nonce": "Sign this message to sign in to Orba. Nonce: <rand>" }
+# â†’ { "nonce": "Sign this message to sign in to Orba. Nonce: <rand>" }
 
 # 2. Sign it with your wallet (viem / ethers / wallet UI)
 # 3. Verify
 curl -X POST http://localhost:4000/auth/verify \
   -H 'Content-Type: application/json' \
-  -d '{"message":"Sign this message…Nonce: <rand>","signature":"0x..."}'
-# → { "token": "<jwt>", "wallet": "0x...", "expires": 1735689600000 }
+  -d '{"message":"Sign this messageâ€¦Nonce: <rand>","signature":"0x..."}'
+# â†’ { "token": "<jwt>", "wallet": "0x...", "expires": 1735689600000 }
 
 # 4. Use it
 curl http://localhost:4000/favorites -H "x-auth-token: <jwt>"
@@ -109,14 +109,14 @@ Common status codes:
 
 | Code | Meaning |
 |---|---|
-| `400` | Bad request — invalid address, missing required body field, bad BigInt, etc. |
-| `401` | Unauthorized — missing/invalid `x-auth-token` or `x-api-key`. |
-| `403` | Forbidden — `AdminGuard` rejected the wallet, or `/rpc` rejected a non-whitelisted method. |
-| `404` | Not found — token / agent / user / template doesn't exist. |
-| `429` | Too Many Requests — throttler limit hit (per-IP). |
+| `400` | Bad request â€” invalid address, missing required body field, bad BigInt, etc. |
+| `401` | Unauthorized â€” missing/invalid `x-auth-token` or `x-api-key`. |
+| `403` | Forbidden â€” `AdminGuard` rejected the wallet, or `/rpc` rejected a non-whitelisted method. |
+| `404` | Not found â€” token / agent / user / template doesn't exist. |
+| `429` | Too Many Requests â€” throttler limit hit (per-IP). |
 | `500` | Internal server error. |
-| `502` | Bad Gateway — upstream RPC provider or Pinata failed. |
-| `503` | Service Unavailable — feature disabled (e.g. `PINATA_JWT` unset, `INDEXER_WEBHOOK_SECRET` unset, `AUTH_SECRET` unset). |
+| `502` | Bad Gateway â€” upstream RPC provider or Pinata failed. |
+| `503` | Service Unavailable â€” feature disabled (e.g. `PINATA_JWT` unset, `INDEXER_WEBHOOK_SECRET` unset, `AUTH_SECRET` unset). |
 
 ---
 
@@ -124,15 +124,15 @@ Common status codes:
 
 Per-IP throttling via `@nestjs/throttler`. Limits are noted per endpoint below. Notable overrides:
 
-- `/rpc` — **300 req / 60s** (wagmi fires many parallel reads on page load).
-- `/auth/verify` — 10 / 60s.
-- `/auth/nonce` — 20 / 60s.
-- `/agents/register` — 5 / 60s.
-- `/agents/launch` — 10 / 60s.
-- `/upload/image` — 10 / 60s.
-- `/tokens/:address/messages` POST — 30 / 60s.
-- `/agents/tokens/:address/messages` — 30 / 60s.
-- `/indexer/*` — throttling **skipped** (internal, shared-secret auth).
+- `/rpc` â€” **300 req / 60s** (wagmi fires many parallel reads on page load).
+- `/auth/verify` â€” 10 / 60s.
+- `/auth/nonce` â€” 20 / 60s.
+- `/agents/register` â€” 5 / 60s.
+- `/agents/launch` â€” 10 / 60s.
+- `/upload/image` â€” 10 / 60s.
+- `/tokens/:address/messages` POST â€” 30 / 60s.
+- `/agents/tokens/:address/messages` â€” 30 / 60s.
+- `/indexer/*` â€” throttling **skipped** (internal, shared-secret auth).
 
 ---
 
@@ -150,9 +150,9 @@ List tokens, with sort / status / search filters.
 |---|---|---|---|
 | `sort` | `newest` | `newest` \| `market_cap` \| `volume` | |
 | `status` | `active` | `active` \| `graduated` \| `all` | |
-| `limit` | `20` | 1–100 | |
-| `offset` | `0` | ≥ 0 | |
-| `search` | — | string | Fuzzy match on name/symbol. Capped at 100 chars to protect against expensive ILIKE. |
+| `limit` | `20` | 1â€“100 | |
+| `offset` | `0` | â‰¥ 0 | |
+| `search` | â€” | string | Fuzzy match on name/symbol. Capped at 100 chars to protect against expensive ILIKE. |
 
 ```bash
 curl 'http://localhost:4000/tokens?sort=volume&status=active&limit=20&offset=0'
@@ -205,7 +205,7 @@ Source: `apps/api/src/messages/messages.controller.ts`
 
 Recent messages, newest first.
 
-**Query params:** `limit` (default 50), `before` (message id — for cursor pagination backwards).
+**Query params:** `limit` (default 50), `before` (message id â€” for cursor pagination backwards).
 
 ```bash
 curl 'http://localhost:4000/tokens/0x.../messages?limit=50'
@@ -245,13 +245,13 @@ field if no metadata has been set.
 
 ```bash
 curl http://localhost:4000/tokens/0x.../metadata
-# → { "token_address": "0x...", "website": null, "twitter": null,
+# â†’ { "token_address": "0x...", "website": null, "twitter": null,
 #     "telegram": null, "discord": null, "description": null }
 ```
 
 ### `POST /tokens/:address/metadata`
 
-Create or update metadata. **Auth: `AuthGuard`** — only the token's **creator** may set
+Create or update metadata. **Auth: `AuthGuard`** â€” only the token's **creator** may set
 metadata (ownership verified server-side).
 
 ```bash
@@ -277,7 +277,7 @@ unset. Rate-limited 20/min per IP.
 
 ```bash
 curl http://localhost:4000/auth/nonce
-# → { "nonce": "Sign this message to sign in to Orba. Nonce: a1b2c3..." }
+# â†’ { "nonce": "Sign this message to sign in to Orba. Nonce: a1b2c3..." }
 ```
 
 ### `POST /auth/verify`
@@ -287,8 +287,8 @@ Verify a signed nonce and receive a JWT auth token. Rate-limited 10/min per IP.
 ```bash
 curl -X POST http://localhost:4000/auth/verify \
   -H 'Content-Type: application/json' \
-  -d '{"message":"Sign this message…Nonce: <rand>","signature":"0x..."}'
-# → { "token": "<jwt>", "wallet": "0x...", "expires": 1735689600000 }
+  -d '{"message":"Sign this messageâ€¦Nonce: <rand>","signature":"0x..."}'
+# â†’ { "token": "<jwt>", "wallet": "0x...", "expires": 1735689600000 }
 ```
 
 **Body**
@@ -353,7 +353,7 @@ Remove a token from favorites.
 ```bash
 curl -X DELETE http://localhost:4000/favorites/0x4b1f... \
   -H 'x-auth-token: <jwt>'
-# → { "removed": true }
+# â†’ { "removed": true }
 ```
 
 ### `GET /favorites/:tokenAddress`
@@ -362,7 +362,7 @@ Check whether a token is in the authenticated wallet's favorites.
 
 ```bash
 curl http://localhost:4000/favorites/0x4b1f... -H 'x-auth-token: <jwt>'
-# → { "favorited": true }
+# â†’ { "favorited": true }
 ```
 
 ---
@@ -378,7 +378,7 @@ Source: `apps/api/src/leaderboard/leaderboard.controller.ts`
 | Param | Default | Allowed |
 |---|---|---|
 | `type` | `top_gainers` | `top_creators` \| `top_gainers` \| `top_volume` |
-| `limit` | `20` | 1–100 |
+| `limit` | `20` | 1â€“100 |
 
 ```bash
 curl 'http://localhost:4000/leaderboard?type=top_volume&limit=20'
@@ -393,11 +393,11 @@ server-side.
 
 ### `GET /upload/status`
 
-Health check — tells the frontend whether uploads are configured.
+Health check â€” tells the frontend whether uploads are configured.
 
 ```bash
 curl http://localhost:4000/upload/status
-# → { "enabled": true, "gateway": "https://gateway.pinata.cloud" }
+# â†’ { "enabled": true, "gateway": "https://gateway.pinata.cloud" }
 ```
 
 ### `POST /upload/image`
@@ -409,7 +409,7 @@ Upload a token image to IPFS. **`multipart/form-data`** with field name `file`. 
 
 - Max size: **5 MB**.
 - Allowed MIME: `image/png`, `image/jpeg`, `image/jpg`, `image/gif`, `image/webp`.
-- **Magic-byte verification** — the file's first bytes must match the declared MIME type, to
+- **Magic-byte verification** â€” the file's first bytes must match the declared MIME type, to
   prevent MIME spoofing.
 - Filename is sanitized (path separators, null bytes, non-alphanumeric chars stripped) and
   capped at 128 chars.
@@ -417,14 +417,14 @@ Upload a token image to IPFS. **`multipart/form-data`** with field name `file`. 
 ```bash
 curl -X POST http://localhost:4000/upload/image \
   -F 'file=@/path/to/meme.png'
-# → { "uri": "ipfs://Qm...", "gateway": "https://gateway.pinata.cloud/ipfs/Qm..." }
+# â†’ { "uri": "ipfs://Qm...", "gateway": "https://gateway.pinata.cloud/ipfs/Qm..." }
 ```
 
 **Response**
 
 | Field | Type | Notes |
 |---|---|---|
-| `uri` | string | `ipfs://<cid>` — pass this into `createToken()` on-chain. |
+| `uri` | string | `ipfs://<cid>` â€” pass this into `createToken()` on-chain. |
 | `gateway` | string | HTTPS gateway URL for displaying the image. |
 
 ---
@@ -439,7 +439,7 @@ Same-origin JSON-RPC proxy for the frontend. Forwards whitelisted **read** metho
 providers with server-side rotation across all 4 public providers (Circle, dRPC, QuickNode,
 Blockdaemon). Rate-limited **300/min per IP** (wagmi fires many parallel reads on page load).
 
-**Write methods are rejected with `403`** — transactions are signed and broadcast by the user's
+**Write methods are rejected with `403`** â€” transactions are signed and broadcast by the user's
 wallet only. The API never sees private keys.
 
 **Whitelisted methods**
@@ -460,7 +460,7 @@ limit") from one provider, rotates to the next; if all providers fail, returns `
 curl -X POST http://localhost:4000/rpc \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}'
-# → { "jsonrpc": "2.0", "id": 1, "result": "0x3a..." }
+# â†’ { "jsonrpc": "2.0", "id": 1, "result": "0x3a..." }
 ```
 
 Provider list is configured via `ARC_RPC_URLS` (comma-separated). Falls back to `ARC_RPC_URL`,
@@ -487,7 +487,7 @@ curl -X POST http://localhost:4000/indexer/event \
   -H 'Content-Type: application/json' \
   -H 'x-indexer-secret: <secret>' \
   -d '{"type":"TokenLaunched","blockNumber":52509682,...}'
-# → { "ok": true }
+# â†’ { "ok": true }
 ```
 
 ### `POST /indexer/batch`
@@ -499,7 +499,7 @@ curl -X POST http://localhost:4000/indexer/batch \
   -H 'Content-Type: application/json' \
   -H 'x-indexer-secret: <secret>' \
   -d '{"events":[{"type":"Buy",...},{"type":"Sell",...}]}'
-# → { "ok": true, "processed": 2 }
+# â†’ { "ok": true, "processed": 2 }
 ```
 
 ---
@@ -524,7 +524,7 @@ curl -X POST http://localhost:4000/agents/register \
   -H 'x-auth-token: <admin-jwt>' \
   -d '{"name":"MyBot","description":"...","wallet":"0x...",
        "dailyLimit":"100000000","monthlyLimit":"1000000000"}'
-# → { "agentId": "arc_abc123...", "apiKey": "arc_xxxxx...", "name": "MyBot" }
+# â†’ { "agentId": "arc_abc123...", "apiKey": "arc_xxxxx...", "name": "MyBot" }
 ```
 
 **Body**
@@ -540,14 +540,14 @@ curl -X POST http://localhost:4000/agents/register \
 #### `POST /agents/launch`
 
 Launch a token on behalf of the authenticated agent. The platform deployer wallet pays the
-5 USDC creation fee + gas. **Agent auth** (`x-api-key`). Rate-limited 10/min per IP.
+gas (creation fee is 0 — launching is free). **Agent auth** (`x-api-key`). Rate-limited 10/min per IP.
 
 ```bash
 curl -X POST http://localhost:4000/agents/launch \
   -H 'Content-Type: application/json' \
   -H 'x-api-key: arc_xxxxx' \
   -d '{"name":"Doge2","symbol":"DOGE2","image":"ipfs://...","description":"..."}'
-# → { "tokenAddress": "0x...", "curveAddress": "0x...", "txHash": "0x...",
+# â†’ { "tokenAddress": "0x...", "curveAddress": "0x...", "txHash": "0x...",
 #     "name": "Doge2", "symbol": "DOGE2", "feePaid": "5000000",
 #     "gasPaid": "...", "status": "confirmed" }
 ```
@@ -590,7 +590,7 @@ curl 'http://localhost:4000/agents?limit=20&offset=0&search=bot'
 ### Token management (agent)
 
 All endpoints below require **agent auth** (`x-api-key`). Ownership is verified server-side for
-messages and metadata — the agent must have launched the token.
+messages and metadata â€” the agent must have launched the token.
 
 #### `POST /agents/tokens/:address/messages`
 
@@ -683,7 +683,7 @@ Top agents by metric. **Public.**
 | Param | Default | Allowed |
 |---|---|---|
 | `metric` | `launches` | `launches` \| `volume` \| `tips` |
-| `limit` | `10` | 1–50 |
+| `limit` | `10` | 1â€“50 |
 
 ### Marketplace: tips
 
@@ -740,7 +740,7 @@ Deployer wallet USDC balance (for monitoring). **Admin-only.**
 
 ```bash
 curl http://localhost:4000/agents/deployer/balance -H 'x-auth-token: <admin-jwt>'
-# → { "configured": true, "address": "0x...", "balance": "1234567890" }
+# â†’ { "configured": true, "address": "0x...", "balance": "1234567890" }
 ```
 
 Returns `{ configured: false, address: null, balance: "0" }` if the deployer wallet isn't
@@ -754,7 +754,7 @@ called once before agent launches will work. **Admin-only.** Rate-limited 2/min 
 ```bash
 curl -X POST http://localhost:4000/agents/deployer/approve \
   -H 'x-auth-token: <admin-jwt>'
-# → { "txHash": "0x...", "status": "confirmed" }
+# â†’ { "txHash": "0x...", "status": "confirmed" }
 ```
 
 ---
@@ -771,7 +771,7 @@ Source: `apps/api/src/referrals/referral.controller.ts`.
 ### `POST /referrals/attribute`
 
 Record that the authenticated wallet was referred by `referrerWallet`. **Wallet auth**
-(`AuthGuard`) — the referred wallet proves ownership by signing. **First-click-wins:** once
+(`AuthGuard`) â€” the referred wallet proves ownership by signing. **First-click-wins:** once
 attributed, cannot be changed. Self-referral is blocked.
 
 The referrer can be passed in the body or as a query param (the frontend uses `?ref=<wallet>`
@@ -820,7 +820,7 @@ Who referred this wallet, if anyone. **Public.**
 
 ```bash
 curl http://localhost:4000/referrals/0xdef.../referrer
-# → { "referrer": "0xabc..." } | { "referrer": null }
+# â†’ { "referrer": "0xabc..." } | { "referrer": null }
 ```
 
 ---
@@ -843,13 +843,13 @@ CORS origin is configured via `CORS_ORIGIN` (default `http://localhost:3000`).
 
 - **Max 5 concurrent connections per IP** (`MAX_CONN_PER_IP`). Excess connections are rejected
   with an immediate disconnect.
-- Heartbeat: `pingInterval` 15s, `pingTimeout` 10s — dead connections cleaned up within ~25s.
+- Heartbeat: `pingInterval` 15s, `pingTimeout` 10s â€” dead connections cleaned up within ~25s.
 
 ### Rooms
 
 | Room | Purpose |
 |---|---|
-| `tokens:global` | Global feed — all token events. Subscribe on the landing/explore page. |
+| `tokens:global` | Global feed â€” all token events. Subscribe on the landing/explore page. |
 | `token:{address}` | Per-token events. Address is lowercased. Subscribe on the coin page. |
 
 ```js

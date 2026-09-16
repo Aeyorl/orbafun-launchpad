@@ -1,4 +1,37 @@
 // Arc chain configuration — confirmed from docs, see DECISION_LOG.md
+// Mainnet went public on 2026-09-16: all 4 providers below are open,
+// no API key required (live-tested: eth_chainId → 0x13b2 on each).
+export const ARC_MAINNET = {
+  chainId: 5042,
+  name: "Arc",
+  nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+  rpcUrls: {
+    default: {
+      http: [
+        "https://rpc.mainnet.arc.io",
+        "https://rpc.drpc.mainnet.arc.io",
+        "https://rpc.quicknode.mainnet.arc.io",
+        "https://rpc.blockdaemon.mainnet.arc.io",
+      ],
+    },
+    public: {
+      http: [
+        "https://rpc.mainnet.arc.io",
+        "https://rpc.drpc.mainnet.arc.io",
+        "https://rpc.quicknode.mainnet.arc.io",
+        "https://rpc.blockdaemon.mainnet.arc.io",
+      ],
+    },
+  },
+  webSocketUrls: {
+    default: { webSocket: ["wss://rpc.blockdaemon.mainnet.arc.io/websocket"] },
+  },
+  blockExplorers: {
+    default: { name: "Arcscan", url: "https://arc-scan.org" },
+  },
+  testnet: false,
+} as const;
+
 export const ARC_TESTNET = {
   chainId: 5042002,
   name: "Arc Testnet",
@@ -14,6 +47,19 @@ export const ARC_TESTNET = {
     default: { name: "Arcscan", url: "https://testnet.arcscan.app" },
   },
   testnet: true,
+} as const;
+
+// Contract addresses on Arc Mainnet (chain 5042).
+// ⚠️ PLACEHOLDERS — the protocol contracts are NOT yet deployed to mainnet.
+// Run contracts/script/DeployArcFun.s.sol against a mainnet RPC with a funded
+// deployer wallet, then fill in the resulting addresses here and in .env.
+export const ARC_MAINNET_CONTRACTS = {
+  USDC_ERC20: "0x3600000000000000000000000000000000000000", // 6 decimals (Arc system contract — same address as testnet)
+  USDC_NATIVE_EMITTER: "0xfffffffffffffffffffffffffffffffffffffffe", // 18 decimals (EIP-7708)
+  AMM_FACTORY: "", // TODO: deploy to mainnet
+  TOKEN_FACTORY: "", // TODO: deploy to mainnet
+  TREASURY: "", // TODO: deploy to mainnet
+  MIGRATOR: "", // TODO: deploy to mainnet
 } as const;
 
 // Contract addresses on Arc Testnet

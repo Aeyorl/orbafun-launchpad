@@ -10,7 +10,7 @@ export const PUBLIC_PROTOCOL_FACTS = {
   publicationLabel: 'Mainnet draft — not yet effective',
   networkName: 'Arc',
   tokenSupply: 1_000_000_000,
-  creationFeeUsdc: 5,
+  creationFeeUsdc: 0,
   bondingCurveTradeFeeBps: 100,
   creatorShareOfTradeFeeBps: 5_000,
   protocolShareOfTradeFeeBps: 5_000,

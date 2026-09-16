@@ -28,17 +28,31 @@ export const IS_ARC_MAINNET = requestedNetwork === 'mainnet';
 //
 // Providers (from https://docs.arc.io/arc/references/rpc-endpoints):
 //   Circle (primary), dRPC, QuickNode, Blockdaemon
+// Public Arc RPC endpoints (from https://docs.arc.io/arc/references/rpc-endpoints).
+// Mainnet went public 2026-09-16 — all 4 providers below need no API key.
 export const DEFAULT_ARC_RPC_URLS = [
-  'https://rpc.testnet.arc.network',
-  'https://rpc.drpc.testnet.arc.network',
-  'https://rpc.quicknode.testnet.arc.network',
-  'https://rpc.blockdaemon.testnet.arc.network',
+  'https://rpc.testnet.arc.io',
+  'https://rpc.drpc.testnet.arc.io',
+  'https://rpc.quicknode.testnet.arc.io',
+  'https://rpc.blockdaemon.testnet.arc.io',
 ];
+
+export const DEFAULT_ARC_MAINNET_RPC_URLS = [
+  'https://rpc.mainnet.arc.io',
+  'https://rpc.drpc.mainnet.arc.io',
+  'https://rpc.quicknode.mainnet.arc.io',
+  'https://rpc.blockdaemon.mainnet.arc.io',
+];
+
+export const DEFAULT_ARC_EXPLORER_URL = 'https://testnet.arcscan.app';
+export const DEFAULT_ARC_MAINNET_EXPLORER_URL = 'https://arc-scan.org';
 
 export const ARC_RPC_URLS = (
   process.env.NEXT_PUBLIC_ARC_RPC_URLS ||
   process.env.NEXT_PUBLIC_ARC_RPC_URL ||
-  (IS_ARC_MAINNET ? '' : DEFAULT_ARC_RPC_URLS.join(','))
+  (IS_ARC_MAINNET
+    ? DEFAULT_ARC_MAINNET_RPC_URLS.join(',')
+    : DEFAULT_ARC_RPC_URLS.join(','))
 )
   .split(',')
   .map((u) => u.trim())
@@ -49,7 +63,7 @@ if (ARC_RPC_URLS.length === 0) {
 }
 
 export const ARC_EXPLORER_URL = process.env.NEXT_PUBLIC_ARC_EXPLORER_URL ||
-  (IS_ARC_MAINNET ? '' : 'https://testnet.arcscan.app');
+  (IS_ARC_MAINNET ? DEFAULT_ARC_MAINNET_EXPLORER_URL : DEFAULT_ARC_EXPLORER_URL);
 
 if (!ARC_EXPLORER_URL) {
   throw new Error('Arc mainnet requires NEXT_PUBLIC_ARC_EXPLORER_URL');
