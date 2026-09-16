@@ -12,9 +12,9 @@ import {MemeToken} from "./MemeToken.sol";
 import {BondingCurve} from "./BondingCurve.sol";
 
 contract TokenFactory is Ownable {
-    /// @notice Creation fee in USDC (6-dec). [CONFIRM] — doc suggested 5 USDC.
-    /// @dev Set to 5 USDC for v1. Adjustable by owner. Charged on createToken().
-    uint256 public creationFee = 5 * 10 ** 6;
+    /// @notice Creation fee in USDC (6-dec). Zero by default — launching is free.
+    /// @dev Adjustable by owner (capped at MAX_CREATION_FEE). Charged on createToken().
+    uint256 public creationFee = 0;
     uint256 public constant MAX_CREATION_FEE = 100 * 10 ** 6;
 
     /// @notice Protocol treasury address (receives creation fees + protocol fees).

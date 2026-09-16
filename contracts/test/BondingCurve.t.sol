@@ -530,13 +530,30 @@ contract BondingCurveTest is Test {
     }
 
     /// @notice Test: creation fee is charged and goes to treasury.
+    /// @dev Default fee is now 0; opt into 5 USDC here to keep covering the
+    ///      fee-collection path (transferFrom to treasury).
     function test_CreationFee() public {
+        factory.setCreationFee(5 * 10 ** 6);
+        assertEq(factory.creationFee(), 5 * 10 ** 6, "fee set");
+
         uint256 treasuryBefore = usdc.balanceOf(address(treasury));
         launchToken();
         uint256 treasuryAfter = usdc.balanceOf(address(treasury));
 
         // Creation fee = 5 USDC.
         assertEq(treasuryAfter - treasuryBefore, 5 * 10 ** 6, "creation fee to treasury");
+    }
+
+    /// @notice Test: default creation fee is zero — launching costs nothing.
+    function test_CreationFeeDefaultsToZero() public {
+        assertEq(factory.creationFee(), 0, "default fee is 0");
+
+        uint256 treasuryBefore = usdc.balanceOf(address(treasury));
+        uint256 creatorBefore = usdc.balanceOf(creator);
+        launchToken();
+
+        assertEq(usdc.balanceOf(address(treasury)), treasuryBefore, "treasury unchanged");
+        assertEq(usdc.balanceOf(creator), creatorBefore, "creator not charged");
     }
 
     function test_FactoryRequiresContractTreasury() public {

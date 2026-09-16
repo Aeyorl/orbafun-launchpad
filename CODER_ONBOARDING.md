@@ -79,7 +79,10 @@ Read `AGENTS.md` "Arc-specific gotchas" in full. The ones that cause the most bu
 - **anvil can't reproduce Arc behavior** — integration tests must hit Arc testnet RPC.
 - **LP burn to `0x...dEaD`**, not `address(0)` (Arc's zero-address rules). See D8.
 - **RPC rate limits are aggressive**: `rpc.testnet.arc.io` returns `-32011 request limit reached`. We rotate 4 providers (Circle, dRPC, QuickNode, Blockdaemon). Three rotation layers — see `AGENTS.md`.
-- **Mainnet chain ID is `5042`** (testnet is `5042002`). Mainnet has no public RPC yet — needs private/paid endpoints. Not used in this project yet.
+- **Mainnet chain ID is `5042`** (testnet is `5042002`). Mainnet is public since
+  2026-09-16: `https://rpc.mainnet.arc.io`, `https://rpc.drpc.mainnet.arc.io`,
+  `https://rpc.quicknode.mainnet.arc.io`, `https://rpc.blockdaemon.mainnet.arc.io`
+  — all open, no API key.
 - **Blocklisted test address**: `0x70997970C51812dc3A010C7d01b50e0d17dc79C8` (see D5).
 
 ### The three USDC formatters (frontend — easy to get wrong)

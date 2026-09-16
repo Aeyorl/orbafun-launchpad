@@ -375,7 +375,12 @@ contract ArcIntegrationTest is Test {
     // ═══ TEST 6: Creation fee with real USDC ═════════════════════════════════
 
     /// @notice Verify creation fee is charged in real USDC and goes to treasury.
+    /// @dev Default fee is now 0; opt into 5 USDC here to keep covering the
+    ///      fee-collection path with real (mocked) USDC.
     function test_CreationFee_RealUSDC() public {
+        vm.prank(deployer);
+        factory.setCreationFee(5 * 10 ** 6);
+
         uint256 treasuryBefore = usdc.balanceOf(address(treasury));
         uint256 deployerBefore = usdc.balanceOf(deployer);
 
@@ -413,7 +418,7 @@ contract ArcIntegrationTest is Test {
     function test_DeployedFactoryConfig() public view {
         assertEq(factory.treasury(), address(treasury), "factory treasury");
         assertEq(factory.migrator(), address(migrator), "factory migrator");
-        assertEq(factory.creationFee(), 5 * 10 ** 6, "creation fee 5 USDC");
+        assertEq(factory.creationFee(), 0, "creation fee 0 (free launches)");
         assertFalse(factory.paused(), "factory not paused");
     }
 }
