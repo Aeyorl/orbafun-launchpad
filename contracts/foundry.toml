@@ -13,6 +13,12 @@ optimizer_runs = 200
 eth_rpc_url = "https://rpc.testnet.arc.io"
 chain_id = 5042002
 
+# Arc mainnet (public since 2026-09-16). Deploy with:
+#   forge script script/DeployArcFun.s.sol --root . --fork-url https://rpc.mainnet.arc.io --broadcast
+[profile.arc-mainnet]
+eth_rpc_url = "https://rpc.mainnet.arc.io"
+chain_id = 5042
+
 [fmt]
 line_length = 100
 tab_width = 4
