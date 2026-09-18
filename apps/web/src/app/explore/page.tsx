@@ -217,7 +217,7 @@ function ExplorePageContent() {
                 <h3 className="font-bold text-sm text-text-primary flex items-center gap-1.5">
                   <Sparkle size={16} weight="fill" aria-hidden="true" /> Just Launched
                 </h3>
-                <span className="text-[11px] font-mono text-emerald-500 font-semibold">Arc Testnet</span>
+                <span className="text-[11px] font-mono text-emerald-500 font-semibold">Arc Mainnet</span>
               </div>
               <div className="space-y-2">
                 {justLaunchedTokens.map((token) => (

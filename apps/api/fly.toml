@@ -3,7 +3,7 @@
 #
 # Deploy with: fly deploy --config apps/api/fly.toml
 # The app runs a persistent NestJS process (indexer poller + WebSocket server).
-# Free tier: shared-cpu-1x, 256MB RAM — enough for testnet traffic.
+# Free tier: shared-cpu-1x, 256MB RAM — enough for initial mainnet traffic.
 
 app = "orbafun-api"
 primary_region = "iad"  # Washington, DC — closest to Arc RPC endpoints
@@ -14,28 +14,18 @@ primary_region = "iad"  # Washington, DC — closest to Arc RPC endpoints
 [env]
   API_PORT = "4000"
   NODE_ENV = "production"
-  # Arc testnet config (public — no secrets here)
-  ARC_RPC_URLS = "https://rpc.testnet.arc.io,https://rpc.drpc.testnet.arc.io,https://rpc.quicknode.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io"
-  ARC_CHAIN_ID = "5042002"
+  # Arc mainnet config (public — no secrets here)
+  ARC_RPC_URLS = "https://rpc.mainnet.arc.io,https://rpc.drpc.mainnet.arc.io,https://rpc.quicknode.mainnet.arc.io,https://rpc.blockdaemon.mainnet.arc.io"
+  ARC_CHAIN_ID = "5042"
   ARC_USDC_ADDRESS = "0x3600000000000000000000000000000000000000"
-  ARC_TOKEN_FACTORY_ADDRESS = "0xD6e64999f94e31a290CE006dD2D8dAEA5846b81E"
-  TOKEN_FACTORY_ADDRESSES = "0xD6e64999f94e31a290CE006dD2D8dAEA5846b81E"
-  PUBLIC_TOKEN_FACTORY_ADDRESSES = "0xD6e64999f94e31a290CE006dD2D8dAEA5846b81E"
-  UNCAPPED_TOKEN_FACTORY_ADDRESSES = "0xD6e64999f94e31a290CE006dD2D8dAEA5846b81E"
-  ARC_TREASURY_ADDRESS = "0x26770f604415be9DaBB7211a8d272D4EDB32d9c3"
-  ARC_MIGRATOR_ADDRESS = "0x07106479Cd70BE67378dA39afB846b363F00cDfe"
-  ARC_AMM_FACTORY_ADDRESS = "0x50432933755E3d292eE2d7589c3CFab18f5d87BD"
-  ARC_AMM_ROUTER_ADDRESS = "0x0459984dEE1b0d7b3D031E28f1A68f4DdEC50A6A"
-  ARC_TIMELOCK_ADDRESS = "0xDd139CD311278C385cB4d578f76cc51aaece9e7d"
-  ADMIN_MULTISIG = "0x33E4bd4561EE669012ff83b4eE5609122838bDcB"
+  ARC_TOKEN_FACTORY_ADDRESS = "0x8e5710fc5a3f2aA69104AC1b57E6916F7634701B"
+  ARC_TREASURY_ADDRESS = "0xD81C2CDa790231a8e701911175519d3521F1d51c"
+  ARC_MIGRATOR_ADDRESS = "0xd5F18F71FdFB6eB8fC49b32b2B264aC162F31525"
+  ARC_AMM_FACTORY_ADDRESS = "0x7B43cEDAA3e96c98D6f8c981d9d8BF4bFB443A7c"
   ARC_POLLER_ENABLED = "true"
-  ARC_POLLER_REPLAY_ENABLED = "false"
-  ARC_DEPLOYMENT_BLOCK = "59881981"
-  # AUTH_ALLOW_INSECURE must be "false" for production — set to true only
-  # for testnet if wallet signature auth is not yet wired up on the frontend.
-  AUTH_ALLOW_INSECURE = "true"
+  AUTH_ALLOW_INSECURE = "false"
   # CORS — set to your Vercel frontend URL after deploying the frontend.
-  # For now, allow all origins (testnet only).
+  # Restrict this to the production frontend domain in Fly secrets/config.
   CORS_ORIGIN = "*"
 
 # Secrets (set via `fly secrets set` — NOT in this file):

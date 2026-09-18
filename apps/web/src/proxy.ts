@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 const ARC_RPC_HOSTS = [
-  'https://rpc.testnet.arc.io',
-  'https://rpc.drpc.testnet.arc.io',
-  'https://rpc.quicknode.testnet.arc.io',
-  'https://rpc.blockdaemon.testnet.arc.io',
+  'https://rpc.mainnet.arc.io',
+  'https://rpc.drpc.mainnet.arc.io',
+  'https://rpc.quicknode.mainnet.arc.io',
+  'https://rpc.blockdaemon.mainnet.arc.io',
 ];
 
 const IPFS_GATEWAYS = [
