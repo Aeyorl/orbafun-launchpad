@@ -4,7 +4,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "/api/axum"
+      "destination": "/api/axum/$1"
     }
   ],
   "crons": [
