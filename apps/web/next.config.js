@@ -1,5 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  async rewrites() {
+    return [
+      { source: '/api/:path*', destination: '/api/axum/:path*' },
+    ];
+  },
   async redirects() {
     return [
       ...['/launch', '/agents', '/leaderboard', '/fees', '/watchlist'].map((source) => ({ source, destination: '/near-demo', permanent: false })),

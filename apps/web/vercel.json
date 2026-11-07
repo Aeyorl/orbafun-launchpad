@@ -1,13 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "rewrites": [
-    { "source": "/api/health", "destination": "/api/axum/health" },
-    { "source": "/api/tokens", "destination": "/api/axum/tokens" },
-    { "source": "/api/tokens/(.*)", "destination": "/api/axum/tokens/$1" },
-    { "source": "/api/cron/indexer", "destination": "/api/axum/cron/indexer" },
-    { "source": "/api/indexer/sync", "destination": "/api/axum/indexer/sync" }
-  ],
   "crons": [
     {
       "path": "/api/cron/indexer",
