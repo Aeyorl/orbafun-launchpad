@@ -1,56 +1,23 @@
-# Dependencies
 node_modules/
-.pnp
-.pnp.js
-
-# Environment
+.next/
+out/
+dist/
+build/
+coverage/
+*.tsbuildinfo
 .env
 .env.local
 .env.*.local
-
-# Build outputs
-dist/
-build/
-.next/
-out/
-
-# Licensed TradingView Advanced Charts runtime (fetched during the build)
-apps/web/public/vendor/tradingview/charting_library/
-
-# Foundry
-cache/
-out/
-broadcast/
-
-# IDE
+near/target/
+near/sandbox-tests/target/
+near/contracts/launchpad/res/token.wasm
 .idea/
 .vscode/
 *.swp
 *.swo
-
-# OS
 .DS_Store
 Thumbs.db
-
-# Logs
 *.log
 npm-debug.log*
-yarn-debug.log*
 yarn-error.log*
-
-# Testing
-coverage/
-.nyc_output/
-output/load-tests/*.wallets.json
 output/backups/
-
-# Envio / Goldsky
-.envio/
-.generated/
-
-# Misc
-*.tsbuildinfo
-
-# Stray file from a misformatted command redirect
--w
-.vercel

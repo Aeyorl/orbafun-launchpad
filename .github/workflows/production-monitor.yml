@@ -25,9 +25,6 @@ jobs:
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --retry 2 --retry-all-errors --max-time 20 \
-            https://orbafun-api.onrender.com/health/ready > /tmp/api-health.json
-          grep -q '"status":"ready"' /tmp/api-health.json
-          curl --fail --silent --show-error --retry 2 --retry-all-errors --max-time 20 \
             https://www.orba.fun/ > /dev/null
 
       - name: Open or update incident issue
@@ -39,7 +36,7 @@ jobs:
           set -euo pipefail
           title='Production monitor alert'
           existing="$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
-          body="Automated production probes failed at $(date -u +%FT%TZ). Check the Render API readiness endpoint, Vercel frontend, PostgreSQL, Redis, and Arc RPC providers. Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          body="Automated production frontend probe failed at $(date -u +%FT%TZ). Check the Vercel deployment and NEAR app configuration. The Rust API currently runs locally and is not a production service. Workflow: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           if [ -n "$existing" ]; then
             gh issue comment "$existing" --repo "$GITHUB_REPOSITORY" --body "$body"
           else

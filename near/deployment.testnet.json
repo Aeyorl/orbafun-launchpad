@@ -1,0 +1,11 @@
+{
+  "network": "testnet",
+  "ownerAccountId": "orba-near-demo-41c9.testnet",
+  "launchpadAccountId": "launchpad.orba-near-demo-41c9.testnet",
+  "usdcAccountId": "3e2210e1184b45b64c8a434c0a7e7b23cc04ea7eb7a6c3c32520d03d4afcb8af",
+  "launchpadCodeHash": "9udRc4WBJoBY2a6K93VBqcjQpPPSUrT6VBkmWKmLR89D",
+  "launchpadDeployTransaction": "AZCtmJs1KdvMqftyp9UeSE8ZKnK2pTBBvJvKzqXDkyR6",
+  "launchpadInitTransaction": "C1u2Dtn2FzzUNPLH9CXygT2dWrghZeH5BwiDdY5VrpTD",
+  "launchpadInitBlock": 276564001,
+  "usdcStorageRegistrationTransaction": "E3wTiabyfx4cwk2ZraDBYd8UwLqEN3W3ymy2SaTt8HEZ"
+}

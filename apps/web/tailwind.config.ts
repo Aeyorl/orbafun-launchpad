@@ -14,8 +14,8 @@ const config: Config = {
         // channels defined in globals.css (:root for light, .dark for dark).
         // Using rgb(var(--...) / <alpha-value>) so Tailwind's /opacity
         // modifier (e.g. bg-accent-blue/10) works correctly. Switching the
-        // `dark` class on <html> swaps all colors instantly. Arc/USDC blue
-        // (#2775CA) is the primary accent in both modes. Dark mode is the
+        // `dark` class on <html> swaps all colors instantly. NEAR green
+        // is the primary launch interface accent. Dark mode is the
         // default (degens prefer it); light mode is opt-in via the toggle.
         bg: {
           base: 'rgb(var(--color-bg-base) / <alpha-value>)',

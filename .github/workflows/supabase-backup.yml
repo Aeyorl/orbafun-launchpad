@@ -14,6 +14,7 @@ concurrency:
 
 jobs:
   backup-and-restore-test:
+    if: false # Disabled during the NEAR migration; re-enable after the NEAR API database backup target is configured.
     runs-on: ubuntu-24.04
     timeout-minutes: 25
 
