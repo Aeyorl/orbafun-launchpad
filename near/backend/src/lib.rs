@@ -95,6 +95,10 @@ pub async fn app_router_with_indexer(enable_indexer: bool) -> Result<Router> {
             "/health",
             get(|| async { Json(json!({"ok":true,"network":"near-testnet"})) }),
         )
+        .route(
+            "/api/health",
+            get(|| async { Json(json!({"ok":true,"network":"near-testnet"})) }),
+        )
         .route("/api/tokens", get(list_tokens))
         .route("/api/tokens/{id}", get(get_token))
         .route("/api/tokens/{id}/trades", get(get_trades))
