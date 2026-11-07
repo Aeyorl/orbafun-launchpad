@@ -8,6 +8,7 @@ coverage/
 .env
 .env.local
 .env.*.local
+.vercel/
 near/target/
 near/sandbox-tests/target/
 near/contracts/launchpad/res/token.wasm
