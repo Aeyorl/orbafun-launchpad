@@ -4,7 +4,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "/api/near_api/:path*"
+      "destination": "/api/near_api?__orba_path=/$1"
     }
   ],
   "crons": [

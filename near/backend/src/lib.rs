@@ -1,8 +1,11 @@
 use anyhow::{Context, Result};
 use axum::{
     Json, Router,
+    body::Body,
     extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, Request, StatusCode, Uri},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
     routing::get,
     routing::post,
 };
@@ -98,9 +101,52 @@ pub async fn app_router_with_indexer(enable_indexer: bool) -> Result<Router> {
         .route("/api/tokens/{id}/mechanics", get(get_mechanics))
         .route("/api/cron/indexer", get(run_indexer))
         .route("/api/indexer/sync", post(sync_indexer))
+        .layer(middleware::from_fn(normalize_vercel_path))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(app_state))
+}
+
+async fn normalize_vercel_path(mut request: Request<Body>, next: Next) -> Response {
+    let Some(query) = request.uri().query() else {
+        return next.run(request).await;
+    };
+
+    let mut api_path = None;
+    let mut remaining = Vec::new();
+    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
+        if key == "__orba_path" {
+            api_path = Some(value.into_owned());
+        } else {
+            remaining.push((key.into_owned(), value.into_owned()));
+        }
+    }
+
+    let Some(api_path) = api_path else {
+        return next.run(request).await;
+    };
+
+    let path = api_path.trim_start_matches('/');
+    let path = if path == "health" {
+        "/health".to_owned()
+    } else if !path.is_empty() && !path.split('/').any(|part| part == "." || part == "..") {
+        format!("/api/{path}")
+    } else {
+        return (StatusCode::BAD_REQUEST, "invalid API path").into_response();
+    };
+    let query = form_urlencoded::Serializer::new(String::new())
+        .extend_pairs(remaining)
+        .finish();
+    let uri = if query.is_empty() {
+        path
+    } else {
+        format!("{path}?{query}")
+    };
+    let Ok(uri) = uri.parse::<Uri>() else {
+        return (StatusCode::BAD_REQUEST, "invalid API path").into_response();
+    };
+    *request.uri_mut() = uri;
+    next.run(request).await
 }
 
 async fn run_indexer(
