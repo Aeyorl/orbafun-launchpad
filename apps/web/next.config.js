@@ -2,7 +2,7 @@
 const nextConfig = {
   async rewrites() {
     return [
-      { source: '/api/:path*', destination: '/api/near_api' },
+      { source: '/api/:path*', destination: '/api/near_api/:path*' },
     ];
   },
   async redirects() {
