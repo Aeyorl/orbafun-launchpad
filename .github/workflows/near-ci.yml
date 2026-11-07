@@ -1,0 +1,39 @@
+name: Release gate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_NEAR_API_URL: https://example.invalid
+          NEXT_PUBLIC_NEAR_RPC_URL: https://rpc.testnet.near.org
+          NEXT_PUBLIC_NEAR_LAUNCHPAD_ID: launchpad.example.testnet
+          NEXT_PUBLIC_NEAR_USDC_ID: usdc.example.testnet
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo test --workspace
+        working-directory: near
+      - run: cargo check -p orba-near-launchpad --target wasm32-unknown-unknown
+        working-directory: near
+      - run: cargo test --manifest-path near/sandbox-tests/Cargo.toml

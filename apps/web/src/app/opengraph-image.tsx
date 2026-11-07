@@ -1,5 +1,6 @@
 import { ImageResponse } from 'next/og';
 
+export const runtime = 'edge';
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
@@ -24,20 +25,13 @@ export default function OgImage() {
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <div
-            style={{
-              width: 52,
-              height: 52,
-              borderRadius: 9999,
-              background: '#00ff9d',
-            }}
-          />
+          <span style={{ fontSize: 80, color: '#00ff9d' }}>◆</span>
           <span style={{ fontSize: 72, fontWeight: 800 }}>
             Orba
           </span>
         </div>
         <div style={{ fontSize: 32, color: '#71717a', marginTop: 20 }}>
-          Launch memecoins on Arc — USDC-native
+          Launch tokens on NEAR
         </div>
         <div
           style={{
@@ -50,9 +44,9 @@ export default function OgImage() {
         >
           <span>Bonding curves</span>
           <span>·</span>
-          <span>Sub-second finality</span>
+          <span>Milestone mechanics</span>
           <span>·</span>
-          <span>DEX graduation</span>
+          <span>Treasury unlocks</span>
         </div>
       </div>
     ),
