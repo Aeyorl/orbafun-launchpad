@@ -2,9 +2,7 @@ use anyhow::{Context, Result};
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
-    http::{HeaderMap, Request, StatusCode},
-    middleware::{self, Next},
-    response::Response,
+    http::{HeaderMap, StatusCode},
     routing::get,
     routing::post,
 };
@@ -94,34 +92,15 @@ pub async fn app_router_with_indexer(enable_indexer: bool) -> Result<Router> {
             "/health",
             get(|| async { Json(json!({"ok":true,"network":"near-testnet"})) }),
         )
-        .route("/tokens", get(list_tokens))
-        .route("/tokens/{id}", get(get_token))
-        .route("/tokens/{id}/trades", get(get_trades))
-        .route("/tokens/{id}/mechanics", get(get_mechanics))
-        .route("/cron/indexer", get(run_indexer))
-        .route("/indexer/sync", post(sync_indexer))
-        .layer(middleware::from_fn(normalize_api_path))
+        .route("/api/tokens", get(list_tokens))
+        .route("/api/tokens/{id}", get(get_token))
+        .route("/api/tokens/{id}/trades", get(get_trades))
+        .route("/api/tokens/{id}/mechanics", get(get_mechanics))
+        .route("/api/cron/indexer", get(run_indexer))
+        .route("/api/indexer/sync", post(sync_indexer))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
         .with_state(app_state))
-}
-
-async fn normalize_api_path(mut request: Request<axum::body::Body>, next: Next) -> Response {
-    let path = request.uri().path();
-    let normalized = path
-        .strip_prefix("/api/axum/")
-        .or_else(|| path.strip_prefix("/api/"));
-    if let Some(normalized) = normalized {
-        let path_and_query = request
-            .uri()
-            .query()
-            .map(|query| format!("/{normalized}?{query}"))
-            .unwrap_or_else(|| format!("/{normalized}"));
-        if let Ok(uri) = path_and_query.parse() {
-            *request.uri_mut() = uri;
-        }
-    }
-    next.run(request).await
 }
 
 async fn run_indexer(
