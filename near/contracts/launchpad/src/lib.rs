@@ -123,6 +123,13 @@ trait Callbacks {
     fn on_token_created(&mut self, token_id: AccountId, creator: AccountId) -> bool;
     fn on_sell_claim(&mut self, seller: AccountId, amount: U128, claim_id: u64) -> bool;
     fn on_treasury_claim(&mut self, token_id: AccountId, claim_id: u64, amount: U128) -> bool;
+    fn on_fee_claim(
+        &mut self,
+        token_id: AccountId,
+        amount: U128,
+        creator_fee: bool,
+        claim_id: u64,
+    ) -> bool;
     fn on_buy_delivery(
         &mut self,
         token_id: AccountId,
@@ -340,9 +347,14 @@ impl Launchpad {
                     .then(
                         ext_self::ext(env::current_account_id())
                             .with_static_gas(Gas::from_tgas(60))
-                            .on_buy_delivery(token_id, sender_id, amount, U128(quote.tokens_out)),
+                            .on_buy_delivery(
+                                token_id,
+                                sender_id,
+                                U128(quote.accepted_amount),
+                                U128(quote.tokens_out),
+                            ),
                     );
-                PromiseOrValue::Value(U128(0))
+                PromiseOrValue::Value(U128(amount.0 - quote.accepted_amount))
             }
             TransferMessage::Sell {
                 token_id,
@@ -382,11 +394,14 @@ impl Launchpad {
             state.milestones_completed = snapshot.previous_milestones;
             state.reserved_remaining = snapshot.previous_reserved;
             state.treasury_unlocked = snapshot.previous_unlocked;
+            let refund = self.seller_claimable.get(&buyer).unwrap_or(0) + usdc_amount.0;
+            self.seller_claimable.insert(&buyer, &refund);
             self.tokens.insert(&token_id, &state);
             return false;
         }
-        state.graduated =
-            math::market_cap(state.real_usdc, state.tokens_sold) >= math::GRADUATION_MARKET_CAP;
+        state.graduated = state.tokens_sold >= math::CURVE_SUPPLY
+            || math::market_cap(state.real_usdc, state.tokens_sold)
+                >= math::GRADUATION_MARKET_CAP;
         self.tokens.insert(&token_id, &state);
         self.trigger_milestones(&token_id);
         env::log_str(&format!(
@@ -532,6 +547,87 @@ impl Launchpad {
         true
     }
 
+    pub fn claim_creator_fees(&mut self, token_id: AccountId) -> Promise {
+        let mut state = self.tokens.get(&token_id).expect("unknown token");
+        let caller = env::predecessor_account_id();
+        assert_eq!(caller, state.creator, "token creator only");
+        let amount = state.creator_fees;
+        assert!(amount > 0, "no creator fees");
+        state.creator_fees = 0;
+        let recipient = state.creator.clone();
+        self.tokens.insert(&token_id, &state);
+        self.begin_fee_claim(token_id, recipient, amount, true)
+    }
+
+    pub fn claim_protocol_fees(&mut self, token_id: AccountId) -> Promise {
+        assert_eq!(env::predecessor_account_id(), self.owner, "owner only");
+        let mut state = self.tokens.get(&token_id).expect("unknown token");
+        let amount = state.protocol_fees;
+        assert!(amount > 0, "no protocol fees");
+        state.protocol_fees = 0;
+        self.tokens.insert(&token_id, &state);
+        self.begin_fee_claim(token_id, self.owner.clone(), amount, false)
+    }
+
+    fn begin_fee_claim(
+        &mut self,
+        token_id: AccountId,
+        recipient: AccountId,
+        amount: u128,
+        creator_fee: bool,
+    ) -> Promise {
+        let claim_id = self.next_claim;
+        self.next_claim += 1;
+        self.pending_claims.insert(
+            &claim_id,
+            &PendingClaim {
+                recipient: recipient.clone(),
+                amount,
+            },
+        );
+        ext_ft::ext(self.usdc_id.clone())
+            .with_attached_deposit(NearToken::from_yoctonear(1))
+            .with_static_gas(Gas::from_tgas(10))
+            .ft_transfer(
+                recipient,
+                U128(amount),
+                Some("Orba accrued fees".into()),
+            )
+            .then(
+                ext_self::ext(env::current_account_id())
+                    .with_static_gas(Gas::from_tgas(20))
+                    .on_fee_claim(token_id, U128(amount), creator_fee, claim_id),
+            )
+    }
+
+    #[private]
+    pub fn on_fee_claim(
+        &mut self,
+        token_id: AccountId,
+        amount: U128,
+        creator_fee: bool,
+        claim_id: u64,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) -> bool {
+        let claim = self.pending_claims.remove(&claim_id).expect("pending fee claim");
+        if result.is_err() {
+            if let Some(mut state) = self.tokens.get(&token_id) {
+                if creator_fee {
+                    state.creator_fees += amount.0;
+                } else {
+                    state.protocol_fees += amount.0;
+                }
+                self.tokens.insert(&token_id, &state);
+            }
+            return false;
+        }
+        env::log_str(&format!(
+            "EVENT_JSON:{}",
+            near_sdk::serde_json::json!({"standard":"orba","version":"1.0.0","event":"fee_claim","data":[{"token_id":token_id,"recipient":claim.recipient,"amount":amount,"creator_fee":creator_fee}]})
+        ));
+        true
+    }
+
     fn trigger_milestones(&mut self, token_id: &AccountId) {
         let mut state = self.tokens.get(token_id).expect("token exists").clone();
         let volume = state.cumulative_volume_usdc;
@@ -566,8 +662,9 @@ impl Launchpad {
         state.treasury_unlocked += unlock;
         state.milestones_completed += 1;
         state.pending = true;
-        state.graduated =
-            math::market_cap(state.real_usdc, state.tokens_sold) >= math::GRADUATION_MARKET_CAP;
+        state.graduated = state.tokens_sold >= math::CURVE_SUPPLY
+            || math::market_cap(state.real_usdc, state.tokens_sold)
+                >= math::GRADUATION_MARKET_CAP;
         self.tokens.insert(token_id, &state);
         self.pending_burns.insert(
             token_id,
@@ -632,6 +729,9 @@ impl Launchpad {
         self.tokens.get(&token_id)
     }
     pub fn get_seller_claimable(&self, account_id: AccountId) -> U128 {
+        U128(self.seller_claimable.get(&account_id).unwrap_or(0))
+    }
+    pub fn get_claimable_usdc(&self, account_id: AccountId) -> U128 {
         U128(self.seller_claimable.get(&account_id).unwrap_or(0))
     }
     pub fn quote_buy(&self, token_id: AccountId, usdc_amount: U128) -> U128 {

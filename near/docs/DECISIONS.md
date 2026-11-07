@@ -22,7 +22,8 @@ The existing 1% trade fee remains split 50/50 between creator and protocol. To f
 - Existing constant product virtual reserves and integer rounding are ported unchanged. Reserved burns affect only the launchpad's reserved balance and never curve reserves or quotes.
 - 1% fee; 50% creator and 50% protocol split before the protocol/treasury allocation described above.
 - No USDC launch fee. Creating a NEAR subaccount and deploying its code costs NEAR storage/deposit; the creator attaches this network cost. It is not a platform launch fee.
-- Graduation is recorded at the existing $30,000 market-cap threshold and locks curve trading in this demo. AMM migration is outside this first NEAR milestone.
+- Graduation locks curve trading at the existing $30,000 market-cap threshold or when the 880M curve inventory is exhausted, whichever occurs first. Exhaustion is a terminal state because further buys cannot receive curve tokens. AMM migration is outside this first NEAR milestone.
+- Creators claim their accrued fee balance; only the launchpad owner can claim protocol fees. Both claims use asynchronous USDC transfers and restore the balance if transfer settlement fails.
 - Cross-contract payouts update claimable state before transfer and use private callbacks to restore claim accounting on failure.
 
 ## Network and scope

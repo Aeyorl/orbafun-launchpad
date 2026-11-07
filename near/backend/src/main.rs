@@ -268,7 +268,13 @@ async fn scan_block(
                     match receiver {
                         account if account == contract => matches!(
                             method,
-                            Some("create_token" | "claim_treasury" | "claim_sell_proceeds")
+                            Some(
+                                "create_token"
+                                    | "claim_treasury"
+                                    | "claim_sell_proceeds"
+                                    | "claim_creator_fees"
+                                    | "claim_protocol_fees"
+                            )
                         ),
                         account
                             if account == usdc

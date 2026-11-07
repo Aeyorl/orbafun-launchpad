@@ -7,12 +7,13 @@ const TOKEN_WASM: &[u8] =
     include_bytes!("../../target/wasm32-unknown-unknown/release/orba_near_token.wasm");
 const LAUNCHPAD_WASM: &[u8] =
     include_bytes!("../../target/wasm32-unknown-unknown/release/orba_near_launchpad.wasm");
-const USDC_SUPPLY: &str = "1000000000000"; // 1,000,000 USDC (6 decimals)
+const USDC_SUPPLY: &str = "30000000000000"; // 30,000,000 USDC (6 decimals)
 const STORAGE_DEPOSIT: NearToken = NearToken::from_near(1);
 
 struct Fixture {
     worker: Worker<Sandbox>,
     buyer: Account,
+    creator: Account,
     treasury: Account,
     usdc: Contract,
     launchpad: Contract,
@@ -59,7 +60,7 @@ async fn setup(preset: &str) -> Result<Fixture> {
         .call(usdc.id(), "ft_transfer")
         .args_json(json!({
             "receiver_id": buyer.id(),
-            "amount": "500000000000",
+            "amount": "10000000000000",
             "memo": null,
         }))
         .deposit(NearToken::from_yoctonear(1))
@@ -91,6 +92,7 @@ async fn setup(preset: &str) -> Result<Fixture> {
     Ok(Fixture {
         worker,
         buyer,
+        creator,
         treasury,
         usdc,
         launchpad,
@@ -183,7 +185,7 @@ async fn launch_buy_sell_and_failed_then_successful_treasury_claim() -> Result<(
         .args_json(json!({ "account_id": f.buyer.id() }))
         .await?
         .json()?;
-    assert_eq!(buyer_usdc_after_invalid, "500000000000");
+    assert_eq!(buyer_usdc_after_invalid, "10000000000000");
 
     let slippage = buy(&f, "11000000", "999999999999999999999999999999").await?;
     assert!(
@@ -198,7 +200,7 @@ async fn launch_buy_sell_and_failed_then_successful_treasury_claim() -> Result<(
         .args_json(json!({ "account_id": f.buyer.id() }))
         .await?
         .json()?;
-    assert_eq!(after_slippage_usdc, "500000000000");
+    assert_eq!(after_slippage_usdc, "10000000000000");
     let valid = buy(&f, "11000000", "1").await?;
     assert!(valid.is_success(), "valid buy should succeed");
     let state = token_state(&f.launchpad, &f.token_id).await?;
@@ -372,5 +374,117 @@ async fn buy_below_first_threshold_settles_delivery_callback() -> Result<()> {
         "buy delivery did not settle: {state}"
     );
     assert_eq!(state["milestones_completed"], 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn oversized_buy_refunds_input_beyond_curve_inventory() -> Result<()> {
+    let f = setup("spark").await?;
+    let before: String = f
+        .usdc
+        .view("ft_balance_of")
+        .args_json(json!({ "account_id": f.buyer.id() }))
+        .await?
+        .json()?;
+    let receipt = buy(&f, "10000000000000", "1").await?;
+    assert!(
+        receipt.is_success(),
+        "capped buy should settle: {receipt:#?}"
+    );
+    let after: String = f
+        .usdc
+        .view("ft_balance_of")
+        .args_json(json!({ "account_id": f.buyer.id() }))
+        .await?
+        .json()?;
+    let spent = before.parse::<u128>()? - after.parse::<u128>()?;
+    let state = token_state(&f.launchpad, &f.token_id).await?;
+    assert_eq!(state["tokens_sold"].as_f64(), Some(8.8e26));
+    assert!(spent < 10_000_000_000_000);
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_token_delivery_restores_accounting_and_credits_refund() -> Result<()> {
+    let f = setup("spark").await?;
+    // The buyer has no token storage, so the token transfer fails after USDC was received.
+    // Existing setup registered it; unregistering is intentionally unavailable. Use a new account.
+    let unregistered = f.worker.dev_create_account().await?;
+    register(&unregistered, f.usdc.id()).await?;
+    f.launchpad
+        .as_account()
+        .call(f.usdc.id(), "ft_transfer")
+        .args_json(json!({"receiver_id":unregistered.id(),"amount":"1000000","memo":null}))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let msg = json!({"action":"buy","token_id":f.token_id,"min_tokens_out":"1"}).to_string();
+    let result = unregistered
+        .call(f.usdc.id(), "ft_transfer_call")
+        .args_json(json!({"receiver_id":f.launchpad.id(),"amount":"1000000","memo":null,"msg":msg}))
+        .max_gas()
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?;
+    assert!(result.is_success());
+    let claimable: String = f
+        .launchpad
+        .view("get_claimable_usdc")
+        .args_json(json!({"account_id":unregistered.id()}))
+        .await?
+        .json()?;
+    assert_eq!(claimable, "1000000");
+    let state = token_state(&f.launchpad, &f.token_id).await?;
+    assert_eq!(state["real_usdc"], 0);
+    assert_eq!(state["tokens_sold"], 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn creator_and_owner_can_claim_accrued_fees() -> Result<()> {
+    let f = setup("spark").await?;
+    assert!(buy(&f, "100000000", "1").await?.is_success());
+    let state = token_state(&f.launchpad, &f.token_id).await?;
+    assert!(state["creator_fees"].as_u64().unwrap_or_default() > 0);
+    assert!(state["protocol_fees"].as_u64().unwrap_or_default() > 0);
+    let unauthorized = f
+        .buyer
+        .call(f.launchpad.id(), "claim_protocol_fees")
+        .args_json(json!({"token_id":f.token_id}))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(!unauthorized.is_success());
+    let failed_claim = f
+        .creator
+        .call(f.launchpad.id(), "claim_creator_fees")
+        .args_json(json!({"token_id":f.token_id}))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(failed_claim.is_success());
+    let restored = token_state(&f.launchpad, &f.token_id).await?;
+    assert!(restored["creator_fees"].as_u64().unwrap_or_default() > 0);
+    register(&f.creator, f.usdc.id()).await?;
+    let creator_claim = f
+        .creator
+        .call(f.launchpad.id(), "claim_creator_fees")
+        .args_json(json!({"token_id":f.token_id}))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(creator_claim.is_success());
+    let owner_claim = f
+        .creator
+        .call(f.launchpad.id(), "claim_protocol_fees")
+        .args_json(json!({"token_id":f.token_id}))
+        .max_gas()
+        .transact()
+        .await?;
+    assert!(owner_claim.is_success());
+    let state = token_state(&f.launchpad, &f.token_id).await?;
+    assert_eq!(state["creator_fees"], 0);
+    assert_eq!(state["protocol_fees"], 0);
     Ok(())
 }

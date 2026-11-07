@@ -39,7 +39,7 @@ Pop-Location
 wsl -e bash -lc 'cd "<repo-path>/near/sandbox-tests" && cargo test'
 ```
 
-The sandbox suite covers token creation, invalid-token and slippage refunds, buy/sell, one-shot milestone burns and event emission, failed treasury payout recovery, fixed-recipient authorization, successful treasury and sale-proceeds claims, full reserved-supply burn, and post-graduation trading lock. Sandbox testing uses the NEP-141 token contract as a local test USDC faucet; this is not the live NEAR USDC contract.
+The sandbox suite covers token creation, invalid-token and slippage refunds, oversized-buy refunds at curve inventory exhaustion, failed token delivery recovery, buy/sell, one-shot milestone burns and event emission, failed treasury and fee payout recovery, fixed-recipient and creator/owner authorization, successful treasury, fee, and sale-proceeds claims, full reserved-supply burn, and post-graduation trading lock. Sandbox testing uses the NEP-141 token contract as a local test USDC faucet; this is not the live NEAR USDC contract.
 
 ## Testnet deployment
 
@@ -76,10 +76,11 @@ Routes: `GET /health`, `/api/tokens`, `/api/tokens/:id`, `/api/tokens/:id/trades
 
 1. Open `/near-demo`, connect a NEAR testnet wallet, select a milestone preset, and create a token with a fixed treasury recipient.
 2. Register the launchpad with USDC storage management, then approve/transfer-call USDC to buy along the curve.
-3. Transfer-call created tokens to the launchpad's sell receiver to sell; sale proceeds are sent to the seller asynchronously.
+3. Transfer-call created tokens to the launchpad's sell receiver to sell; the seller then claims accrued USDC proceeds.
 4. Cross a configured cumulative volume threshold; the launchpad burns reserved supply and unlocks part of the per-token treasury pool.
 5. Connect as the fixed recipient and claim an unlocked tranche.
-6. Confirm trades and `EVENT_JSON` records in the backend API and NEAR testnet explorer.
+6. Token creators can claim their accrued fee share with `claim_creator_fees`; the launchpad owner can claim protocol fees with `claim_protocol_fees`. Both amounts are restored if the USDC transfer fails.
+7. Confirm trades and `EVENT_JSON` records in the backend API and NEAR testnet explorer.
 
 The smallest preset's thresholds require real testnet USDC volume; for a repeatable milestone demo, use a sandbox or a separately documented test-only preset. Never present a local mocked milestone as a testnet transaction.
 

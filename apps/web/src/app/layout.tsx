@@ -5,6 +5,11 @@ export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://orba.fun'),
   title: 'Orba — NEAR Token Launchpad',
   description: 'Launch and trade tokens on NEAR with milestone based reserved supply burns and treasury unlocks.',
+  openGraph: {
+    title: 'Orba — NEAR Token Launchpad',
+    description: 'Launch and trade tokens on NEAR with milestone based reserved supply burns and treasury unlocks.',
+    type: 'website',
+  },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
