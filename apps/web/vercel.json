@@ -1,9 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/axum" }
-  ],
   "crons": [
     {
       "path": "/api/cron/indexer",
