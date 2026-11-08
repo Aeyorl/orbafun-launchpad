@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::{env, time::Duration};
-use tokio::time::interval;
+use tokio::time::{interval, sleep};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 
 #[derive(Clone)]
@@ -252,7 +252,10 @@ async fn indexer_loop(db: PgPool, rpc: String, contract: String, usdc: String) -
     let mut tick = interval(Duration::from_secs(3));
     loop {
         tick.tick().await;
-        indexer_tick(&db, &rpc, &contract, &usdc, false).await?;
+        if let Err(err) = indexer_tick(&db, &rpc, &contract, &usdc, false).await {
+            tracing::error!(%err, "NEAR indexer tick failed; retrying");
+            sleep(Duration::from_secs(5)).await;
+        }
     }
 }
 
@@ -305,7 +308,7 @@ async fn indexer_tick_locked(db: &PgPool, rpc: &str, contract: &str, usdc: &str)
     }
     let block = height["result"]["header"]["height"]
         .as_i64()
-        .unwrap_or_default();
+        .context("NEAR RPC response did not include the finalized block height")?;
     let mut last =
         sqlx::query_scalar::<_, i64>("SELECT last_block FROM indexer_state WHERE name='near' ")
             .fetch_optional(db)
@@ -364,12 +367,12 @@ async fn scan_block(
         .await?
         .json()
         .await?;
-    if block.error.is_some() {
-        return Ok(Vec::new());
+    if let Some(error) = block.error {
+        anyhow::bail!("NEAR RPC block {height} failed: {error}");
     }
-    let Some(block) = block.result else {
-        return Ok(Vec::new());
-    };
+    let block = block
+        .result
+        .with_context(|| format!("NEAR RPC returned no data for block {height}"))?;
     let chunks = block["chunks"].as_array().cloned().unwrap_or_default();
     let chunk_bodies = stream::iter(chunks)
         .map(|chunk| async move {
@@ -382,13 +385,18 @@ async fn scan_block(
                 .error_for_status()?
                 .json()
                 .await?;
-            Ok::<_, anyhow::Error>(body.result)
+            if let Some(error) = body.error {
+                anyhow::bail!("NEAR RPC chunk {chunk_hash} failed at block {height}: {error}");
+            }
+            body.result.with_context(|| {
+                format!("NEAR RPC returned no data for chunk {chunk_hash} at block {height}")
+            })
         })
         .buffered(10)
         .try_collect::<Vec<_>>()
         .await?;
     let mut indexed = Vec::new();
-    for body in chunk_bodies.into_iter().flatten() {
+    for body in chunk_bodies {
         for tx in body["transactions"].as_array().cloned().unwrap_or_default() {
             let receiver = tx["receiver_id"].as_str().unwrap_or_default();
             let relevant_action = tx["actions"].as_array().is_some_and(|actions| {
@@ -429,14 +437,18 @@ async fn scan_block(
                 .error_for_status()?
                 .json()
                 .await?;
-            if let Some(status) = status.result {
-                let logs = collect_logs(&status);
-                if !logs.is_empty() {
-                    indexed.push(IndexedTransactionLogs {
-                        tx_hash: tx_hash.to_string(),
-                        events: logs,
-                    });
-                }
+            if let Some(error) = status.error {
+                anyhow::bail!("NEAR RPC transaction status failed for {tx_hash}: {error}");
+            }
+            let status = status
+                .result
+                .with_context(|| format!("NEAR RPC returned no status for transaction {tx_hash}"))?;
+            let logs = collect_logs(&status);
+            if !logs.is_empty() {
+                indexed.push(IndexedTransactionLogs {
+                    tx_hash: tx_hash.to_string(),
+                    events: logs,
+                });
             }
         }
     }
