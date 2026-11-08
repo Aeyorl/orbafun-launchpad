@@ -5,8 +5,8 @@ use near_sdk::collections::{LookupMap, UnorderedMap, UnorderedSet};
 use near_sdk::json_types::U128;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{
-    AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseError, PromiseOrValue, env,
-    ext_contract, near,
+    env, ext_contract, near, AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseError,
+    PromiseOrValue,
 };
 use std::collections::BTreeMap;
 
@@ -346,7 +346,7 @@ impl Launchpad {
                     )
                     .then(
                         ext_self::ext(env::current_account_id())
-                            .with_static_gas(Gas::from_tgas(60))
+                            .with_static_gas(Gas::from_tgas(90))
                             .on_buy_delivery(
                                 token_id,
                                 sender_id,
@@ -399,16 +399,63 @@ impl Launchpad {
             self.tokens.insert(&token_id, &state);
             return false;
         }
+        self.finish_delivered_buy(state, buyer, usdc_amount, tokens_out);
+        true
+    }
+
+    /// The owner must verify finalized delivery before recovering a failed callback.
+    pub fn recover_delivered_buy(
+        &mut self,
+        token_id: AccountId,
+        buyer: AccountId,
+        usdc_amount: U128,
+        tokens_out: U128,
+    ) {
+        assert_eq!(env::predecessor_account_id(), self.owner, "owner only");
+        let mut state = self.tokens.get(&token_id).expect("unknown token").clone();
+        assert!(
+            state.pending && self.pending_burns.get(&token_id).is_none(),
+            "no pending buy"
+        );
+        let snapshot = self.pending_buy.get(&token_id).expect("no pending buy");
+        let quote = math::quote_buy(
+            snapshot.previous_real_usdc,
+            snapshot.previous_tokens_sold,
+            usdc_amount.0,
+        );
+        assert_eq!(quote.accepted_amount, usdc_amount.0, "unexpected payment");
+        assert_eq!(quote.tokens_out, tokens_out.0, "unexpected delivery");
+        assert_eq!(
+            state.tokens_sold - snapshot.previous_tokens_sold,
+            tokens_out.0,
+            "unexpected token delta"
+        );
+        assert_eq!(
+            state.real_usdc - snapshot.previous_real_usdc,
+            quote.usdc_to_curve,
+            "unexpected reserve delta"
+        );
+        self.pending_buy.remove(&token_id);
+        state.pending = false;
+        self.finish_delivered_buy(state, buyer, usdc_amount, tokens_out);
+    }
+
+    fn finish_delivered_buy(
+        &mut self,
+        mut state: TokenState,
+        buyer: AccountId,
+        usdc_amount: U128,
+        tokens_out: U128,
+    ) {
+        let token_id = state.token_id.clone();
         state.graduated = state.tokens_sold >= math::CURVE_SUPPLY
-            || math::market_cap(state.real_usdc, state.tokens_sold)
-                >= math::GRADUATION_MARKET_CAP;
+            || math::market_cap(state.real_usdc, state.tokens_sold) >= math::GRADUATION_MARKET_CAP;
         self.tokens.insert(&token_id, &state);
-        self.trigger_milestones(&token_id);
         env::log_str(&format!(
             "EVENT_JSON:{}",
             near_sdk::serde_json::json!({"standard":"orba","version":"1.0.0","event":"buy","data":[{"token_id":token_id,"trader":buyer,"usdc_amount":usdc_amount,"tokens_out":tokens_out,"market_cap":U128(math::market_cap(state.real_usdc,state.tokens_sold)),"real_usdc":U128(state.real_usdc),"tokens_sold":U128(state.tokens_sold),"cumulative_volume_usdc":U128(state.cumulative_volume_usdc),"reserved_remaining":U128(state.reserved_remaining),"treasury_pool":U128(state.treasury_pool),"treasury_unlocked":U128(state.treasury_unlocked),"treasury_claimed":U128(state.treasury_claimed),"milestones_completed":state.milestones_completed,"graduated":state.graduated}]})
         ));
-        true
+        self.trigger_milestones(&token_id);
     }
 
     /// Token transfer_call proceeds are credited for a separate, recoverable claim.
@@ -588,11 +635,7 @@ impl Launchpad {
         ext_ft::ext(self.usdc_id.clone())
             .with_attached_deposit(NearToken::from_yoctonear(1))
             .with_static_gas(Gas::from_tgas(10))
-            .ft_transfer(
-                recipient,
-                U128(amount),
-                Some("Orba accrued fees".into()),
-            )
+            .ft_transfer(recipient, U128(amount), Some("Orba accrued fees".into()))
             .then(
                 ext_self::ext(env::current_account_id())
                     .with_static_gas(Gas::from_tgas(20))
@@ -609,7 +652,10 @@ impl Launchpad {
         claim_id: u64,
         #[callback_result] result: Result<(), PromiseError>,
     ) -> bool {
-        let claim = self.pending_claims.remove(&claim_id).expect("pending fee claim");
+        let claim = self
+            .pending_claims
+            .remove(&claim_id)
+            .expect("pending fee claim");
         if result.is_err() {
             if let Some(mut state) = self.tokens.get(&token_id) {
                 if creator_fee {
@@ -663,8 +709,7 @@ impl Launchpad {
         state.milestones_completed += 1;
         state.pending = true;
         state.graduated = state.tokens_sold >= math::CURVE_SUPPLY
-            || math::market_cap(state.real_usdc, state.tokens_sold)
-                >= math::GRADUATION_MARKET_CAP;
+            || math::market_cap(state.real_usdc, state.tokens_sold) >= math::GRADUATION_MARKET_CAP;
         self.tokens.insert(token_id, &state);
         self.pending_burns.insert(
             token_id,
@@ -678,9 +723,9 @@ impl Launchpad {
         // plus the next burn and callback. Decrease the callback budget as the
         // finite three-step milestone sequence advances.
         let callback_gas = match i {
-            0 => 40,
-            1 => 25,
-            _ => 12,
+            0 => 55,
+            1 => 35,
+            _ => 15,
         };
         let _promise = ext_token::ext(token_id.clone())
             .with_static_gas(Gas::from_tgas(10))
