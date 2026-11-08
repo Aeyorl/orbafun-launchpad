@@ -106,6 +106,7 @@ pub async fn app_router_with_indexer(enable_indexer: bool) -> Result<Router> {
         .route("/api/cron/indexer", get(run_indexer))
         .route("/api/indexer/sync", post(sync_indexer))
         .route("/api/indexer/launch", post(index_launch))
+        .route("/api/indexer/transaction", post(index_launch))
         .layer(middleware::from_fn(normalize_vercel_path))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -216,22 +217,11 @@ async fn index_launch(
     let status = &result["result"];
     if status["final_execution_status"] != "FINAL"
         || status["status"].get("SuccessValue").is_none()
-        || status["transaction"]["receiver_id"] != contract
         || status["transaction"]["hash"] != launch.tx_hash
     {
         return Err(StatusCode::UNPROCESSABLE_ENTITY);
     }
-    let events: Vec<_> = status["receipts_outcome"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter(|receipt| {
-            receipt["outcome"]["executor_id"] == contract
-                && receipt["outcome"]["status"].get("SuccessValue").is_some()
-        })
-        .flat_map(|receipt| collect_logs(&receipt["outcome"]))
-        .filter(|event| event["event"] == "token_created")
-        .collect();
+    let events = launchpad_logs(status, &contract);
     if events.is_empty() {
         return Err(StatusCode::NOT_FOUND);
     }
@@ -491,6 +481,7 @@ async fn scan_block(
                             method,
                             Some(
                                 "create_token"
+                                    | "recover_delivered_buy"
                                     | "claim_treasury"
                                     | "claim_sell_proceeds"
                                     | "claim_creator_fees"
@@ -527,7 +518,7 @@ async fn scan_block(
             let status = status.result.with_context(|| {
                 format!("NEAR RPC returned no status for transaction {tx_hash}")
             })?;
-            let logs = collect_logs(&status);
+            let logs = launchpad_logs(&status, contract);
             if !logs.is_empty() {
                 indexed.push(IndexedTransactionLogs {
                     tx_hash: tx_hash.to_string(),
@@ -560,6 +551,21 @@ fn transfer_call_targets_launchpad(action: &Value, contract: &str) -> bool {
         .and_then(|args| args["receiver_id"].as_str().map(str::to_owned))
         .is_some_and(|receiver| receiver == contract)
 }
+fn launchpad_logs(status: &Value, contract: &str) -> Vec<Value> {
+    status["receipts_outcome"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|receipt| &receipt["outcome"])
+        .filter(|outcome| {
+            outcome["executor_id"] == contract
+                && (outcome["status"].get("SuccessValue").is_some()
+                    || outcome["status"].get("SuccessReceiptId").is_some())
+        })
+        .flat_map(collect_logs)
+        .collect()
+}
+
 fn collect_logs(value: &Value) -> Vec<Value> {
     let mut output = Vec::new();
     fn walk(v: &Value, out: &mut Vec<Value>) {
@@ -587,6 +593,7 @@ fn collect_logs(value: &Value) -> Vec<Value> {
     output
 }
 async fn persist_logs(db: &PgPool, events: Vec<Value>, tx: &str, height: i64) -> Result<()> {
+    let mut transaction = db.begin().await?;
     for (idx, event) in events.into_iter().enumerate() {
         let data = &event["data"][0];
         let token = data["token_id"].as_str().unwrap_or_default();
@@ -596,35 +603,48 @@ async fn persist_logs(db: &PgPool, events: Vec<Value>, tx: &str, height: i64) ->
                 sqlx::query("INSERT INTO tokens(account_id,creator,treasury_recipient,name,symbol,created_block,created_tx,preset) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING")
                     .bind(token).bind(creator).bind(data["treasury_recipient"].as_str().unwrap_or_default())
                     .bind(data["name"].as_str().unwrap_or_default()).bind(data["symbol"].as_str().unwrap_or_default())
-                    .bind(height).bind(tx).bind(&data["preset"]).execute(db).await?;
+                    .bind(height).bind(tx).bind(&data["preset"]).execute(&mut *transaction).await?;
             }
             "buy" | "sell" => {
                 let side = event["event"].as_str().unwrap();
                 let trader = data["trader"].as_str().unwrap_or_default();
-                sqlx::query("INSERT INTO trades(token_id,trader,side,usdc_amount,token_amount,tx_hash,event_index,block_height) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(tx_hash,event_index) DO NOTHING").bind(token).bind(trader).bind(side).bind(decimal(&data["usdc_amount"])).bind(decimal(&data["tokens_out"])).bind(tx).bind(idx as i32).bind(height).execute(db).await?;
-                update_token_snapshot(db, token, data).await?;
+                let inserted = sqlx::query("INSERT INTO trades(token_id,trader,side,usdc_amount,token_amount,tx_hash,event_index,block_height) VALUES($1,$2,$3,$4::text::numeric,$5::text::numeric,$6,$7,$8) ON CONFLICT(tx_hash,event_index) DO NOTHING").bind(token).bind(trader).bind(side).bind(decimal(&data["usdc_amount"])).bind(decimal(&data["tokens_out"])).bind(tx).bind(idx as i32).bind(height).execute(&mut *transaction).await?;
+                if inserted.rows_affected() > 0 {
+                    update_token_snapshot(&mut transaction, token, data, height).await?;
+                }
             }
             "milestone" => {
-                sqlx::query("INSERT INTO milestones(token_id,milestone_index,volume,burn_amount,treasury_unlocked,tx_hash,event_index,block_height) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING").bind(token).bind(data["index"].as_i64().unwrap_or(0) as i16).bind(decimal(&data["volume"])).bind(decimal(&data["burn"])).bind(decimal(&data["treasury_unlocked"])).bind(tx).bind(idx as i32).bind(height).execute(db).await?;
-                update_token_snapshot(db, token, data).await?;
+                let inserted = sqlx::query("INSERT INTO milestones(token_id,milestone_index,volume,burn_amount,treasury_unlocked,tx_hash,event_index,block_height) VALUES($1,$2,$3::text::numeric,$4::text::numeric,$5::text::numeric,$6,$7,$8) ON CONFLICT DO NOTHING").bind(token).bind(data["index"].as_i64().unwrap_or(0) as i16).bind(decimal(&data["volume"])).bind(decimal(&data["burn"])).bind(decimal(&data["treasury_unlocked"])).bind(tx).bind(idx as i32).bind(height).execute(&mut *transaction).await?;
+                if inserted.rows_affected() > 0 {
+                    sqlx::query("UPDATE tokens SET reserved_remaining=LEAST(reserved_remaining,$2::text::numeric),milestones_completed=GREATEST(milestones_completed,$3),treasury_unlocked=GREATEST(treasury_unlocked,(SELECT COALESCE(SUM(treasury_unlocked),0) FROM milestones WHERE token_id=$1)),updated_at=NOW() WHERE account_id=$1")
+                        .bind(token).bind(decimal(&data["reserved_remaining"]))
+                        .bind(data["milestones_completed"].as_i64().unwrap_or(0) as i16)
+                        .execute(&mut *transaction).await?;
+                }
             }
             "treasury_claim" => {
                 sqlx::query(
-                    "UPDATE tokens SET treasury_claimed=$2,updated_at=NOW() WHERE account_id=$1",
+                    "UPDATE tokens SET treasury_claimed=GREATEST(treasury_claimed,$2::text::numeric),updated_at=NOW() WHERE account_id=$1",
                 )
                 .bind(token)
                 .bind(decimal(&data["treasury_claimed"]))
-                .execute(db)
+                .execute(&mut *transaction)
                 .await?;
             }
             _ => {}
         }
     }
+    transaction.commit().await?;
     Ok(())
 }
 
-async fn update_token_snapshot(db: &PgPool, token: &str, data: &Value) -> Result<()> {
-    sqlx::query("UPDATE tokens SET real_usdc=$2,cumulative_volume_usdc=$3,tokens_sold=$4,reserved_remaining=$5,treasury_pool=$6,treasury_unlocked=$7,treasury_claimed=$8,milestones_completed=$9,graduated=$10,updated_at=NOW() WHERE account_id=$1")
+async fn update_token_snapshot(
+    transaction: &mut sqlx::PgConnection,
+    token: &str,
+    data: &Value,
+    height: i64,
+) -> Result<()> {
+    sqlx::query("UPDATE tokens SET real_usdc=$2::text::numeric,cumulative_volume_usdc=$3::text::numeric,tokens_sold=$4::text::numeric,reserved_remaining=LEAST(reserved_remaining,$5::text::numeric),treasury_pool=$6::text::numeric,treasury_unlocked=GREATEST(treasury_unlocked,$7::text::numeric),treasury_claimed=GREATEST(treasury_claimed,$8::text::numeric),milestones_completed=GREATEST(milestones_completed,$9),graduated=$10,updated_at=NOW() WHERE account_id=$1 AND NOT EXISTS (SELECT 1 FROM trades WHERE token_id=$1 AND block_height>$11)")
         .bind(token).bind(decimal(&data["real_usdc"]))
         .bind(decimal(&data["cumulative_volume_usdc"]))
         .bind(decimal(&data["tokens_sold"]))
@@ -633,8 +653,8 @@ async fn update_token_snapshot(db: &PgPool, token: &str, data: &Value) -> Result
         .bind(decimal(&data["treasury_unlocked"]))
         .bind(decimal(&data["treasury_claimed"]))
         .bind(data["milestones_completed"].as_i64().unwrap_or(0) as i16)
-        .bind(data["graduated"].as_bool().unwrap_or(false))
-        .execute(db).await?;
+        .bind(data["graduated"].as_bool().unwrap_or(false)).bind(height)
+        .execute(&mut *transaction).await?;
     Ok(())
 }
 
