@@ -89,17 +89,19 @@ export default function TokenPage() {
       </div>
       <WatchToken token={{ accountId: token.account_id, name: token.name, symbol: token.symbol }} />
     </div>
-      <NearDemoClient key={token.account_id} mode="trade" tokenId={token.account_id} />
-      <PriceChart key={address} trades={trades} />
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <PriceChart key={address} trades={trades} />
+        <NearDemoClient key={token.account_id} mode="trade" tokenId={token.account_id} />
+      </div>
       <MilestoneProgress token={token} mechanics={mechanics} />
-      <section className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Cumulative volume" value={`${(Number(token.cumulative_volume_usdc) / 1e6).toFixed(2)} USDC`} /><Metric label="Reserved supply remaining" value={`${(Number(token.reserved_remaining) / 1e24).toFixed(2)}M`} /><Metric label="Trading state" value={token.graduated ? 'Graduated · locked' : 'Curve active'} /><Metric label="Creator" value={token.creator} /><Metric label="Fixed treasury recipient" value={token.treasury_recipient} /><Metric label="Milestones completed" value={`${token.milestones_completed}/${token.preset.thresholds.length}`} /></section>
+      <section className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Cumulative volume" value={`${(Number(token.cumulative_volume_usdc) / 1e6).toFixed(2)} USDC`} /><Metric label="Reserved supply remaining" value={`${(Number(token.reserved_remaining) / 1e24).toFixed(2)}M`} /><Metric label="Trading state" value={token.graduated ? 'Graduated · locked' : 'Curve active'} /><Metric label="Creator" value={token.creator} href={`/profile/${encodeURIComponent(token.creator)}`} /><Metric label="Fixed treasury recipient" value={token.treasury_recipient} /><Metric label="Milestones completed" value={`${token.milestones_completed}/${token.preset.thresholds.length}`} /></section>
       <section className="mt-8"><h2 className="mb-3 text-xl font-semibold">Milestone rules</h2><div className="grid gap-3 md:grid-cols-3">{token.preset.thresholds.map((threshold, index) => <div key={index} className="border border-bg-border p-4"><p className="text-sm text-text-secondary">{(Number(threshold) / 1e6).toLocaleString()} USDC cumulative volume</p><p className="mt-2">Burn {token.preset.burn_bps[index] / 100}%</p><p>Unlock {token.preset.treasury_unlock_bps[index] / 100}%</p></div>)}</div></section>
       <section className="mt-8"><h2 className="mb-3 text-xl font-semibold">Recent trades</h2>{trades.length ? <div className="overflow-x-auto border border-bg-border"><table className="w-full text-left text-sm"><thead className="text-text-secondary"><tr><th className="p-3">Side</th><th className="p-3">Trader</th><th className="p-3">USDC</th><th className="p-3">Block</th><th className="p-3">Transaction</th></tr></thead><tbody>{trades.map((trade) => <tr key={`${trade.tx_hash}-${trade.event_index}`} className="border-t border-bg-border"><td className="p-3 capitalize">{trade.side}</td><td className="p-3 font-mono">{trade.trader}</td><td className="p-3">{(Number(trade.usdc_amount) / 1e6).toFixed(4)}</td><td className="p-3">{trade.block_height}</td><td className="p-3"><a className="text-accent-blue" href={`https://testnet.nearblocks.io/txns/${trade.tx_hash}`} target="_blank" rel="noreferrer">View ↗</a></td></tr>)}</tbody></table></div> : <p className="border border-bg-border p-6 text-text-secondary">No indexed trades yet.</p>}</section>
     </>}
   </main>;
 }
 
-function Metric({ label, value }: { label: string; value: string }) { return <div className="min-w-0 border border-bg-border p-4"><p className="text-xs text-text-secondary">{label}</p><p className="mt-1 break-words font-medium">{value}</p></div>; }
+function Metric({ label, value, href }: { label: string; value: string; href?: string }) { return <div className="min-w-0 border border-bg-border p-4"><p className="text-xs text-text-secondary">{label}</p><p className="mt-1 break-words font-medium">{href ? <Link href={href} className="text-accent-blue hover:underline">{value}</Link> : value}</p></div>; }
 
 function MilestoneProgress({ token, mechanics }: { token: Token; mechanics: Mechanics | null }) {
   const volume = Number(token.cumulative_volume_usdc);

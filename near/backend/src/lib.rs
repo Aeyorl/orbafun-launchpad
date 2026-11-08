@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use axum::{
-    body::Body,
+    body::{Body, Bytes},
     extract::{Path, Query, State},
     http::{HeaderMap, Request, StatusCode, Uri},
     middleware::{self, Next},
@@ -105,6 +105,9 @@ pub async fn app_router_with_indexer(enable_indexer: bool) -> Result<Router> {
         .route("/api/tokens/{id}", get(get_token))
         .route("/api/tokens/{id}/trades", get(get_trades))
         .route("/api/tokens/{id}/mechanics", get(get_mechanics))
+        .route("/api/profiles/{id}", get(get_profile))
+        .route("/api/images", post(upload_image))
+        .route("/api/images/{id}", get(get_image))
         .route("/api/cron/indexer", get(run_indexer))
         .route("/api/indexer/sync", post(sync_indexer))
         .route("/api/indexer/launch", post(index_launch))
@@ -244,8 +247,11 @@ async fn index_launch(
     let height = block["result"]["header"]["height"]
         .as_i64()
         .ok_or(StatusCode::BAD_GATEWAY)?;
-    let created_token = events.iter().find(|event| event["event"] == "token_created")
-        .and_then(|event| event["data"][0]["token_id"].as_str()).map(str::to_owned);
+    let created_token = events
+        .iter()
+        .find(|event| event["event"] == "token_created")
+        .and_then(|event| event["data"][0]["token_id"].as_str())
+        .map(str::to_owned);
     persist_logs(&app.db, events, &launch.tx_hash, height)
         .await
         .map_err(internal)?;
@@ -292,6 +298,100 @@ async fn get_trades(
     let rows=sqlx::query_as::<_,TradeRow>("SELECT token_id,trader,side,usdc_amount::text,token_amount::text,tx_hash,event_index,block_height,created_at FROM trades WHERE token_id=$1 ORDER BY block_height DESC,event_index DESC LIMIT $2 OFFSET $3").bind(id).bind(limit).bind(offset).fetch_all(&app.db).await.map_err(internal)?;
     Ok(Json(json!({"items":rows,"limit":limit,"offset":offset})))
 }
+async fn get_profile(
+    State(app): State<App>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, StatusCode> {
+    if !(2..=64).contains(&id.len())
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let launches = sqlx::query_as::<_, (String, String, String, Option<String>, bool)>(
+        "SELECT account_id,name,symbol,image_url,graduated FROM tokens WHERE creator=$1 ORDER BY created_block DESC LIMIT 50",
+    ).bind(&id).fetch_all(&app.db).await.map_err(internal)?;
+    let trades = sqlx::query_as::<_, TradeRow>(
+        "SELECT token_id,trader,side,usdc_amount::text,token_amount::text,tx_hash,event_index,block_height,created_at FROM trades WHERE trader=$1 ORDER BY block_height DESC,event_index DESC LIMIT 50",
+    ).bind(&id).fetch_all(&app.db).await.map_err(internal)?;
+    Ok(Json(
+        json!({"account_id":id,"launches":launches,"trades":trades}),
+    ))
+}
+
+async fn upload_image(State(app): State<App>, content: Bytes) -> Result<Json<Value>, StatusCode> {
+    if content.len() > 1024 * 1024 {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    let mime = if content.starts_with(b"\x89PNG\r\n\x1a\n") {
+        "image/png"
+    } else if content.starts_with(b"\xff\xd8\xff") {
+        "image/jpeg"
+    } else if content.starts_with(b"GIF87a") || content.starts_with(b"GIF89a") {
+        "image/gif"
+    } else if content.starts_with(b"RIFF") && content.get(8..12) == Some(b"WEBP") {
+        "image/webp"
+    } else {
+        return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    };
+    let mut tx = app.db.begin().await.map_err(internal)?;
+    sqlx::query("SELECT pg_advisory_xact_lock(863140)")
+        .execute(&mut *tx)
+        .await
+        .map_err(internal)?;
+    let id: String = sqlx::query_scalar("SELECT encode(sha256($1::bytea),'hex')")
+        .bind(content.as_ref())
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(internal)?;
+    let stored: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM token_images WHERE id=$1)")
+        .bind(&id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(internal)?;
+    if !stored {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM token_images")
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(internal)?;
+        if count >= 256 {
+            return Err(StatusCode::INSUFFICIENT_STORAGE);
+        }
+        sqlx::query("INSERT INTO token_images(id,mime,content) VALUES($1,$2,$3)")
+            .bind(&id)
+            .bind(mime)
+            .bind(content.as_ref())
+            .execute(&mut *tx)
+            .await
+            .map_err(internal)?;
+    }
+    tx.commit().await.map_err(internal)?;
+    Ok(Json(json!({"path":format!("/api/images/{id}")})))
+}
+
+async fn get_image(State(app): State<App>, Path(id): Path<String>) -> Result<Response, StatusCode> {
+    if id.len() != 64 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let (mime, content) =
+        sqlx::query_as::<_, (String, Vec<u8>)>("SELECT mime,content FROM token_images WHERE id=$1")
+            .bind(id)
+            .fetch_optional(&app.db)
+            .await
+            .map_err(internal)?
+            .ok_or(StatusCode::NOT_FOUND)?;
+    Ok((
+        [
+            ("content-type", mime.as_str()),
+            ("cache-control", "public, max-age=31536000, immutable"),
+            ("x-content-type-options", "nosniff"),
+        ],
+        content,
+    )
+        .into_response())
+}
+
 async fn get_mechanics(
     State(app): State<App>,
     Path(id): Path<String>,

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { imageHref, TokenImageField } from '../../components/TokenImageField';
 import { createPortal } from 'react-dom';
 import type { NearConnector } from '@hot-labs/near-connect';
 
@@ -78,6 +79,7 @@ export default function NearDemoClient({ mode = 'demo', tokenId = '' }: { mode?:
   const [symbol, setSymbol] = useState(mode === 'demo' ? 'ORBA' : '');
   const [description, setDescription] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
   const [createdToken, setCreatedToken] = useState('');
   const [lastTransaction, setLastTransaction] = useState('');
   const [launchSigner, setLaunchSigner] = useState('');
@@ -176,6 +178,7 @@ export default function NearDemoClient({ mode = 'demo', tokenId = '' }: { mode?:
   }, [account, selected]);
 
   function setConnectedWallet(connector: NearConnector, selectedWallet: Awaited<ReturnType<NearConnector['wallet']>>, accountId: string) {
+    try { localStorage.setItem('orba-last-near-account', accountId); } catch {}
     accountRef.current = accountId;
     setAccount(accountId);
     setWallet({
@@ -375,12 +378,14 @@ export default function NearDemoClient({ mode = 'demo', tokenId = '' }: { mode?:
       setNotice('Enter a token name and symbol within the size limits.');
       return;
     }
-    if (imageUrl.trim()) {
+    const image = imageHref(imageUrl.trim());
+    if (image) {
       try {
-        const url = new URL(imageUrl.trim());
-        if (url.protocol !== 'https:' || url.username || url.password || imageUrl.trim().length > 500) throw new Error();
+        const url = new URL(image);
+        const local = process.env.NODE_ENV === 'development' && url.hostname === 'localhost';
+        if ((url.protocol !== 'https:' && !local) || url.username || url.password || image.length > 500) throw new Error();
       } catch {
-        setNotice('Enter a public HTTPS image URL.');
+        setNotice('Enter a public HTTPS or IPFS image URL.');
         return;
       }
     }
@@ -390,7 +395,7 @@ export default function NearDemoClient({ mode = 'demo', tokenId = '' }: { mode?:
     await call('create_token', {
       name: name.trim(), symbol: symbol.trim(), treasury_recipient: fixedRecipient, preset_name: preset,
       ...(description.trim() ? { description: description.trim() } : {}),
-      ...(imageUrl.trim() ? { image_url: imageUrl.trim() } : {}),
+      ...(image ? { image_url: image } : {}),
     }, '4000000000000000000000000');
   }
 
@@ -466,12 +471,12 @@ export default function NearDemoClient({ mode = 'demo', tokenId = '' }: { mode?:
       <label>Token name<input className="input mt-1 w-full" required maxLength={64} value={name} onChange={(event) => setName(event.target.value)} /></label>
       <label>Ticker<input className="input mt-1 w-full" required maxLength={16} value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())} /></label>
       <label>Description <span className="text-text-secondary">(optional)</span><textarea className="input mt-1 w-full" maxLength={280} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
-      <label>Image URL <span className="text-text-secondary">(optional)</span><input className="input mt-1 w-full" type="url" placeholder="https://" maxLength={500} value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} /></label>
+      <TokenImageField value={imageUrl} onChange={setImageUrl} onBusy={setImageUploading} />
       <label>Treasury recipient<input className="input mt-1 w-full" placeholder={account || 'Defaults to your connected account'} value={recipient} onChange={(event) => setRecipient(event.target.value)} /></label>
       <label>Milestone preset<select className="input mt-1 w-full" value={preset} onChange={(event) => setPreset(event.target.value)}>
         <option value="spark">Spark · 10 / 50 / 150 USDC</option><option value="momentum">Momentum · 25 / 100 / 500 USDC</option><option value="marathon">Marathon · 100 / 500 / 2,500 USDC</option>
       </select></label>
-      <button className="btn-primary disabled:opacity-40" disabled={!account || busy || !launchpad || (!!lastTransaction && !createdToken)}>{busy ? 'Waiting for launch…' : 'Launch on NEAR testnet'}</button>
+      <button className="btn-primary disabled:opacity-40" disabled={!account || busy || imageUploading || !launchpad || (!!lastTransaction && !createdToken)}>{busy ? 'Waiting for launch…' : 'Launch on NEAR testnet'}</button>
       <p className="text-sm text-text-secondary">Launch attaches 4 testnet NEAR for account creation and storage. Unused deposit is refunded.</p>
       {notice && <p role="status">{notice}</p>}
       {createdToken && <Link className="text-accent-blue" href={`/token/${encodeURIComponent(createdToken)}`}>Open your token page</Link>}

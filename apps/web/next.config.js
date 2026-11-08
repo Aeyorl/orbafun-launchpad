@@ -2,10 +2,9 @@
 const nextConfig = {
   async redirects() {
     return [
-      ...['/agents', '/leaderboard', '/fees', '/watchlist'].map((source) => ({ source, destination: '/near-demo', permanent: false })),
-      { source: '/coin/:path*', destination: '/near-demo', permanent: false },
-      { source: '/trade/:path*', destination: '/near-demo', permanent: false },
-      { source: '/profile/:path*', destination: '/near-demo', permanent: false },
+      { source: '/agents', destination: '/near-demo', permanent: false },
+      { source: '/coin/:address', destination: '/token/:address', permanent: false },
+      { source: '/trade/:address', destination: '/token/:address', permanent: false },
     ];
   },
 };
