@@ -105,6 +105,7 @@ pub async fn app_router_with_indexer(enable_indexer: bool) -> Result<Router> {
         .route("/api/tokens/{id}/mechanics", get(get_mechanics))
         .route("/api/cron/indexer", get(run_indexer))
         .route("/api/indexer/sync", post(sync_indexer))
+        .route("/api/indexer/launch", post(index_launch))
         .layer(middleware::from_fn(normalize_vercel_path))
         .layer(CorsLayer::permissive())
         .layer(TraceLayer::new_for_http())
@@ -183,6 +184,78 @@ async fn sync_indexer(State(app): State<App>) -> Result<Json<Value>, StatusCode>
         .await
         .map(Json)
         .map_err(internal)
+}
+
+#[derive(Deserialize)]
+struct LaunchTransaction {
+    tx_hash: String,
+    signer_id: String,
+}
+
+async fn index_launch(
+    State(app): State<App>,
+    Json(launch): Json<LaunchTransaction>,
+) -> Result<Json<Value>, StatusCode> {
+    if !(32..=44).contains(&launch.tx_hash.len())
+        || !launch.tx_hash.bytes().all(|b| b.is_ascii_alphanumeric())
+        || !(2..=64).contains(&launch.signer_id.len())
+    {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let contract = env::var("LAUNCHPAD_ACCOUNT_ID").map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let rpc = env::var("NEAR_RPC_URL").unwrap_or_else(|_| "https://near-testnet.drpc.org".into());
+    let client = Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let result: Value = client.post(&rpc).json(&json!({
+        "jsonrpc":"2.0", "id":"orba", "method":"tx",
+        "params":{"tx_hash":launch.tx_hash,"sender_account_id":launch.signer_id,"wait_until":"FINAL"}
+    })).send().await.map_err(|_| StatusCode::BAD_GATEWAY)?
+        .json().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let status = &result["result"];
+    if status["final_execution_status"] != "FINAL"
+        || status["status"].get("SuccessValue").is_none()
+        || status["transaction"]["receiver_id"] != contract
+        || status["transaction"]["hash"] != launch.tx_hash
+    {
+        return Err(StatusCode::UNPROCESSABLE_ENTITY);
+    }
+    let events: Vec<_> = status["receipts_outcome"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|receipt| {
+            receipt["outcome"]["executor_id"] == contract
+                && receipt["outcome"]["status"].get("SuccessValue").is_some()
+        })
+        .flat_map(|receipt| collect_logs(&receipt["outcome"]))
+        .filter(|event| event["event"] == "token_created")
+        .collect();
+    if events.is_empty() {
+        return Err(StatusCode::NOT_FOUND);
+    }
+    let block_hash = status["transaction_outcome"]["block_hash"]
+        .as_str()
+        .ok_or(StatusCode::BAD_GATEWAY)?;
+    let block: Value = client
+        .post(&rpc)
+        .json(&json!({
+            "jsonrpc":"2.0","id":"orba","method":"block","params":{"block_id":block_hash}
+        }))
+        .send()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?
+        .json()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let height = block["result"]["header"]["height"]
+        .as_i64()
+        .ok_or(StatusCode::BAD_GATEWAY)?;
+    persist_logs(&app.db, events, &launch.tx_hash, height)
+        .await
+        .map_err(internal)?;
+    Ok(Json(json!({"ok":true,"block_height":height})))
 }
 
 async fn list_tokens(
