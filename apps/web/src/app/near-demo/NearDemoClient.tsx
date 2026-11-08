@@ -29,6 +29,7 @@ type Token = {
 };
 
 const api = process.env.NEXT_PUBLIC_NEAR_API_URL || 'http://localhost:4001';
+const apiUnavailableNotice = 'API not reachable. Start the Rust API and configure its database.';
 const launchpad = process.env.NEXT_PUBLIC_NEAR_LAUNCHPAD_ID || '';
 const usdc = process.env.NEXT_PUBLIC_NEAR_USDC_ID || '';
 const rpcUrl = process.env.NEXT_PUBLIC_NEAR_RPC_URL || 'https://near-testnet.drpc.org';
@@ -82,8 +83,9 @@ export default function NearDemoClient() {
       const items: Token[] = data.items || [];
       setTokens(items);
       setSelected((current) => current || items[0]?.account_id || '');
+      setNotice((current) => current === apiUnavailableNotice ? '' : current);
     } catch {
-      setNotice('API not reachable. Start the Rust API and configure its database.');
+      setNotice(apiUnavailableNotice);
     }
   }
 
