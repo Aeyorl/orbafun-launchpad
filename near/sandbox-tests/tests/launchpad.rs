@@ -313,6 +313,29 @@ async fn launch_buy_sell_and_failed_then_successful_treasury_claim() -> Result<(
 }
 
 #[tokio::test]
+async fn settled_buys_unlock_new_treasury_fees_after_the_final_burn() -> Result<()> {
+    let f = setup("spark").await?;
+    let crossing = buy(&f, "160000000", "1").await?;
+    assert!(crossing.is_success() && crossing.receipt_failures().is_empty());
+    let before = token_state(&f.launchpad, &f.token_id).await?;
+    assert_eq!(before["milestones_completed"], 3);
+    assert_eq!(before["reserved_remaining"], 0);
+    assert_eq!(before["treasury_unlocked"], before["treasury_pool"]);
+
+    let later = buy(&f, "11000000", "1").await?;
+    assert!(later.is_success() && later.receipt_failures().is_empty());
+    let after = token_state(&f.launchpad, &f.token_id).await?;
+    assert_eq!(after["milestones_completed"], 3);
+    assert_eq!(after["reserved_remaining"], 0);
+    assert_eq!(after["treasury_unlocked"], after["treasury_pool"]);
+    assert_eq!(
+        after["treasury_unlocked"].as_u64().unwrap(),
+        before["treasury_unlocked"].as_u64().unwrap() + 27_500
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn high_volume_triggers_all_burns_and_locks_trading_after_graduation() -> Result<()> {
     let f = setup("spark").await?;
     let buy_result = buy(&f, "12000000000", "1").await?;

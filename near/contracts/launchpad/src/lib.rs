@@ -448,6 +448,7 @@ impl Launchpad {
         tokens_out: U128,
     ) {
         let token_id = state.token_id.clone();
+        Self::unlock_post_milestone_fees(&mut state);
         state.graduated = state.tokens_sold >= math::CURVE_SUPPLY
             || math::market_cap(state.real_usdc, state.tokens_sold) >= math::GRADUATION_MARKET_CAP;
         self.tokens.insert(&token_id, &state);
@@ -456,6 +457,12 @@ impl Launchpad {
             near_sdk::serde_json::json!({"standard":"orba","version":"1.0.0","event":"buy","data":[{"token_id":token_id,"trader":buyer,"usdc_amount":usdc_amount,"tokens_out":tokens_out,"market_cap":U128(math::market_cap(state.real_usdc,state.tokens_sold)),"real_usdc":U128(state.real_usdc),"tokens_sold":U128(state.tokens_sold),"cumulative_volume_usdc":U128(state.cumulative_volume_usdc),"reserved_remaining":U128(state.reserved_remaining),"treasury_pool":U128(state.treasury_pool),"treasury_unlocked":U128(state.treasury_unlocked),"treasury_claimed":U128(state.treasury_claimed),"milestones_completed":state.milestones_completed,"graduated":state.graduated}]})
         ));
         self.trigger_milestones(&token_id);
+    }
+
+    fn unlock_post_milestone_fees(state: &mut TokenState) {
+        if state.milestones_completed as usize == state.preset.thresholds.len() {
+            state.treasury_unlocked = state.treasury_pool;
+        }
     }
 
     /// Token transfer_call proceeds are credited for a separate, recoverable claim.
@@ -476,6 +483,7 @@ impl Launchpad {
         state.creator_fees += quote.creator_fee;
         state.treasury_pool += quote.protocol_fee / 2;
         state.protocol_fees += quote.protocol_fee - quote.protocol_fee / 2;
+        Self::unlock_post_milestone_fees(&mut state);
         self.tokens.insert(&token_id, &state);
         let owed = self.seller_claimable.get(&sender_id).unwrap_or(0) + quote.usdc_out;
         self.seller_claimable.insert(&sender_id, &owed);

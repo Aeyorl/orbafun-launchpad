@@ -10,6 +10,7 @@ This workspace contains Orba's NEAR implementation: Rust contracts, a Rust API/i
 - `sandbox-tests`: NEAR Workspaces integration tests for sandbox. Runs on Linux/macOS; on Windows use WSL2.
 - `scripts`: build/deploy helper scripts.
 - `docs/DECISIONS.md`: explicit demo preset and fee allocation assumptions.
+- [60-day supply simulation](docs/SIMULATION.md): compares the three milestone presets under four trading scenarios.
 - `apps/web/src/app/near-demo`: minimal UI route.
 
 ## Prerequisites

@@ -18,6 +18,8 @@ The existing 1% trade fee remains split 50/50 between creator and protocol. To f
 
 ## Curve and launch behavior
 
+After the final burn settles, the treasury share of each subsequent settled trade becomes immediately claimable by the fixed recipient. The final milestone count and token supply stay fixed.
+
 - 1B total supply; 880M initially on the curve; 120M reserved at launch.
 - Existing constant product virtual reserves and integer rounding are ported unchanged. Reserved burns affect only the launchpad's reserved balance and never curve reserves or quotes.
 - 1% fee; 50% creator and 50% protocol split before the protocol/treasury allocation described above.
