@@ -82,6 +82,14 @@ export default function NearDemoClient() {
     }
   }
 
+  async function syncIndexer() {
+    try {
+      await fetch(`${api}/api/indexer/sync`, { method: 'POST' });
+    } catch {
+      // The daily Vercel cron remains the fallback when on-demand sync is unavailable.
+    }
+  }
+
   useEffect(() => {
     void load();
     const timer = window.setInterval(() => void load(), 5000);
@@ -181,6 +189,7 @@ export default function NearDemoClient() {
     try {
       await wallet.signAndSendTransaction({ receiverId: launchpad, actions: [{ type: 'FunctionCall', params: { methodName, args, gas: '150000000000000', deposit } }] });
       setNotice('Transaction submitted. Waiting for finalized indexer data…');
+      await syncIndexer();
       await Promise.all([load(), refreshWalletData()]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Transaction failed.');
@@ -266,6 +275,7 @@ export default function NearDemoClient() {
       await wallet.signAndSendTransaction({ receiverId: side === 'buy' ? usdc : selected, actions: [{ type: 'FunctionCall', params: { methodName: 'ft_transfer_call', args: { receiver_id: launchpad, amount: rawAmount.toString(), msg: JSON.stringify(message) }, gas: '150000000000000', deposit: '1' } }] });
       if (side === 'sell') setSellerClaimable((current) => (BigInt(current) + BigInt(quoted)).toString());
       setNotice(side === 'buy' ? 'Buy submitted. Refreshing indexed data…' : 'Sell submitted. Claim the resulting USDC proceeds after it finalizes.');
+      await syncIndexer();
       await Promise.all([load(), refreshWalletData()]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Trade failed.');

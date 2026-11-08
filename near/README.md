@@ -72,6 +72,12 @@ cargo run -p orba-near-api
 
 Routes: `GET /health`, `/api/tokens`, `/api/tokens/:id`, `/api/tokens/:id/trades`, `/api/tokens/:id/mechanics`. The database migration runs at startup. Configure `NEXT_PUBLIC_NEAR_API_URL` for the Next.js demo. Indexing is idempotent by transaction/event key and finalized block checkpoint.
 
+### Vercel + Neon hosting
+
+The Next.js project is configured to build the Rust Axum API as a Vercel Rust function (`apps/web/api/axum.rs`) and route `/api/*` requests through it. The Vercel Neon integration supplies the pooled `DATABASE_URL`; the Rust service applies the checked-in PostgreSQL migration on startup. Set `NEXT_PUBLIC_NEAR_API_URL` to the site's origin, plus `NEXT_PUBLIC_NEAR_RPC_URL`, `NEXT_PUBLIC_NEAR_LAUNCHPAD_ID`, and `NEXT_PUBLIC_NEAR_USDC_ID`. The server also needs `NEAR_RPC_URL`, `LAUNCHPAD_ACCOUNT_ID`, `NEAR_USDC_ACCOUNT_ID`, `INDEXER_START_BLOCK`, `INDEXER_BATCH_BLOCKS`, and a randomly generated `CRON_SECRET`.
+
+Vercel's Hobby cron runs at most once per day, so the UI asks the Rust indexer for a bounded sync immediately after a wallet transaction; a database advisory lock and 15-second cooldown limit concurrent/repeated work. The authenticated scheduled endpoint `/api/cron/indexer` provides a daily catch-up. Use a continuously running worker or a Vercel plan with more frequent schedules if near-real-time indexing outside user activity is needed.
+
 ## Demo flow
 
 1. Open `/near-demo`, connect a NEAR testnet wallet, select a milestone preset, and create a token with a fixed treasury recipient.

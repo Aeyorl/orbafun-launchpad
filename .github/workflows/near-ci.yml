@@ -34,6 +34,7 @@ jobs:
           targets: wasm32-unknown-unknown
       - run: cargo test --workspace
         working-directory: near
+      - run: cargo check --manifest-path apps/web/Cargo.toml
       - run: cargo check -p orba-near-launchpad --target wasm32-unknown-unknown
         working-directory: near
       - run: cargo build --release --target wasm32-unknown-unknown -p orba-near-token -p orba-near-launchpad
