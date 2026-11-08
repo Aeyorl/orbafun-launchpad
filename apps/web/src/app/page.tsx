@@ -19,12 +19,17 @@ export default function HomePage() {
             <Link href="/explore" className="font-bold text-accent-blue hover:underline">See what is growing</Link>
           </div>
         </div>
-        <div className="card-peach grid min-h-[300px] place-items-center gap-6 border border-text-primary p-8 text-center shadow-subtle-3 lg:min-h-[420px]">
-          <Image src="/orba-bloom-icon.svg" width={144} height={144} alt="" priority />
-          <div>
-            <p className="font-mono text-xs font-bold tracking-widest">ORBA ON NEAR</p>
-            <p className="mt-2 font-serif text-3xl">Milestones with consequences.</p>
-            <p className="mt-3 max-w-xs text-sm">Trading milestones burn reserved supply and unlock treasury funds for the recipient chosen at launch.</p>
+        <div className="relative min-h-[360px] sm:min-h-[500px] rotate-[1deg] overflow-hidden rounded-3xl border border-text-primary bg-accent-peach p-6 shadow-[14px_14px_0_rgb(var(--color-accent-blue))]">
+          <div className="flex items-center justify-between font-mono text-[9px] font-bold tracking-[0.14em] text-accent-sienna"><span>THE SUNNY ONE</span><span>ILLUSTRATION</span></div>
+          <div className="absolute left-1/2 top-[43%] h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-text-primary bg-accent-green shadow-[10px_10px_0_rgba(23,33,60,.18)]" />
+          <div className="absolute left-1/2 top-[43%] grid h-44 w-44 -translate-x-1/2 -translate-y-1/2 place-content-center "><Image src="/orba-bloom-icon.svg" alt="" width={120} height={120} priority /></div>
+          <svg viewBox="0 0 620 380" className="absolute inset-x-[5%] bottom-[7%] h-[76%] w-[90%]" fill="none" aria-hidden="true">
+            <path d="M18 340 C175 336 226 304 294 228 C369 145 452 92 602 28" stroke="rgb(var(--color-accent-blue))" strokeWidth="4" />
+          </svg>
+          <span className="absolute left-[8%] top-[25%] -rotate-3 rounded-md border border-text-primary bg-[#9fe2c2] px-3 py-2 font-mono text-[9px] font-bold text-[#17213c] shadow-[4px_4px_0_#17213c]">DAYBREAK BAZAAR</span>
+          <span className="absolute bottom-[20%] right-[8%] rotate-3 rounded-md border border-text-primary bg-accent-blue px-3 py-2 font-mono text-[9px] font-bold text-white shadow-[4px_4px_0_#17213c]">NEAR TESTNET</span>
+          <div className="absolute inset-x-6 bottom-5 flex items-center justify-between rounded-xl border border-text-primary bg-bg-card px-5 py-4 text-text-primary">
+            <div><strong className="block font-serif text-2xl font-normal text-accent-blue">Sundae Club</strong><span className="font-mono text-[9px] text-text-muted">ORBA · DAYBREAK</span></div>
           </div>
         </div>
       </section>

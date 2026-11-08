@@ -20,11 +20,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 md:px-8">
         <Link href="/" aria-label="Orba home"><Image src="/orba-wordmark-bloom.svg" alt="Orba" width={99} height={32} /></Link>
         <nav className="flex items-center gap-4 text-sm">
-          <a href="/explore" className="text-text-secondary hover:text-text-primary">Explore</a>
+          <Link href="/" className="hidden text-text-secondary hover:text-text-primary sm:inline">Discover</Link>
+          <a href="/explore" className="text-text-secondary hover:text-text-primary">Market</a>
           <Link href="/leaderboard" className="hidden text-text-secondary hover:text-text-primary md:inline">Leaders</Link>
           <a href="/docs" className="hidden text-text-secondary hover:text-text-primary md:inline">Docs</a>
           <a href="/fees" className="hidden text-text-secondary hover:text-text-primary md:inline">Fees</a>
-          <a href="/launch" className="font-semibold text-accent-blue hover:underline">Launch app</a>
+          <a href="/launch" className="font-semibold text-accent-blue hover:underline">Launch</a>
           <span className="hidden text-xs uppercase tracking-[0.18em] text-text-secondary sm:inline">NEAR · Testnet</span>
         </nav>
       </div>

@@ -1,6 +1,8 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
+import styles from './TokenCard.module.css';
 import { useEffect, useState } from 'react';
 
 type Token = {
@@ -15,6 +17,7 @@ type Token = {
 
 const api = (process.env.NEXT_PUBLIC_NEAR_API_URL ?? '').replace(/\/$/, '');
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+const artwork = ['sunroom', 'cloud-choir', 'noodle-oracle', 'moon-moth', 'peach-engine', 'relay-garden'];
 const tabs = ['Newest', 'Market Cap', 'Volume', 'Graduated'] as const;
 type Tab = (typeof tabs)[number];
 
@@ -107,13 +110,27 @@ export default function MarketBoard({ leaderboard = false }: { leaderboard?: boo
         : error ? <p role="status" className="card">Market data is temporarily unavailable.</p>
         : displayed.length === 0 ? <p className="card">{tab === 'Graduated' ? 'No graduated tokens yet.' : 'No indexed launches yet.'}</p>
         : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {displayed.slice(0, leaderboard ? 50 : 12).map((token, index) => <Link key={token.account_id}
-            href={`/token/${encodeURIComponent(token.account_id)}`} className="card hover:bg-bg-hover">
-            <h3 className="break-words text-lg font-semibold">{leaderboard && `#${index + 1} · `}{token.name}</h3>
-            <p className="break-words font-mono text-xs text-text-secondary">${token.symbol}</p>
-            <p className="mt-3 text-sm">{usd.format(Number(marketCap(token)) / 1e6)} market cap</p>
-            <p className="text-sm text-text-secondary">{usd.format(Number(volume(token)) / 1e6)} total volume</p>
-          </Link>)}
+          {displayed.slice(0, leaderboard ? 50 : 12).map((token, index) => {
+            const artworkIndex = Array.from(token.symbol).reduce((sum, character) => sum + character.charCodeAt(0), 0) % artwork.length;
+            return <article key={token.account_id} className={styles.tokenCard}>
+              <Link href={`/token/${encodeURIComponent(token.account_id)}`} className={styles.cardButton}>
+                {!leaderboard && <div className={styles.artwork}>
+                  <Image src={`/token-board-lab/${artwork[artworkIndex]}.webp`} alt="" width={640} height={480} />
+                  <span className={styles.signalBadge}>{token.graduated ? 'Graduated' : 'Curve active'}</span>
+                </div>}
+                <div className={styles.cardCopy}>
+                  <div className={styles.identityRow}><span>
+                    <strong>{leaderboard && `#${index + 1} · `}{token.name}</strong>
+                    <small>${token.symbol}</small>
+                  </span></div>
+                  <div className={styles.marketRow}>
+                    <span><strong>{usd.format(Number(marketCap(token)) / 1e6)}</strong><small>MCAP</small></span>
+                  </div>
+                  <p className="mt-2 text-sm text-text-secondary">{usd.format(Number(volume(token)) / 1e6)} total volume</p>
+                </div>
+              </Link>
+            </article>;
+          })}
         </div>}
       {!leaderboard && <Link href="/explore" className="btn-secondary mt-4 inline-block">Explore all tokens</Link>}
     </section>
