@@ -99,7 +99,7 @@ export default function MarketBoard({ leaderboard = false }: { leaderboard?: boo
     </>}
     <section aria-label={leaderboard ? 'Token rankings' : 'Token board'}>
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-        {!leaderboard && <div><p className="text-xs font-bold uppercase tracking-widest text-accent-blue">Fresh from the bazaar</p>
+        {!leaderboard && <div>
           <h2 className="mt-1 text-3xl text-accent-blue">Ideas with good energy.</h2></div>}
         <div className="flex flex-wrap gap-1" aria-label="Sort tokens">
           {tabs.map(item => <button type="button" key={item} aria-pressed={tab === item}

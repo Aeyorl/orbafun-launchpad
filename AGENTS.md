@@ -45,3 +45,7 @@ On Windows, the Rust API and PostgreSQL development stack is launched with `near
 - Keep indexing idempotent by transaction/event identity and advance only finalized checkpoints.
 - Never commit secrets or wallet keys. Keep local environment files ignored.
 - Run focused checks for changed modules and state exactly what passed.
+
+## UI copy
+
+Avoid unnecessary secondary labels and descriptions. Let the layout do the explaining.

@@ -44,12 +44,7 @@ export default function BlogPage() {
 
       <div className="card p-6 mb-6">
         <p className="font-semibold text-lg mb-2">No posts published yet</p>
-        <p className="text-sm text-text-secondary leading-relaxed">
-          The publication is ready, but the archive is intentionally empty. Orba
-          will publish only when there is a concrete release, result, risk, or
-          lesson worth documenting. No placeholder articles, invented authors, or
-          artificial publication dates are included.
-        </p>
+
       </div>
 
       <section aria-labelledby="planned-coverage">
