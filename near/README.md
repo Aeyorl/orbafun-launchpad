@@ -93,4 +93,7 @@ The smallest preset's thresholds require real testnet USDC volume; for a repeata
 
 ## Known scope limits
 
+- Milestones count settled buy volume, not unique holders. Fees make repeated buys costly, but one trader or coordinated wallets can still push a milestone. The demo has no proof of unique identity.
+- Each launch stores its preset and treasury recipient. The testnet contract account still has a deployment key that can replace the contract code, so these rules are not immutable against an upgrade.
+
 This testnet implementation does not yet include AMM graduation, rich token metadata storage, production rate limits/auth, robust chain reorg recovery, or production financial controls. Sandbox coverage exercises the contracts; contract deployment and wallet transaction flows must be validated in the current environment before claiming end-to-end testnet completion. The contracts remain a testnet prototype and need security review, gas/storage budgeting, and independent audit before meaningful funds are used.

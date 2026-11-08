@@ -296,9 +296,16 @@ async fn get_mechanics(
         .await
         .map_err(internal)?
         .ok_or(StatusCode::NOT_FOUND)?;
-    let milestones=sqlx::query_as::<_,(i16,String,String,String,String,i64,i32)>("SELECT milestone_index,volume::text,burn_amount::text,treasury_unlocked::text,tx_hash,block_height,event_index FROM milestones WHERE token_id=$1 ORDER BY milestone_index").bind(id).fetch_all(&app.db).await.map_err(internal)?;
+    let milestones=sqlx::query_as::<_,(i16,String,String,String,String,i64,i32)>("SELECT milestone_index,volume::text,burn_amount::text,treasury_unlocked::text,tx_hash,block_height,event_index FROM milestones WHERE token_id=$1 ORDER BY milestone_index").bind(&id).fetch_all(&app.db).await.map_err(internal)?;
+    let claims = sqlx::query_as::<_, (String, String, i64, i32)>(
+        "SELECT amount::text,tx_hash,block_height,event_index FROM treasury_claims WHERE token_id=$1 ORDER BY block_height,event_index,tx_hash",
+    )
+    .bind(id)
+    .fetch_all(&app.db)
+    .await
+    .map_err(internal)?;
     Ok(Json(
-        json!({"reserved_remaining":token.reserved_remaining,"treasury_pool":token.treasury_pool,"treasury_unlocked":token.treasury_unlocked,"treasury_claimed":token.treasury_claimed,"treasury_recipient":token.treasury_recipient,"milestones_completed":token.milestones_completed,"graduated":token.graduated,"preset":token.preset,"milestones":milestones}),
+        json!({"reserved_remaining":token.reserved_remaining,"treasury_pool":token.treasury_pool,"treasury_unlocked":token.treasury_unlocked,"treasury_claimed":token.treasury_claimed,"treasury_recipient":token.treasury_recipient,"milestones_completed":token.milestones_completed,"graduated":token.graduated,"preset":token.preset,"milestones":milestones,"claims":claims}),
     ))
 }
 fn internal<E: std::fmt::Debug>(err: E) -> StatusCode {
@@ -623,6 +630,9 @@ async fn persist_logs(db: &PgPool, events: Vec<Value>, tx: &str, height: i64) ->
                 }
             }
             "treasury_claim" => {
+                sqlx::query("INSERT INTO treasury_claims(tx_hash,event_index,token_id,amount,block_height) VALUES($1,$2,$3,$4::text::numeric,$5) ON CONFLICT DO NOTHING")
+                    .bind(tx).bind(idx as i32).bind(token).bind(decimal(&data["amount"])).bind(height)
+                    .execute(&mut *transaction).await?;
                 sqlx::query(
                     "UPDATE tokens SET treasury_claimed=GREATEST(treasury_claimed,$2::text::numeric),updated_at=NOW() WHERE account_id=$1",
                 )
