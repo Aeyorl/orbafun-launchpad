@@ -2,8 +2,394 @@
 @tailwind components;
 @tailwind utilities;
 
-html { color-scheme: dark; }
-body { min-height: 100vh; background: #07090b; color: #f5f7f8; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-button, input, select { font: inherit; }
-button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #86efac; outline-offset: 3px; }
-::selection { background: #86efac; color: #07120a; }
+@layer base {
+  :root {
+    --font-inter: 'Inter', system-ui, sans-serif;
+    --font-jetbrains: 'JetBrains Mono', monospace;
+    --font-signifier: 'Source Serif 4', ui-serif, Georgia, Cambria, serif;
+    --font-sohne: 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+    /* ─── Light mode ───────────────────────────────────────────────
+       Paper-white canvas with USDC blue (#2775CA) accent. Blue-tinted
+       grays for card surfaces keep the palette cohesive.
+       Colors are stored as space-separated RGB channels (no rgb() wrapper)
+       so Tailwind's /opacity modifier works via rgb(var(--...) / <alpha>). */
+    --color-bg-base: 255 248 232;
+    --color-bg-card: 255 253 246;
+    --color-bg-hover: 245 240 232;
+    --color-bg-input: 255 255 252;
+    --color-bg-border: 221 214 198;
+
+    --color-text-primary: 23 33 60;
+    --color-text-secondary: 78 86 108;
+    --color-text-muted: 116 121 139;
+
+    --color-accent-primary: 39 117 202;       /* USDC blue #2775CA */
+    --color-accent-primary-dim: 26 90 176;     /* hover / secondary */
+    --color-accent-grad: 39 117 202;           /* graduation → blue */
+    --color-accent-red: 220 38 38;             /* sell / danger */
+    --color-accent-orange: 194 65 12;          /* warning */
+    --color-accent-yellow: 161 98 7;           /* caution */
+    --color-accent-blue: 35 72 223;
+    --color-accent-blue-dim: 27 55 181;
+    --color-accent-surface: 246 220 85;
+    --color-accent-on-surface: 23 33 60;
+    --color-accent-primary: 255 91 58;
+    --color-accent-primary-dim: 232 76 46;
+    --color-accent-grad: 35 72 223;
+
+    /* Glow + grid tints (blue) — full rgba values, not RGB channels */
+    --glow-primary: rgba(246, 220, 85, 0.18);
+    --glow-soft: rgba(255, 91, 58, 0.045);
+    --glow-lower: rgba(35, 72, 223, 0.035);
+    --grid-line: transparent;
+    --curve-stroke: rgba(35, 72, 223, 0.07);
+    --curve-halo: rgba(246, 220, 85, 0.14);
+    --accent-glow: rgba(255, 91, 58, 0.28);
+
+    /* Shadows */
+    --shadow-subtle: 3px 3px 0 rgba(23, 33, 60, 0.10);
+    --shadow-subtle-2: 6px 6px 0 rgba(23, 33, 60, 0.10);
+    --shadow-subtle-3: 10px 10px 0 rgba(35, 72, 223, 0.16);
+  }
+
+  .dark {
+    /* ─── Dark mode (default for degens) ───────────────────────────
+       Deep navy-black with blue tint, USDC blue accent. Cards are a
+       slightly lifted navy; borders carry a blue-gray hairline. The
+       blue glow is more prominent than in light mode to give depth. */
+    --color-bg-base: 10 14 26;
+    --color-bg-card: 17 23 38;
+    --color-bg-hover: 26 34 54;
+    --color-bg-input: 15 21 36;
+    --color-bg-border: 30 42 68;
+
+    --color-text-primary: 232 234 240;
+    --color-text-secondary: 139 149 168;
+    --color-text-muted: 90 101 128;
+
+    --color-accent-primary: 39 117 202;       /* USDC blue — same in both modes */
+    --color-accent-primary-dim: 74 154 224;   /* brighter hover (dark mode needs lift) */
+    --color-accent-grad: 96 165 250;          /* graduation → brighter blue on dark */
+    --color-accent-red: 239 68 68;            /* sell / danger — brighter on dark */
+    --color-accent-orange: 249 115 22;        /* warning */
+    --color-accent-yellow: 234 179 8;         /* caution */
+    --color-accent-surface: 26 42 74;         /* editorial accent surface (deep blue) */
+    --color-accent-on-surface: 147 197 253;   /* text on accent surface */
+
+    --glow-primary: rgba(39, 117, 202, 0.14);
+    --glow-soft: rgba(26, 42, 74, 0.5);
+    --glow-lower: rgba(39, 117, 202, 0.06);
+    --grid-line: rgba(39, 117, 202, 0.03);
+    --curve-stroke: rgba(39, 117, 202, 0.09);
+    --curve-halo: rgba(39, 117, 202, 0.06);
+    --accent-glow: rgba(39, 117, 202, 0.4);
+
+    /* Daybreak after dark: ink-navy paper with bright market cues. */
+    --color-bg-base: 19 24 43;
+    --color-bg-card: 28 34 59;
+    --color-bg-hover: 39 47 78;
+    --color-bg-input: 24 29 50;
+    --color-bg-border: 62 71 103;
+    --color-text-primary: 255 248 232;
+    --color-text-secondary: 198 199 210;
+    --color-text-muted: 139 148 173;
+    --color-accent-primary: 255 113 79;
+    --color-accent-primary-dim: 255 91 58;
+    --color-accent-blue: 126 153 255;
+    --color-accent-blue-dim: 160 179 255;
+    --color-accent-grad: 126 153 255;
+    --color-accent-surface: 76 66 38;
+    --color-accent-on-surface: 255 239 151;
+    --glow-primary: rgba(246, 220, 85, 0.09);
+    --glow-soft: rgba(255, 91, 58, 0.055);
+    --glow-lower: rgba(126, 153, 255, 0.06);
+    --grid-line: transparent;
+    --curve-stroke: rgba(126, 153, 255, 0.10);
+    --curve-halo: rgba(246, 220, 85, 0.08);
+    --accent-glow: rgba(255, 113, 79, 0.30);
+    --shadow-subtle: 3px 3px 0 rgba(0, 0, 0, 0.22);
+    --shadow-subtle-2: 6px 6px 0 rgba(0, 0, 0, 0.25);
+    --shadow-subtle-3: 10px 10px 0 rgba(0, 0, 0, 0.28);
+  }
+
+  body {
+    @apply font-sans antialiased;
+    color: rgb(var(--color-text-primary));
+    background-color: rgb(var(--color-bg-base));
+    background-image:
+      radial-gradient(ellipse 65% 42% at 40% 6%, var(--glow-primary), transparent 62%),
+      radial-gradient(ellipse 95% 70% at 50% 38%, var(--glow-soft), transparent 72%),
+      radial-gradient(ellipse 80% 50% at 60% 92%, var(--glow-lower), transparent 70%),
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size:
+      100% 100%,
+      100% 100%,
+      100% 100%,
+      46px 46px,
+      46px 46px;
+    background-attachment: fixed;
+    background-position: 0 0, 0 0, 0 0, 0 0, 0 0;
+  }
+
+  /* Serif headlines — Signifier (Source Serif 4 fallback) at weight 400 */
+  h1, h2 {
+    @apply font-serif font-normal;
+    letter-spacing: -0.045em;
+  }
+
+  /* Visible focus ring for keyboard users only */
+  :focus-visible {
+    outline: 2px solid rgb(var(--color-accent-primary));
+    outline-offset: 2px;
+  }
+
+  /* Skip-to-content link for screen readers / keyboard users */
+  .skip-link {
+    position: absolute;
+    left: 0.5rem;
+    top: 0.5rem;
+    z-index: 100;
+    background-color: rgb(var(--color-accent-primary));
+    color: #ffffff;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transform: translateY(-5rem);
+    transition: transform 0.2s ease;
+  }
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-bg-base;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-bg-border;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-text-muted;
+  }
+
+  /* Respect reduced-motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Card component — technical surface with a restrained non-zero radius. */
+  .card {
+    @apply rounded-xl border border-bg-border bg-bg-card p-5 transition-all shadow-subtle;
+  }
+  .card-hover {
+    @apply hover:bg-bg-hover cursor-pointer;
+  }
+
+  /* Floating product artifact — elevated surface with subtle shadow */
+  .card-elevated {
+    @apply rounded-xl bg-bg-card p-5 shadow-subtle-2 border border-bg-border;
+  }
+
+  /* Accent card — editorial highlight (light/dark blue surface) */
+  .card-peach {
+    @apply rounded-xl bg-accent-peach text-accent-sienna p-5;
+  }
+
+  /* Button variants — compact, precise corners rather than square edges. */
+  .btn {
+    @apply rounded-md px-4 py-2 font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn;
+    color: #ffffff;
+    background-color: rgb(var(--color-accent-primary));
+  }
+  .btn-primary:hover {
+    background-color: rgb(var(--color-accent-primary-dim));
+  }
+  .btn-secondary {
+    @apply btn bg-transparent;
+    color: rgb(var(--color-accent-blue));
+    border: 1px solid rgb(var(--color-accent-blue) / 0.72);
+  }
+  .btn-secondary:hover {
+    background-color: rgb(var(--color-accent-blue));
+    color: #ffffff;
+  }
+  .btn-buy {
+    @apply btn;
+    color: #ffffff;
+    background-color: rgb(var(--color-accent-primary));
+  }
+  .btn-buy:hover {
+    background-color: rgb(var(--color-accent-primary-dim));
+  }
+  .btn-sell {
+    @apply btn text-white;
+    background-color: rgb(var(--color-accent-red));
+  }
+  .btn-sell:hover {
+    opacity: 0.9;
+  }
+
+  .icon-button {
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-md border border-bg-border
+           bg-bg-card text-text-secondary transition-colors hover:bg-bg-hover
+           hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  /* Input fields — surface fill, hairline border, sharp corners */
+  .input,
+  .input-field {
+    @apply rounded-md bg-bg-input border border-bg-border px-3 py-2.5 text-text-primary
+           placeholder:text-text-muted focus:outline-none
+           transition-colors w-full;
+  }
+  .input:focus,
+  .input-field:focus {
+    border-color: rgb(var(--color-accent-primary) / 0.6);
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+  }
+  .badge-green {
+    @apply badge;
+    color: rgb(var(--color-accent-primary));
+    background-color: rgb(var(--color-accent-primary) / 0.1);
+  }
+  .badge-blue {
+    @apply badge text-accent-sienna;
+    background-color: rgb(var(--color-accent-surface));
+  }
+  .badge-purple {
+    @apply badge;
+    color: rgb(var(--color-accent-grad));
+    background-color: rgb(var(--color-accent-grad) / 0.15);
+  }
+  .badge-red {
+    @apply badge;
+    color: rgb(var(--color-accent-red));
+    background-color: rgb(var(--color-accent-red) / 0.1);
+  }
+  .badge-orange {
+    @apply badge;
+    color: rgb(var(--color-accent-orange));
+    background-color: rgb(var(--color-accent-orange) / 0.1);
+  }
+  .badge-muted {
+    @apply badge bg-bg-card text-text-secondary;
+  }
+
+  /* Progress bar (bonding curve) */
+  .progress-bar {
+    @apply w-full h-2 rounded-full bg-bg-card overflow-hidden;
+  }
+  .progress-fill {
+    @apply h-full transition-all duration-500;
+    background-color: rgb(var(--color-accent-primary));
+  }
+
+  /* Tab navigation — whisper-quiet */
+  .tab {
+    @apply rounded-md px-2.5 py-1.5 text-sm font-semibold text-text-secondary
+           hover:text-text-primary hover:bg-bg-hover transition-colors cursor-pointer;
+  }
+  .tab-active {
+    @apply bg-bg-card;
+    color: rgb(var(--color-accent-primary));
+  }
+
+  /* Trading terminal panel */
+  .terminal-panel {
+    @apply p-3 sm:p-4 transition-colors;
+  }
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .glow-green {
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+  .glow-blue {
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+}
+
+.daybreak-sun {
+  position: relative;
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+}
+.daybreak-sun::before {
+  content: '';
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: rgb(var(--color-accent-primary));
+}
+.daybreak-sun i {
+  position: absolute;
+  width: 27px;
+  height: 2px;
+  border-radius: 2px;
+  background: rgb(var(--color-accent-primary));
+}
+.daybreak-sun i:nth-child(2) { transform: rotate(45deg); }
+.daybreak-sun i:nth-child(3) { transform: rotate(90deg); }
+.daybreak-sun i:nth-child(4) { transform: rotate(135deg); }
+
+/* Isolated shell reset for the local Signal Lab concept route. */
+body.signal-lab-mode {
+  background: #07090d !important;
+}
+
+body.signal-lab-mode > nav,
+body.signal-lab-mode > footer,
+body.signal-lab-mode > div[aria-label="Live token ticker"],
+body.signal-lab-mode > div[aria-hidden="true"] {
+  display: none !important;
+}
+
+body.signal-lab-mode > main {
+  max-width: none !important;
+  padding: 0 !important;
+}
+
+/* Isolated shell reset for the local Daybreak concept route. */
+body.daybreak-mode {
+  background: #fff8e8 !important;
+}
+
+body.daybreak-mode > nav,
+body.daybreak-mode > footer,
+body.daybreak-mode > div[aria-label="Live token ticker"],
+body.daybreak-mode > div[aria-hidden="true"] {
+  display: none !important;
+}
+
+body.daybreak-mode > main {
+  max-width: none !important;
+  padding: 0 !important;
+}
+
+:focus-visible { outline: 2px solid rgb(var(--color-accent-blue)); outline-offset: 3px; }

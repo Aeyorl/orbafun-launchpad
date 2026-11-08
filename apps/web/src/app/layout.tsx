@@ -1,4 +1,6 @@
 import type { Metadata } from 'next';
+import Image from 'next/image';
+import Link from 'next/link';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -14,20 +16,20 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="en"><body>
-    <header className="border-b border-white/10 bg-black/70">
+    <header className="border-b border-bg-border bg-bg-card">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4 md:px-8">
-        <a href="/" className="font-semibold tracking-wide text-white">ORBA</a>
+        <Link href="/" aria-label="Orba home"><Image src="/orba-wordmark-bloom.svg" alt="Orba" width={99} height={32} /></Link>
         <nav className="flex items-center gap-4 text-sm">
-          <a href="/explore" className="text-white/65 hover:text-white">Explore</a>
-          <a href="/docs" className="hidden text-white/65 hover:text-white md:inline">Docs</a>
-          <a href="/fees" className="hidden text-white/65 hover:text-white md:inline">Fees</a>
-          <a href="/near-demo" className="text-emerald-300 hover:text-emerald-200">Launch app</a>
-          <span className="hidden text-xs uppercase tracking-[0.18em] text-white/40 sm:inline">NEAR · Testnet</span>
+          <a href="/explore" className="text-text-secondary hover:text-text-primary">Explore</a>
+          <a href="/docs" className="hidden text-text-secondary hover:text-text-primary md:inline">Docs</a>
+          <a href="/fees" className="hidden text-text-secondary hover:text-text-primary md:inline">Fees</a>
+          <a href="/near-demo" className="font-semibold text-accent-blue hover:underline">Launch app</a>
+          <span className="hidden text-xs uppercase tracking-[0.18em] text-text-secondary sm:inline">NEAR · Testnet</span>
         </nav>
       </div>
     </header>
     {children}
-    <footer className="mx-auto mt-12 max-w-6xl border-t border-white/10 px-5 py-6 text-xs text-white/45 md:px-8">
+    <footer className="mx-auto mt-12 max-w-6xl border-t border-bg-border px-5 py-6 text-xs text-text-secondary md:px-8">
       Orba is a NEAR testnet prototype. Use test tokens only.
     </footer>
   </body></html>;
