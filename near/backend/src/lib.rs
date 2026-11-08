@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use axum::{
-    Json, Router,
     body::Body,
     extract::{Path, Query, State},
     http::{HeaderMap, Request, StatusCode, Uri},
@@ -8,14 +7,15 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
     routing::post,
+    Json, Router,
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::{DateTime, Utc};
-use futures::{StreamExt, TryStreamExt, stream};
+use futures::{stream, StreamExt, TryStreamExt};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use serde_json::{json, Value};
+use sqlx::{postgres::PgPoolOptions, PgPool};
 use std::{env, time::Duration};
 use tokio::time::{interval, sleep};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -373,7 +373,11 @@ async fn scan_block(
     let block = block
         .result
         .with_context(|| format!("NEAR RPC returned no data for block {height}"))?;
-    let chunks = block["chunks"].as_array().cloned().unwrap_or_default();
+    let chunks = block
+        .get("chunks")
+        .and_then(Value::as_array)
+        .cloned()
+        .with_context(|| format!("NEAR RPC block {height} did not include chunks"))?;
     let chunk_bodies = stream::iter(chunks)
         .map(|chunk| async move {
             let chunk_hash = chunk["chunk_hash"].as_str().unwrap_or_default();
@@ -397,7 +401,14 @@ async fn scan_block(
         .await?;
     let mut indexed = Vec::new();
     for body in chunk_bodies {
-        for tx in body["transactions"].as_array().cloned().unwrap_or_default() {
+        let transactions = body
+            .get("transactions")
+            .and_then(Value::as_array)
+            .cloned()
+            .with_context(|| {
+                format!("NEAR RPC chunk at block {height} did not include transactions")
+            })?;
+        for tx in transactions {
             let receiver = tx["receiver_id"].as_str().unwrap_or_default();
             let relevant_action = tx["actions"].as_array().is_some_and(|actions| {
                 actions.iter().any(|action| {
@@ -440,9 +451,9 @@ async fn scan_block(
             if let Some(error) = status.error {
                 anyhow::bail!("NEAR RPC transaction status failed for {tx_hash}: {error}");
             }
-            let status = status
-                .result
-                .with_context(|| format!("NEAR RPC returned no status for transaction {tx_hash}"))?;
+            let status = status.result.with_context(|| {
+                format!("NEAR RPC returned no status for transaction {tx_hash}")
+            })?;
             let logs = collect_logs(&status);
             if !logs.is_empty() {
                 indexed.push(IndexedTransactionLogs {
