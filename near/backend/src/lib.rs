@@ -31,6 +31,8 @@ struct TokenRow {
     treasury_recipient: String,
     name: String,
     symbol: String,
+    description: Option<String>,
+    image_url: Option<String>,
     real_usdc: String,
     cumulative_volume_usdc: String,
     tokens_sold: String,
@@ -242,10 +244,14 @@ async fn index_launch(
     let height = block["result"]["header"]["height"]
         .as_i64()
         .ok_or(StatusCode::BAD_GATEWAY)?;
+    let created_token = events.iter().find(|event| event["event"] == "token_created")
+        .and_then(|event| event["data"][0]["token_id"].as_str()).map(str::to_owned);
     persist_logs(&app.db, events, &launch.tx_hash, height)
         .await
         .map_err(internal)?;
-    Ok(Json(json!({"ok":true,"block_height":height})))
+    Ok(Json(
+        json!({"ok":true,"block_height":height,"created_token":created_token}),
+    ))
 }
 
 async fn list_tokens(
@@ -255,7 +261,7 @@ async fn list_tokens(
     let limit = page.limit.unwrap_or(50).clamp(1, 100);
     let offset = page.offset.unwrap_or(0).max(0);
     let rows = sqlx::query_as::<_, TokenRow>(
-        "SELECT account_id,creator,treasury_recipient,name,symbol,real_usdc::text,cumulative_volume_usdc::text,tokens_sold::text,reserved_remaining::text,treasury_pool::text,treasury_unlocked::text,treasury_claimed::text,milestones_completed,graduated,preset,created_block,created_tx,updated_at FROM tokens ORDER BY created_block DESC LIMIT $1 OFFSET $2",
+        "SELECT account_id,creator,treasury_recipient,name,symbol,description,image_url,real_usdc::text,cumulative_volume_usdc::text,tokens_sold::text,reserved_remaining::text,treasury_pool::text,treasury_unlocked::text,treasury_claimed::text,milestones_completed,graduated,preset,created_block,created_tx,updated_at FROM tokens ORDER BY created_block DESC LIMIT $1 OFFSET $2",
     )
     .bind(limit)
     .bind(offset)
@@ -268,7 +274,7 @@ async fn get_token(
     State(app): State<App>,
     Path(id): Path<String>,
 ) -> Result<Json<TokenRow>, StatusCode> {
-    sqlx::query_as::<_, TokenRow>("SELECT account_id,creator,treasury_recipient,name,symbol,real_usdc::text,cumulative_volume_usdc::text,tokens_sold::text,reserved_remaining::text,treasury_pool::text,treasury_unlocked::text,treasury_claimed::text,milestones_completed,graduated,preset,created_block,created_tx,updated_at FROM tokens WHERE account_id=$1")
+    sqlx::query_as::<_, TokenRow>("SELECT account_id,creator,treasury_recipient,name,symbol,description,image_url,real_usdc::text,cumulative_volume_usdc::text,tokens_sold::text,reserved_remaining::text,treasury_pool::text,treasury_unlocked::text,treasury_claimed::text,milestones_completed,graduated,preset,created_block,created_tx,updated_at FROM tokens WHERE account_id=$1")
         .bind(id)
         .fetch_optional(&app.db)
         .await
@@ -290,7 +296,7 @@ async fn get_mechanics(
     State(app): State<App>,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, StatusCode> {
-    let token = sqlx::query_as::<_, TokenRow>("SELECT account_id,creator,treasury_recipient,name,symbol,real_usdc::text,cumulative_volume_usdc::text,tokens_sold::text,reserved_remaining::text,treasury_pool::text,treasury_unlocked::text,treasury_claimed::text,milestones_completed,graduated,preset,created_block,created_tx,updated_at FROM tokens WHERE account_id=$1")
+    let token = sqlx::query_as::<_, TokenRow>("SELECT account_id,creator,treasury_recipient,name,symbol,description,image_url,real_usdc::text,cumulative_volume_usdc::text,tokens_sold::text,reserved_remaining::text,treasury_pool::text,treasury_unlocked::text,treasury_claimed::text,milestones_completed,graduated,preset,created_block,created_tx,updated_at FROM tokens WHERE account_id=$1")
         .bind(&id)
         .fetch_optional(&app.db)
         .await
@@ -559,7 +565,7 @@ fn transfer_call_targets_launchpad(action: &Value, contract: &str) -> bool {
         .is_some_and(|receiver| receiver == contract)
 }
 fn launchpad_logs(status: &Value, contract: &str) -> Vec<Value> {
-    status["receipts_outcome"]
+    let mut events: Vec<Value> = status["receipts_outcome"]
         .as_array()
         .into_iter()
         .flatten()
@@ -570,7 +576,41 @@ fn launchpad_logs(status: &Value, contract: &str) -> Vec<Value> {
                     || outcome["status"].get("SuccessReceiptId").is_some())
         })
         .flat_map(collect_logs)
-        .collect()
+        .collect();
+    // Profile fields are optional arguments from the signed launch. Only attach
+    // them to a successful create event from a single direct launchpad call.
+    if status["transaction"]["receiver_id"] == contract {
+        if let Some(actions) = status["transaction"]["actions"].as_array() {
+            if actions.len() == 1 && actions[0]["FunctionCall"]["method_name"] == "create_token" {
+                let profile = actions[0]["FunctionCall"]["args"]
+                    .as_str()
+                    .and_then(|args| STANDARD.decode(args).ok())
+                    .and_then(|args| serde_json::from_slice::<Value>(&args).ok());
+                if let Some(profile) = profile {
+                    for event in events
+                        .iter_mut()
+                        .filter(|event| event["event"] == "token_created")
+                    {
+                        let data = &mut event["data"][0];
+                        data["description"] = json!(profile["description"]
+                            .as_str()
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty() && value.chars().count() <= 280));
+                        data["image_url"] = json!(profile["image_url"]
+                            .as_str()
+                            .filter(|value| value.len() <= 500)
+                            .and_then(|value| reqwest::Url::parse(value).ok())
+                            .filter(|url| url.scheme() == "https"
+                                && url.host_str().is_some()
+                                && url.username().is_empty()
+                                && url.password().is_none())
+                            .map(|url| url.to_string()));
+                    }
+                }
+            }
+        }
+    }
+    events
 }
 
 fn collect_logs(value: &Value) -> Vec<Value> {
@@ -607,10 +647,10 @@ async fn persist_logs(db: &PgPool, events: Vec<Value>, tx: &str, height: i64) ->
         match event["event"].as_str().unwrap_or_default() {
             "token_created" => {
                 let creator = data["creator"].as_str().unwrap_or_default();
-                sqlx::query("INSERT INTO tokens(account_id,creator,treasury_recipient,name,symbol,created_block,created_tx,preset) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING")
+                sqlx::query("INSERT INTO tokens(account_id,creator,treasury_recipient,name,symbol,created_block,created_tx,preset,description,image_url) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT DO NOTHING")
                     .bind(token).bind(creator).bind(data["treasury_recipient"].as_str().unwrap_or_default())
                     .bind(data["name"].as_str().unwrap_or_default()).bind(data["symbol"].as_str().unwrap_or_default())
-                    .bind(height).bind(tx).bind(&data["preset"]).execute(&mut *transaction).await?;
+                    .bind(height).bind(tx).bind(&data["preset"]).bind(data["description"].as_str()).bind(data["image_url"].as_str()).execute(&mut *transaction).await?;
             }
             "buy" | "sell" => {
                 let side = event["event"].as_str().unwrap();

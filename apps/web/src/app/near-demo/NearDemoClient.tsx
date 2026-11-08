@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { createPortal } from 'react-dom';
 import type { NearConnector } from '@hot-labs/near-connect';
 
@@ -53,7 +54,7 @@ async function viewContract<T>(contractId: string, methodName: string, args: Rec
   return JSON.parse(new TextDecoder().decode(new Uint8Array(payload.result.result))) as T;
 }
 
-export default function NearDemoClient() {
+export default function NearDemoClient({ mode = 'demo', tokenId = '' }: { mode?: 'demo' | 'launch' | 'trade'; tokenId?: string }) {
   const [walletSlot, setWalletSlot] = useState<HTMLElement | null>(null);
   useEffect(() => { setWalletSlot(document.getElementById('near-wallet-slot')); }, []);
 
@@ -66,15 +67,20 @@ export default function NearDemoClient() {
   const [tokens, setTokens] = useState<Token[]>([]);
   const connectorRef = useRef<NearConnector | null>(null);
   const connectorInitRef = useRef<Promise<NearConnector> | null>(null);
-  const [selected, setSelected] = useState('');
+  const [selected, setSelected] = useState(tokenId);
   const [balance, setBalance] = useState('—');
   const [tokenBalance, setTokenBalance] = useState('—');
   const [sellerClaimable, setSellerClaimable] = useState('0');
   const [claimableViewAvailable, setClaimableViewAvailable] = useState(true);
   const [tokenStorageRegistered, setTokenStorageRegistered] = useState(false);
   const [usdcStorageRegistered, setUsdcStorageRegistered] = useState(false);
-  const [name, setName] = useState('Orba Demo');
-  const [symbol, setSymbol] = useState('ORBA');
+  const [name, setName] = useState(mode === 'demo' ? 'Orba Demo' : '');
+  const [symbol, setSymbol] = useState(mode === 'demo' ? 'ORBA' : '');
+  const [description, setDescription] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [createdToken, setCreatedToken] = useState('');
+  const [lastTransaction, setLastTransaction] = useState('');
+  const [launchSigner, setLaunchSigner] = useState('');
   const [recipient, setRecipient] = useState('');
   const [preset, setPreset] = useState('spark');
   const [amount, setAmount] = useState('1');
@@ -82,11 +88,13 @@ export default function NearDemoClient() {
   const [busy, setBusy] = useState(false);
 
   async function load() {
+    if (mode === 'launch') return;
     try {
-      const response = await fetch(`${api}/api/tokens`, { cache: 'no-store' });
+      const path = mode === 'trade' ? `/api/tokens/${encodeURIComponent(tokenId)}` : '/api/tokens';
+      const response = await fetch(`${api}${path}`, { cache: 'no-store' });
       if (!response.ok) throw new Error(`Token API returned ${response.status}`);
       const data = await response.json();
-      const items: Token[] = data.items || [];
+      const items: Token[] = mode === 'trade' ? [data] : data.items || [];
       setTokens(items);
       setSelected((current) => current || items[0]?.account_id || '');
       setNotice((current) => current === apiUnavailableNotice ? '' : current);
@@ -98,20 +106,22 @@ export default function NearDemoClient() {
   async function syncIndexer(result: unknown, signerId: string) {
     try {
       const outcome = result as { transaction?: { hash?: unknown }; status?: { Failure?: unknown } } | null;
-      if (outcome?.status?.Failure) return;
+      if (outcome?.status?.Failure) return null;
       const hash = outcome?.transaction?.hash;
       if (typeof hash === 'string') {
+        setLastTransaction(hash);
         const response = await fetch(`${api}/api/indexer/transaction`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ tx_hash: hash, signer_id: signerId }),
         });
-        if (response.ok) return;
+        if (response.ok) return await response.json() as { created_token?: string | null };
       }
       await fetch(`${api}/api/indexer/sync`, { method: 'POST' });
     } catch {
       // The daily Vercel cron remains the fallback when on-demand sync is unavailable.
     }
+    return null;
   }
 
   useEffect(() => {
@@ -122,8 +132,8 @@ export default function NearDemoClient() {
 
   useEffect(() => {
     const requestedToken = new URLSearchParams(window.location.search).get('token');
-    if (requestedToken) setSelected(requestedToken);
-  }, []);
+    if (mode === 'demo' && requestedToken) setSelected(requestedToken);
+  }, [mode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -298,7 +308,12 @@ export default function NearDemoClient() {
     try {
       const result = await wallet.signAndSendTransaction({ receiverId: launchpad, actions: [{ type: 'FunctionCall', params: { methodName, args, gas: '150000000000000', deposit } }] });
       setNotice('Transaction submitted. Waiting for finalized indexer data…');
-      await syncIndexer(result, wallet.accountId);
+      const indexed = await syncIndexer(result, wallet.accountId);
+      if (methodName === 'create_token' && indexed?.created_token) {
+        setCreatedToken(indexed.created_token);
+        setNotice('Token launched. Your market page is ready.');
+      }
+      if (methodName === 'create_token') setLaunchSigner(wallet.accountId);
       await Promise.all([load(), refreshWalletData()]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Transaction failed.');
@@ -350,11 +365,33 @@ export default function NearDemoClient() {
   }
 
   async function create() {
-    if (!recipient) {
+    const fixedRecipient = recipient.trim() || (mode === 'launch' ? account : '');
+    if (!fixedRecipient) {
       setNotice('Set the fixed treasury recipient first.');
       return;
     }
-    await call('create_token', { name, symbol, treasury_recipient: recipient, preset_name: preset }, '4000000000000000000000000');
+    const utf8Length = (value: string) => new TextEncoder().encode(value).length;
+    if (!name.trim() || !symbol.trim() || utf8Length(name.trim()) > 64 || utf8Length(symbol.trim()) > 16) {
+      setNotice('Enter a token name and symbol within the size limits.');
+      return;
+    }
+    if (imageUrl.trim()) {
+      try {
+        const url = new URL(imageUrl.trim());
+        if (url.protocol !== 'https:' || url.username || url.password || imageUrl.trim().length > 500) throw new Error();
+      } catch {
+        setNotice('Enter a public HTTPS image URL.');
+        return;
+      }
+    }
+    setCreatedToken('');
+    setLastTransaction('');
+    setLaunchSigner('');
+    await call('create_token', {
+      name: name.trim(), symbol: symbol.trim(), treasury_recipient: fixedRecipient, preset_name: preset,
+      ...(description.trim() ? { description: description.trim() } : {}),
+      ...(imageUrl.trim() ? { image_url: imageUrl.trim() } : {}),
+    }, '4000000000000000000000000');
   }
 
   async function trade(side: 'buy' | 'sell') {
@@ -362,7 +399,7 @@ export default function NearDemoClient() {
       setNotice('Configure the USDC contract, select a token, and connect a wallet.');
       return;
     }
-    if (side === 'buy' && (!usdcStorageRegistered || !tokenStorageRegistered)) {
+    if (mode === 'demo' && side === 'buy' && (!usdcStorageRegistered || !tokenStorageRegistered)) {
       setNotice('Register USDC and this token’s storage before buying.');
       return;
     }
@@ -382,13 +419,27 @@ export default function NearDemoClient() {
     setNotice('Checking quote…');
     try {
       const quoted = await viewContract<string>(launchpad, side === 'buy' ? 'quote_buy' : 'quote_sell', side === 'buy' ? { token_id: selected, usdc_amount: rawAmount.toString() } : { token_id: selected, token_amount: rawAmount.toString() });
+      if (BigInt(quoted) <= 0n) throw new Error('This amount is too small to trade.');
+      if (mode === 'trade') {
+        const inputToken = side === 'buy' ? usdc : selected;
+        const available = await viewContract<string>(inputToken, 'ft_balance_of', { account_id: account });
+        if (BigInt(available) < rawAmount) throw new Error('Insufficient token balance.');
+        for (const contractId of side === 'buy' ? [usdc, selected] : [usdc]) {
+          const args = { account_id: account };
+          if (await viewContract(contractId, 'storage_balance_of', args)) continue;
+          const bounds = await viewContract<{ min: string }>(contractId, 'storage_balance_bounds', {});
+          setNotice(`Approve storage registration for ${contractId === usdc ? 'USDC' : 'this token'} in your wallet.`);
+          await wallet.signAndSendTransaction({ receiverId: contractId, actions: [{ type: 'FunctionCall', params: { methodName: 'storage_deposit', args: { ...args, registration_only: true }, gas: '30000000000000', deposit: bounds.min } }] });
+          if (!await viewContract(contractId, 'storage_balance_of', args)) throw new Error('Storage registration has not settled. Check your wallet before retrying.');
+        }
+      }
       const minimumOut = (BigInt(quoted) * 9_900n / 10_000n).toString();
       const message = side === 'buy' ? { action: 'buy', token_id: selected, min_tokens_out: minimumOut } : { action: 'sell', token_id: selected, min_usdc_out: minimumOut };
-      setNotice('Confirm the transfer-call transaction in your wallet…');
+      setNotice(`Estimated receive: ${(Number(quoted) / (side === 'buy' ? 1e18 : 1e6)).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${side === 'buy' ? token?.symbol ?? 'tokens' : 'USDC'}. Confirm in your wallet.`);
       const result = await wallet.signAndSendTransaction({ receiverId: side === 'buy' ? usdc : selected, actions: [{ type: 'FunctionCall', params: { methodName: 'ft_transfer_call', args: { receiver_id: launchpad, amount: rawAmount.toString(), msg: JSON.stringify(message) }, gas: side === 'buy' ? '250000000000000' : '150000000000000', deposit: '1' } }] });
-      if (side === 'sell') setSellerClaimable((current) => (BigInt(current) + BigInt(quoted)).toString());
       setNotice(side === 'buy' ? 'Buy submitted. Refreshing indexed data…' : 'Sell submitted. Claim the resulting USDC proceeds after it finalizes.');
-      await syncIndexer(result, wallet.accountId);
+      const indexed = await syncIndexer(result, wallet.accountId);
+      if (indexed) setNotice(side === 'buy' ? 'Buy confirmed and indexed.' : 'Sell confirmed. Your USDC proceeds are available to claim.');
       await Promise.all([load(), refreshWalletData()]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Trade failed.');
@@ -401,6 +452,59 @@ export default function NearDemoClient() {
   const token = tokens.find((item) => item.account_id === selected);
   const explorer = token ? `${explorerUrl}/address/${token.account_id}` : '';
   const claimableUsdc = Number(sellerClaimable) / 1e6;
+  const walletButton = <button type="button" className="btn-primary" disabled={walletBusy || busy}
+    onClick={() => void (account ? disconnect() : connect())}>
+    {walletBusy ? 'Updating wallet…' : account ? 'Disconnect wallet' : 'Connect NEAR wallet'}
+  </button>;
+  const txLink = lastTransaction && <a className="text-sm text-accent-blue" href={`${explorerUrl}/txns/${lastTransaction}`} target="_blank" rel="noreferrer">View transaction</a>;
+
+  if (mode === 'launch') return <main className="mx-auto max-w-3xl px-5 py-12">
+    <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      <h1 className="font-serif text-4xl">Launch a token</h1>{walletButton}
+    </div>
+    <form className="card grid gap-4" onSubmit={(event) => { event.preventDefault(); void create(); }}>
+      <label>Token name<input className="input mt-1 w-full" required maxLength={64} value={name} onChange={(event) => setName(event.target.value)} /></label>
+      <label>Ticker<input className="input mt-1 w-full" required maxLength={16} value={symbol} onChange={(event) => setSymbol(event.target.value.toUpperCase())} /></label>
+      <label>Description <span className="text-text-secondary">(optional)</span><textarea className="input mt-1 w-full" maxLength={280} rows={3} value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+      <label>Image URL <span className="text-text-secondary">(optional)</span><input className="input mt-1 w-full" type="url" placeholder="https://" maxLength={500} value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} /></label>
+      <label>Treasury recipient<input className="input mt-1 w-full" placeholder={account || 'Defaults to your connected account'} value={recipient} onChange={(event) => setRecipient(event.target.value)} /></label>
+      <label>Milestone preset<select className="input mt-1 w-full" value={preset} onChange={(event) => setPreset(event.target.value)}>
+        <option value="spark">Spark · 10 / 50 / 150 USDC</option><option value="momentum">Momentum · 25 / 100 / 500 USDC</option><option value="marathon">Marathon · 100 / 500 / 2,500 USDC</option>
+      </select></label>
+      <button className="btn-primary disabled:opacity-40" disabled={!account || busy || !launchpad || (!!lastTransaction && !createdToken)}>{busy ? 'Waiting for launch…' : 'Launch on NEAR testnet'}</button>
+      <p className="text-sm text-text-secondary">Launch attaches 4 testnet NEAR for account creation and storage. Unused deposit is refunded.</p>
+      {notice && <p role="status">{notice}</p>}
+      {createdToken && <Link className="text-accent-blue" href={`/token/${encodeURIComponent(createdToken)}`}>Open your token page</Link>}
+      {lastTransaction && launchSigner && !createdToken && <button type="button" className="btn-secondary" disabled={busy} onClick={async () => {
+        setBusy(true);
+        const indexed = await syncIndexer({ transaction: { hash: lastTransaction } }, launchSigner);
+        if (indexed?.created_token) setCreatedToken(indexed.created_token);
+        setNotice(indexed?.created_token ? 'Token launched. Your market page is ready.' : 'Token page is not indexed yet. Check the transaction before launching again.');
+        setBusy(false);
+      }}>Refresh launch result</button>}
+      {txLink}
+    </form>
+  </main>;
+
+  if (mode === 'trade') return <section className="card mt-8 space-y-4" id="trade">
+    <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Trade {token?.symbol}</h2>{walletButton}</div>
+    {account && <p className="break-all text-sm text-text-secondary">{account} · {balance} USDC · {tokenBalance} {token?.symbol}</p>}
+    {token?.graduated ? <p>Bonding curve trading has ended for this token.</p> : <>
+      <label className="block">Amount <span className="text-sm text-text-secondary">(USDC to buy, tokens to sell)</span>
+        <input className="input mt-1 w-full" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <button className="btn-primary disabled:opacity-40" disabled={!account || !token || busy} onClick={() => void trade('buy')}>Buy {amount} USDC</button>
+        <button className="btn-secondary disabled:opacity-40" disabled={!account || !token || busy} onClick={() => void trade('sell')}>Sell {amount} {token?.symbol}</button>
+      </div>
+      <p className="text-sm text-text-secondary">Trades use a fresh quote with 1% slippage protection. Your wallet may first ask you to register storage.</p>
+    </>}
+    {account && claimableUsdc > 0 && <button className="btn-secondary" disabled={busy} onClick={() => void call('claim_sell_proceeds', {})}>Claim {claimableUsdc.toFixed(6)} USDC proceeds</button>}
+    {token && account === token.treasury_recipient && BigInt(token.treasury_unlocked) > BigInt(token.treasury_claimed) &&
+      <button className="btn-secondary" disabled={busy} onClick={() => void call('claim_treasury', { token_id: token.account_id })}>Claim treasury</button>}
+    {notice && <p role="status">{notice}</p>}
+    {txLink}
+  </section>;
 
   return <main className="mx-auto min-h-screen max-w-6xl px-5 py-12 text-text-primary md:px-8">
     {walletSlot && createPortal(

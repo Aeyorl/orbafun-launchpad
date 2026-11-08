@@ -75,6 +75,8 @@ async fn setup(preset: &str) -> Result<Fixture> {
             "symbol": "SBOX",
             "treasury_recipient": treasury.id(),
             "preset_name": preset,
+            "description": "Optional signed launch profile",
+            "image_url": "https://example.org/token.png",
         }))
         .max_gas()
         .deposit(NearToken::from_near(10))

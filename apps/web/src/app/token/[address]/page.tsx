@@ -5,6 +5,7 @@ import PriceChart from '../../../components/PriceChart';
 import { WatchToken } from '../../../components/Watchlist';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import NearDemoClient from '../../near-demo/NearDemoClient';
 
 type Token = {
   account_id: string;
@@ -12,6 +13,8 @@ type Token = {
   treasury_recipient: string;
   name: string;
   symbol: string;
+  description?: string | null;
+  image_url?: string | null;
   cumulative_volume_usdc: string;
   reserved_remaining: string;
   treasury_unlocked: string;
@@ -77,7 +80,16 @@ export default function TokenPage() {
   return <main className="mx-auto min-h-[70vh] max-w-6xl px-5 py-12 md:px-8">
     <Link href="/explore" className="text-sm text-accent-blue">← Explore tokens</Link>
     {error && <p role="status" className="mt-5 border border-accent-orange/40 p-4 text-sm text-accent-orange">{error}</p>}
-    {token && <><div className="mt-6 flex flex-wrap items-end justify-between gap-4"><div><h1 className="mt-2 text-4xl font-semibold">{token.name} <span className="text-text-secondary">${token.symbol}</span></h1><p className="mt-2 break-all font-mono text-xs text-text-secondary">{token.account_id}</p></div><Link href={`/near-demo?token=${encodeURIComponent(token.account_id)}`} className="rounded-full bg-accent-green px-5 py-3 font-semibold text-text-primary">Trade on launchpad</Link><WatchToken token={{ accountId: token.account_id, name: token.name, symbol: token.symbol }} /></div>
+    {token && <><div className="mt-6 flex flex-wrap items-end justify-between gap-4">
+      <div className="min-w-0">
+        {token.image_url && <img src={token.image_url} alt="" referrerPolicy="no-referrer" className="h-20 w-20 rounded-lg object-cover" />}
+        <h1 className="mt-2 text-4xl font-semibold">{token.name} <span className="text-text-secondary">${token.symbol}</span></h1>
+        <p className="mt-2 break-all font-mono text-xs text-text-secondary">{token.account_id}</p>
+        {token.description && <p className="mt-3 whitespace-pre-wrap break-words text-text-secondary">{token.description}</p>}
+      </div>
+      <WatchToken token={{ accountId: token.account_id, name: token.name, symbol: token.symbol }} />
+    </div>
+      <NearDemoClient key={token.account_id} mode="trade" tokenId={token.account_id} />
       <PriceChart key={address} trades={trades} />
       <MilestoneProgress token={token} mechanics={mechanics} />
       <section className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><Metric label="Cumulative volume" value={`${(Number(token.cumulative_volume_usdc) / 1e6).toFixed(2)} USDC`} /><Metric label="Reserved supply remaining" value={`${(Number(token.reserved_remaining) / 1e24).toFixed(2)}M`} /><Metric label="Trading state" value={token.graduated ? 'Graduated · locked' : 'Curve active'} /><Metric label="Creator" value={token.creator} /><Metric label="Fixed treasury recipient" value={token.treasury_recipient} /><Metric label="Milestones completed" value={`${token.milestones_completed}/${token.preset.thresholds.length}`} /></section>
