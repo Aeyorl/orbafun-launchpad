@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import MarketBoard from '../components/MarketBoard';
 
 export default function HomePage() {
   return (
@@ -14,7 +15,7 @@ export default function HomePage() {
             Launch an idea, find its first believers, and grow it into a real market on NEAR testnet.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-4">
-            <Link href="/near-demo" className="btn-primary shadow-subtle">Bring an idea to life</Link>
+            <Link href="/launch" className="btn-primary shadow-subtle">Bring an idea to life</Link>
             <Link href="/explore" className="font-bold text-accent-blue hover:underline">See what is growing</Link>
           </div>
         </div>
@@ -27,6 +28,24 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
+      <div className="space-y-12 py-12">
+        <MarketBoard />
+        <section aria-labelledby="how-it-works">
+          <h2 id="how-it-works" className="mb-4 text-3xl text-accent-blue">How it works</h2>
+          <div className="grid gap-4 md:grid-cols-3">
+            {[
+              ['Launch a token', 'Choose a name, symbol, fixed treasury recipient, and milestone preset.'],
+              ['Trade on the curve', 'Buy and sell with testnet USDC while the bonding curve is active.'],
+              ['Reach milestones', 'Trading volume triggers burns from the reserved supply and unlocks treasury funds for the fixed recipient.'],
+            ].map(([title, description], index) => <article key={title} className="card">
+              <p className="font-mono text-sm text-text-secondary">0{index + 1}</p>
+              <h3 className="mb-2 mt-2 text-lg font-semibold">{title}</h3>
+              <p className="text-sm text-text-secondary">{description}</p>
+            </article>)}
+          </div>
+        </section>
+      </div>
     </main>
   );
 }
