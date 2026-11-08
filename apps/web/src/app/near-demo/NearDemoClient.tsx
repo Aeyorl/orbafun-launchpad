@@ -91,8 +91,19 @@ export default function NearDemoClient() {
     }
   }
 
-  async function syncIndexer() {
+  async function syncIndexer(result: unknown, signerId: string) {
     try {
+      const outcome = result as { transaction?: { hash?: unknown }; status?: { Failure?: unknown } } | null;
+      if (outcome?.status?.Failure) return;
+      const hash = outcome?.transaction?.hash;
+      if (typeof hash === 'string') {
+        const response = await fetch(`${api}/api/indexer/transaction`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tx_hash: hash, signer_id: signerId }),
+        });
+        if (response.ok) return;
+      }
       await fetch(`${api}/api/indexer/sync`, { method: 'POST' });
     } catch {
       // The daily Vercel cron remains the fallback when on-demand sync is unavailable.
@@ -281,9 +292,9 @@ export default function NearDemoClient() {
     setBusy(true);
     setNotice('Confirm the transaction in your NEAR wallet…');
     try {
-      await wallet.signAndSendTransaction({ receiverId: launchpad, actions: [{ type: 'FunctionCall', params: { methodName, args, gas: '150000000000000', deposit } }] });
+      const result = await wallet.signAndSendTransaction({ receiverId: launchpad, actions: [{ type: 'FunctionCall', params: { methodName, args, gas: '150000000000000', deposit } }] });
       setNotice('Transaction submitted. Waiting for finalized indexer data…');
-      await syncIndexer();
+      await syncIndexer(result, wallet.accountId);
       await Promise.all([load(), refreshWalletData()]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Transaction failed.');
@@ -370,10 +381,10 @@ export default function NearDemoClient() {
       const minimumOut = (BigInt(quoted) * 9_900n / 10_000n).toString();
       const message = side === 'buy' ? { action: 'buy', token_id: selected, min_tokens_out: minimumOut } : { action: 'sell', token_id: selected, min_usdc_out: minimumOut };
       setNotice('Confirm the transfer-call transaction in your wallet…');
-      await wallet.signAndSendTransaction({ receiverId: side === 'buy' ? usdc : selected, actions: [{ type: 'FunctionCall', params: { methodName: 'ft_transfer_call', args: { receiver_id: launchpad, amount: rawAmount.toString(), msg: JSON.stringify(message) }, gas: '150000000000000', deposit: '1' } }] });
+      const result = await wallet.signAndSendTransaction({ receiverId: side === 'buy' ? usdc : selected, actions: [{ type: 'FunctionCall', params: { methodName: 'ft_transfer_call', args: { receiver_id: launchpad, amount: rawAmount.toString(), msg: JSON.stringify(message) }, gas: side === 'buy' ? '250000000000000' : '150000000000000', deposit: '1' } }] });
       if (side === 'sell') setSellerClaimable((current) => (BigInt(current) + BigInt(quoted)).toString());
       setNotice(side === 'buy' ? 'Buy submitted. Refreshing indexed data…' : 'Sell submitted. Claim the resulting USDC proceeds after it finalizes.');
-      await syncIndexer();
+      await syncIndexer(result, wallet.accountId);
       await Promise.all([load(), refreshWalletData()]);
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Trade failed.');
