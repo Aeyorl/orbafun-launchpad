@@ -52,8 +52,10 @@ async function viewContract<T>(contractId: string, methodName: string, args: Rec
 export default function NearDemoClient() {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [account, setAccount] = useState('');
+  const [walletBusy, setWalletBusy] = useState(false);
   const [tokens, setTokens] = useState<Token[]>([]);
   const connectorRef = useRef<NearConnector | null>(null);
+  const connectorInitRef = useRef<Promise<NearConnector> | null>(null);
   const [selected, setSelected] = useState('');
   const [balance, setBalance] = useState('—');
   const [tokenBalance, setTokenBalance] = useState('—');
@@ -141,41 +143,87 @@ export default function NearDemoClient() {
     return () => { cancelled = true; };
   }, [account, selected]);
 
-  function setConnectedWallet(connector: NearConnector, accountId: string) {
-    void connector.wallet().then((selectedWallet) => {
-      setAccount(accountId);
-      setWallet({
-        accountId,
-        signOut: async () => { await selectedWallet.signOut({ network: 'testnet' }); await connector.disconnect(selectedWallet); },
-        signAndSendTransaction: ({ receiverId, actions }) => selectedWallet.signAndSendTransaction({
-          receiverId,
-          actions: actions.map((action) => ({
-            enum: 'functionCall',
-            functionCall: {
-              methodName: action.params.methodName,
-              args: new TextEncoder().encode(JSON.stringify(action.params.args)),
-              gas: BigInt(action.params.gas),
-              deposit: BigInt(action.params.deposit),
-            },
-          })),
-        }),
-      });
-    }).catch((error: unknown) => setNotice(error instanceof Error ? error.message : 'Could not load the selected wallet.'));
+  function setConnectedWallet(connector: NearConnector, selectedWallet: Awaited<ReturnType<NearConnector['wallet']>>, accountId: string) {
+    setAccount(accountId);
+    setWallet({
+      accountId,
+      signOut: () => connector.disconnect(selectedWallet),
+      signAndSendTransaction: ({ receiverId, actions }) => selectedWallet.signAndSendTransaction({
+        receiverId,
+        actions: actions.map((action) => ({
+          enum: 'functionCall',
+          functionCall: {
+            methodName: action.params.methodName,
+            args: new TextEncoder().encode(JSON.stringify(action.params.args)),
+            gas: BigInt(action.params.gas),
+            deposit: BigInt(action.params.deposit),
+          },
+        })),
+      }),
+    });
   }
 
+  function getConnector() {
+    if (connectorRef.current) return Promise.resolve(connectorRef.current);
+    if (!connectorInitRef.current) {
+      connectorInitRef.current = import('@hot-labs/near-connect').then(({ NearConnector }) => {
+        const connector = new NearConnector({ network: 'testnet', autoConnect: false });
+        connector.on('wallet:signIn', ({ wallet: selectedWallet, accounts }) => {
+          const signedIn = accounts[0];
+          if (signedIn) setConnectedWallet(connector, selectedWallet, signedIn.accountId);
+        });
+        connector.on('wallet:signOut', () => {
+          setWallet(null);
+          setAccount('');
+        });
+        connectorRef.current = connector;
+        return connector;
+      }).finally(() => { connectorInitRef.current = null; });
+    }
+    return connectorInitRef.current;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    void getConnector().then(async (connector) => {
+      await connector.whenManifestLoaded;
+      try {
+        const { wallet: selectedWallet, accounts } = await connector.getConnectedWallet();
+        if (!cancelled && accounts[0]) setConnectedWallet(connector, selectedWallet, accounts[0].accountId);
+      } catch {
+        // No previously connected testnet wallet is a normal first-visit state.
+      }
+    }).catch((error: unknown) => {
+      if (!cancelled) setNotice(error instanceof Error ? error.message : 'Could not load NEAR wallets.');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   async function connect() {
+    setWalletBusy(true);
+    setNotice('Loading NEAR testnet wallets…');
     try {
-      const { NearConnector } = await import('@hot-labs/near-connect');
-      const connector = connectorRef.current ?? new NearConnector({ network: 'testnet' });
-      connectorRef.current = connector;
-      connector.removeAllListeners('wallet:signIn');
-      connector.on('wallet:signIn', ({ accounts }) => {
-        const signedIn = accounts[0];
-        if (signedIn) setConnectedWallet(connector, signedIn.accountId);
-      });
+      const connector = await getConnector();
+      await connector.whenManifestLoaded;
       await connector.connect();
+      setNotice('NEAR testnet wallet connected.');
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Wallet connection failed.');
+    } finally {
+      setWalletBusy(false);
+    }
+  }
+
+  async function disconnect() {
+    if (!wallet) return;
+    setWalletBusy(true);
+    try {
+      await wallet.signOut();
+      setNotice('Wallet disconnected.');
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Wallet disconnect failed.');
+    } finally {
+      setWalletBusy(false);
     }
   }
 
@@ -289,7 +337,7 @@ export default function NearDemoClient() {
   const claimableUsdc = Number(sellerClaimable) / 1e6;
 
   return <main className="mx-auto min-h-screen max-w-6xl px-5 py-12 text-white md:px-8">
-    <div className="mb-10 flex flex-wrap items-end justify-between gap-5"><div><p className="mb-2 text-sm uppercase tracking-[0.2em] text-emerald-300">Orba · NEAR testnet</p><h1 className="font-serif text-4xl md:text-6xl">Milestones with consequences.</h1><p className="mt-3 max-w-2xl text-white/60">Reserved supply burns and fixed-recipient treasury unlocks, indexed from NEAR testnet.</p></div><button className="rounded-full bg-white px-5 py-3 font-semibold text-black" onClick={account ? async () => { await wallet?.signOut(); setAccount(''); setWallet(null); } : connect}>{account || 'Connect NEAR wallet'}</button></div>
+    <div className="mb-10 flex flex-wrap items-end justify-between gap-5"><div><p className="mb-2 text-sm uppercase tracking-[0.2em] text-emerald-300">Orba · NEAR testnet</p><h1 className="font-serif text-4xl md:text-6xl">Milestones with consequences.</h1><p className="mt-3 max-w-2xl text-white/60">Reserved supply burns and fixed-recipient treasury unlocks, indexed from NEAR testnet.</p></div><button type="button" className="rounded-full bg-white px-5 py-3 font-semibold text-black disabled:cursor-wait disabled:opacity-60" onClick={account ? () => void disconnect() : () => void connect()} disabled={walletBusy} aria-label={account ? `Disconnect NEAR wallet ${account}` : 'Connect NEAR testnet wallet'} title={account || undefined}>{walletBusy ? (account ? 'Disconnecting…' : 'Connecting…') : account ? `${account.slice(0, 8)}…${account.slice(-8)} · Disconnect` : 'Connect NEAR wallet'}</button></div>
     {notice && <p role="status" className="mb-6 border border-white/15 p-4 text-sm text-white/80">{notice}</p>}
     {!launchpad && <p className="mb-6 border border-amber-300/30 bg-amber-300/5 p-4 text-sm text-amber-100">Demo configuration is incomplete. Set `NEXT_PUBLIC_NEAR_LAUNCHPAD_ID`, `NEXT_PUBLIC_NEAR_USDC_ID`, and `NEXT_PUBLIC_NEAR_API_URL` after testnet deployment.</p>}
     <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
