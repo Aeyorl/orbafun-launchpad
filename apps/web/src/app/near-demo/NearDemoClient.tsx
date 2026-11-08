@@ -53,6 +53,9 @@ export default function NearDemoClient() {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [account, setAccount] = useState('');
   const [walletBusy, setWalletBusy] = useState(false);
+  const accountRef = useRef('');
+  const walletBusyRef = useRef(false);
+  const reconcilingRef = useRef(false);
   const [tokens, setTokens] = useState<Token[]>([]);
   const connectorRef = useRef<NearConnector | null>(null);
   const connectorInitRef = useRef<Promise<NearConnector> | null>(null);
@@ -144,6 +147,7 @@ export default function NearDemoClient() {
   }, [account, selected]);
 
   function setConnectedWallet(connector: NearConnector, selectedWallet: Awaited<ReturnType<NearConnector['wallet']>>, accountId: string) {
+    accountRef.current = accountId;
     setAccount(accountId);
     setWallet({
       accountId,
@@ -173,6 +177,7 @@ export default function NearDemoClient() {
           if (signedIn) setConnectedWallet(connector, selectedWallet, signedIn.accountId);
         });
         connector.on('wallet:signOut', () => {
+          accountRef.current = '';
           setWallet(null);
           setAccount('');
         });
@@ -185,8 +190,40 @@ export default function NearDemoClient() {
 
   useEffect(() => {
     let cancelled = false;
+    let removeFocusListeners = () => {};
     void getConnector().then(async (connector) => {
       await connector.whenManifestLoaded;
+      if (cancelled) return;
+      const reconcileWallet = async () => {
+        if (cancelled || walletBusyRef.current || reconcilingRef.current) return;
+        reconcilingRef.current = true;
+        try {
+          const { wallet: selectedWallet, accounts } = await connector.getConnectedWallet();
+          if (accounts[0]) {
+            setConnectedWallet(connector, selectedWallet, accounts[0].accountId);
+            return;
+          }
+          throw new Error('No connected account');
+        } catch {
+          if (cancelled) return;
+          const hadAccount = Boolean(accountRef.current);
+          accountRef.current = '';
+          setWallet(null);
+          setAccount('');
+          if (hadAccount) setNotice('NEAR wallet session ended. Reconnect your testnet wallet to continue.');
+        } finally {
+          reconcilingRef.current = false;
+        }
+      };
+      const onVisibilityChange = () => {
+        if (document.visibilityState === 'visible') void reconcileWallet();
+      };
+      window.addEventListener('focus', reconcileWallet);
+      document.addEventListener('visibilitychange', onVisibilityChange);
+      removeFocusListeners = () => {
+        window.removeEventListener('focus', reconcileWallet);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+      };
       try {
         const { wallet: selectedWallet, accounts } = await connector.getConnectedWallet();
         if (!cancelled && accounts[0]) setConnectedWallet(connector, selectedWallet, accounts[0].accountId);
@@ -196,10 +233,11 @@ export default function NearDemoClient() {
     }).catch((error: unknown) => {
       if (!cancelled) setNotice(error instanceof Error ? error.message : 'Could not load NEAR wallets.');
     });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; removeFocusListeners(); };
   }, []);
 
   async function connect() {
+    walletBusyRef.current = true;
     setWalletBusy(true);
     setNotice('Loading NEAR testnet wallets…');
     try {
@@ -210,12 +248,14 @@ export default function NearDemoClient() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Wallet connection failed.');
     } finally {
+      walletBusyRef.current = false;
       setWalletBusy(false);
     }
   }
 
   async function disconnect() {
     if (!wallet) return;
+    walletBusyRef.current = true;
     setWalletBusy(true);
     try {
       await wallet.signOut();
@@ -223,6 +263,7 @@ export default function NearDemoClient() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Wallet disconnect failed.');
     } finally {
+      walletBusyRef.current = false;
       setWalletBusy(false);
     }
   }
@@ -232,6 +273,7 @@ export default function NearDemoClient() {
       setNotice('Connect a NEAR testnet wallet and configure the launchpad account.');
       return;
     }
+    walletBusyRef.current = true;
     setBusy(true);
     setNotice('Confirm the transaction in your NEAR wallet…');
     try {
@@ -242,6 +284,7 @@ export default function NearDemoClient() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Transaction failed.');
     } finally {
+      walletBusyRef.current = false;
       setBusy(false);
     }
   }
@@ -272,6 +315,7 @@ export default function NearDemoClient() {
       setNotice('Connect a wallet and choose a configured token contract.');
       return;
     }
+    walletBusyRef.current = true;
     setBusy(true);
     try {
       const bounds = await viewContract<{ min: string }>(contractId, 'storage_balance_bounds', {});
@@ -281,6 +325,7 @@ export default function NearDemoClient() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Storage registration failed.');
     } finally {
+      walletBusyRef.current = false;
       setBusy(false);
     }
   }
@@ -313,6 +358,7 @@ export default function NearDemoClient() {
       setNotice('Enter an amount above zero.');
       return;
     }
+    walletBusyRef.current = true;
     setBusy(true);
     setNotice('Checking quote…');
     try {
@@ -328,6 +374,7 @@ export default function NearDemoClient() {
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Trade failed.');
     } finally {
+      walletBusyRef.current = false;
       setBusy(false);
     }
   }
@@ -337,7 +384,7 @@ export default function NearDemoClient() {
   const claimableUsdc = Number(sellerClaimable) / 1e6;
 
   return <main className="mx-auto min-h-screen max-w-6xl px-5 py-12 text-white md:px-8">
-    <div className="mb-10 flex flex-wrap items-end justify-between gap-5"><div><p className="mb-2 text-sm uppercase tracking-[0.2em] text-emerald-300">Orba · NEAR testnet</p><h1 className="font-serif text-4xl md:text-6xl">Milestones with consequences.</h1><p className="mt-3 max-w-2xl text-white/60">Reserved supply burns and fixed-recipient treasury unlocks, indexed from NEAR testnet.</p></div><button type="button" className="rounded-full bg-white px-5 py-3 font-semibold text-black disabled:cursor-wait disabled:opacity-60" onClick={account ? () => void disconnect() : () => void connect()} disabled={walletBusy} aria-label={account ? `Disconnect NEAR wallet ${account}` : 'Connect NEAR testnet wallet'} title={account || undefined}>{walletBusy ? (account ? 'Disconnecting…' : 'Connecting…') : account ? `${account.slice(0, 8)}…${account.slice(-8)} · Disconnect` : 'Connect NEAR wallet'}</button></div>
+    <div className="mb-10 flex flex-wrap items-end justify-between gap-5"><div><p className="mb-2 text-sm uppercase tracking-[0.2em] text-emerald-300">Orba · NEAR testnet</p><h1 className="font-serif text-4xl md:text-6xl">Milestones with consequences.</h1><p className="mt-3 max-w-2xl text-white/60">Reserved supply burns and fixed-recipient treasury unlocks, indexed from NEAR testnet.</p></div><button type="button" className="rounded-full bg-white px-5 py-3 font-semibold text-black disabled:cursor-wait disabled:opacity-60" onClick={account ? () => void disconnect() : () => void connect()} disabled={walletBusy || busy} aria-label={account ? `Disconnect NEAR wallet ${account}` : 'Connect NEAR testnet wallet'} title={account || undefined}>{walletBusy ? (account ? 'Disconnecting…' : 'Connecting…') : account ? `${account.slice(0, 8)}…${account.slice(-8)} · Disconnect` : 'Connect NEAR wallet'}</button></div>
     {notice && <p role="status" className="mb-6 border border-white/15 p-4 text-sm text-white/80">{notice}</p>}
     {!launchpad && <p className="mb-6 border border-amber-300/30 bg-amber-300/5 p-4 text-sm text-amber-100">Demo configuration is incomplete. Set `NEXT_PUBLIC_NEAR_LAUNCHPAD_ID`, `NEXT_PUBLIC_NEAR_USDC_ID`, and `NEXT_PUBLIC_NEAR_API_URL` after testnet deployment.</p>}
     <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
