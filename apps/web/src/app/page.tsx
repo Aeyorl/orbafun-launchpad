@@ -21,10 +21,9 @@ export default function HomePage() {
           <Image
             src="/api/images/fd39d93561a41d43b3e144c0e45515f2bc29a577da29f8990325e0b8bcc42b1d"
             alt=""
-            width={176}
-            height={176}
+            fill
             unoptimized
-            className="absolute left-1/2 top-[43%] h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-text-primary bg-bg-card object-cover shadow-[10px_10px_0_rgba(23,33,60,.18)]"
+            className="object-cover"
           />
           <div className="absolute inset-x-6 bottom-5 rounded-xl border border-text-primary bg-bg-card px-5 py-4">
             <strong className="block font-serif text-2xl font-normal text-accent-blue">wifnear · $WIFNEAR</strong>
