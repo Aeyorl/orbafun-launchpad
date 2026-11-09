@@ -58,6 +58,7 @@ struct TradeRow {
     event_index: i32,
     block_height: i64,
     created_at: DateTime<Utc>,
+    block_time: Option<DateTime<Utc>>,
 }
 #[derive(Deserialize)]
 struct Page {
@@ -252,9 +253,15 @@ async fn index_launch(
         .find(|event| event["event"] == "token_created")
         .and_then(|event| event["data"][0]["token_id"].as_str())
         .map(str::to_owned);
-    persist_logs(&app.db, events, &launch.tx_hash, height)
-        .await
-        .map_err(internal)?;
+    persist_logs(
+        &app.db,
+        events,
+        &launch.tx_hash,
+        height,
+        block_time(&block["result"]["header"]),
+    )
+    .await
+    .map_err(internal)?;
     Ok(Json(
         json!({"ok":true,"block_height":height,"created_token":created_token}),
     ))
@@ -295,7 +302,7 @@ async fn get_trades(
 ) -> Result<Json<Value>, StatusCode> {
     let limit = page.limit.unwrap_or(50).clamp(1, 100);
     let offset = page.offset.unwrap_or(0).max(0);
-    let rows=sqlx::query_as::<_,TradeRow>("SELECT token_id,trader,side,usdc_amount::text,token_amount::text,tx_hash,event_index,block_height,created_at FROM trades WHERE token_id=$1 ORDER BY block_height DESC,event_index DESC LIMIT $2 OFFSET $3").bind(id).bind(limit).bind(offset).fetch_all(&app.db).await.map_err(internal)?;
+    let rows=sqlx::query_as::<_,TradeRow>("SELECT token_id,trader,side,usdc_amount::text,token_amount::text,tx_hash,event_index,block_height,created_at,block_time FROM trades WHERE token_id=$1 ORDER BY block_height DESC,event_index DESC LIMIT $2 OFFSET $3").bind(id).bind(limit).bind(offset).fetch_all(&app.db).await.map_err(internal)?;
     Ok(Json(json!({"items":rows,"limit":limit,"offset":offset})))
 }
 async fn get_profile(
@@ -313,7 +320,7 @@ async fn get_profile(
         "SELECT account_id,name,symbol,image_url,graduated FROM tokens WHERE creator=$1 ORDER BY created_block DESC LIMIT 50",
     ).bind(&id).fetch_all(&app.db).await.map_err(internal)?;
     let trades = sqlx::query_as::<_, TradeRow>(
-        "SELECT token_id,trader,side,usdc_amount::text,token_amount::text,tx_hash,event_index,block_height,created_at FROM trades WHERE trader=$1 ORDER BY block_height DESC,event_index DESC LIMIT 50",
+        "SELECT token_id,trader,side,usdc_amount::text,token_amount::text,tx_hash,event_index,block_height,created_at,block_time FROM trades WHERE trader=$1 ORDER BY block_height DESC,event_index DESC LIMIT 50",
     ).bind(&id).fetch_all(&app.db).await.map_err(internal)?;
     Ok(Json(
         json!({"account_id":id,"launches":launches,"trades":trades}),
@@ -514,16 +521,16 @@ async fn indexer_tick_locked(db: &PgPool, rpc: &str, contract: &str, usdc: &str)
         .map(|height| {
             let (client, rpc, contract, usdc) = (&client, &rpc, &contract, &usdc);
             async move {
-                let events = scan_block(client, rpc, contract, usdc, height).await?;
-                Ok::<_, anyhow::Error>((height, events))
+                let (time, events) = scan_block(client, rpc, contract, usdc, height).await?;
+                Ok::<_, anyhow::Error>((height, time, events))
             }
         })
         .buffered(8)
         .try_collect::<Vec<_>>()
         .await?;
-    for (height, transactions) in scanned_blocks {
+    for (height, time, transactions) in scanned_blocks {
         for transaction in transactions {
-            persist_logs(db, transaction.events, &transaction.tx_hash, height).await?;
+            persist_logs(db, transaction.events, &transaction.tx_hash, height, time).await?;
         }
     }
     sqlx::query("INSERT INTO indexer_state(name,last_block) VALUES('near',$1) ON CONFLICT(name) DO UPDATE SET last_block=EXCLUDED.last_block,updated_at=NOW()").bind(limit).execute(db).await?;
@@ -535,7 +542,7 @@ async fn scan_block(
     contract: &str,
     usdc: &str,
     height: i64,
-) -> Result<Vec<IndexedTransactionLogs>> {
+) -> Result<(Option<DateTime<Utc>>, Vec<IndexedTransactionLogs>)> {
     let block: RpcResponse = client
         .post(rpc)
         .json(&json!({"jsonrpc":"2.0","id":"orba","method":"block","params":{"block_id":height}}))
@@ -640,7 +647,17 @@ async fn scan_block(
             }
         }
     }
-    Ok(indexed)
+    Ok((block_time(&block["header"]), indexed))
+}
+
+fn block_time(header: &Value) -> Option<DateTime<Utc>> {
+    let timestamp = &header["timestamp_nanosec"];
+    timestamp
+        .as_str()
+        .and_then(|value| value.parse::<i64>().ok())
+        .or_else(|| timestamp.as_i64())
+        .filter(|value| *value > 0)
+        .map(DateTime::from_timestamp_nanos)
 }
 struct IndexedTransactionLogs {
     tx_hash: String,
@@ -739,7 +756,13 @@ fn collect_logs(value: &Value) -> Vec<Value> {
     walk(value, &mut output);
     output
 }
-async fn persist_logs(db: &PgPool, events: Vec<Value>, tx: &str, height: i64) -> Result<()> {
+async fn persist_logs(
+    db: &PgPool,
+    events: Vec<Value>,
+    tx: &str,
+    height: i64,
+    time: Option<DateTime<Utc>>,
+) -> Result<()> {
     let mut transaction = db.begin().await?;
     for (idx, event) in events.into_iter().enumerate() {
         let data = &event["data"][0];
@@ -758,6 +781,10 @@ async fn persist_logs(db: &PgPool, events: Vec<Value>, tx: &str, height: i64) ->
                 let inserted = sqlx::query("INSERT INTO trades(token_id,trader,side,usdc_amount,token_amount,tx_hash,event_index,block_height) VALUES($1,$2,$3,$4::text::numeric,$5::text::numeric,$6,$7,$8) ON CONFLICT(tx_hash,event_index) DO NOTHING").bind(token).bind(trader).bind(side).bind(decimal(&data["usdc_amount"])).bind(decimal(&data["tokens_out"])).bind(tx).bind(idx as i32).bind(height).execute(&mut *transaction).await?;
                 if inserted.rows_affected() > 0 {
                     update_token_snapshot(&mut transaction, token, data, height).await?;
+                }
+                if let Some(time) = time {
+                    sqlx::query("UPDATE trades SET block_time=$3 WHERE tx_hash=$1 AND event_index=$2 AND block_time IS NULL")
+                        .bind(tx).bind(idx as i32).bind(time).execute(&mut *transaction).await?;
                 }
             }
             "milestone" => {

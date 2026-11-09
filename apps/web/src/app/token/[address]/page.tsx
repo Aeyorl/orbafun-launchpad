@@ -23,7 +23,7 @@ type Token = {
   graduated: boolean;
   preset: { thresholds: string[]; burn_bps: number[]; treasury_unlock_bps: number[] };
 };
-type Trade = { created_at: string; trader: string; side: string; usdc_amount: string; token_amount: string; tx_hash: string; block_height: number; event_index: number };
+type Trade = { created_at: string; block_time?: string | null; trader: string; side: string; usdc_amount: string; token_amount: string; tx_hash: string; block_height: number; event_index: number };
 type Mechanics = {
   milestones: [number, string, string, string, string, number, number][];
   claims?: [string, string, number, number][];

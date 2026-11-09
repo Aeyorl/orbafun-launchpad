@@ -6,6 +6,7 @@ import type { CandlestickData, HistogramData, IChartApi, ISeriesApi, UTCTimestam
 
 type ChartTrade = {
   created_at: string;
+  block_time?: string | null;
   block_height: number;
   event_index: number;
   usdc_amount: string;
@@ -17,19 +18,20 @@ const intervals = [['1m', 60], ['5m', 300], ['15m', 900], ['1h', 3600], ['1D', 8
 export default function PriceChart({ trades }: { trades: ChartTrade[] }) {
   const [bucket, setBucket] = useState<number>(300);
   const [chartType, setChartType] = useState<'candles' | 'line'>('candles');
+  const [showVolume, setShowVolume] = useState(true);
   const container = useRef<HTMLDivElement>(null);
   const series = useRef<{ chart: IChartApi; price: ISeriesApi<'Candlestick'>; line: ISeriesApi<'Line'>; volume: ISeriesApi<'Histogram'> } | null>(null);
   const bars = useMemo(() => {
     const groups = new Map<UTCTimestamp, { candle: CandlestickData<UTCTimestamp>; volume: number }>();
-    const ordered = [...trades].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at)
+    const ordered = [...trades].sort((a, b) => Date.parse(a.block_time ?? a.created_at) - Date.parse(b.block_time ?? b.created_at)
       || a.block_height - b.block_height || a.event_index - b.event_index);
     for (const trade of ordered) {
-      const indexedAt = Date.parse(trade.created_at);
+      const tradeTime = Date.parse(trade.block_time ?? trade.created_at);
       const usdc = Number(trade.usdc_amount) / 1e6;
       const tokens = Number(trade.token_amount) / 1e18;
       const price = usdc / tokens;
-      if (!Number.isFinite(indexedAt) || !Number.isFinite(price) || price <= 0) continue;
-      const time = (Math.floor(indexedAt / (bucket * 1000)) * bucket) as UTCTimestamp;
+      if (!Number.isFinite(tradeTime) || !Number.isFinite(price) || price <= 0) continue;
+      const time = (Math.floor(tradeTime / (bucket * 1000)) * bucket) as UTCTimestamp;
       const bar = groups.get(time);
       if (bar) {
         bar.candle.high = Math.max(bar.candle.high, price);
@@ -98,7 +100,8 @@ export default function PriceChart({ trades }: { trades: ChartTrade[] }) {
   useEffect(() => {
     series.current?.price.applyOptions({ visible: chartType === 'candles' });
     series.current?.line.applyOptions({ visible: chartType === 'line' });
-  }, [chartType, hasBars]);
+    series.current?.volume.applyOptions({ visible: showVolume });
+  }, [chartType, showVolume, hasBars]);
 
   const lastPrice = bars.at(-1)?.candle.close;
 
@@ -114,13 +117,14 @@ export default function PriceChart({ trades }: { trades: ChartTrade[] }) {
       </div>
       {hasBars && <div className="flex flex-wrap gap-1" aria-label="Chart display">
         {(['candles', 'line'] as const).map((style) => <button key={style} type="button" className={`tab capitalize ${chartType === style ? 'tab-active' : ''}`} aria-pressed={chartType === style} onClick={() => setChartType(style)}>{style}</button>)}
+        <button type="button" className={`tab ${showVolume ? 'tab-active' : ''}`} aria-pressed={showVolume} onClick={() => setShowVolume((visible) => !visible)}>Volume</button>
         <button type="button" className="tab" onClick={() => series.current?.chart.timeScale().fitContent()}>Fit chart</button>
       </div>}
     </div>
     {hasBars ? <div ref={container} className="h-[320px] w-full md:h-[430px]" aria-label="USDC price candles and trade volume" />
       : <p className="py-10 text-center text-text-secondary">No indexed trades to chart yet.</p>}
     <p className="mt-3 text-xs text-text-secondary">
-      USDC per token from the latest indexed trades, grouped by index time. Chart by{' '}
+      USDC per token. Candles use NEAR block time when available. Chart by{' '}
       <a className="underline" href="https://www.tradingview.com/" target="_blank" rel="noreferrer">TradingView</a>.
     </p>
   </section>;
