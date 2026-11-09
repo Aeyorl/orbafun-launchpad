@@ -181,7 +181,7 @@ async fn run_indexer(
     indexer_tick(&app.db, &rpc, &contract, &usdc, false)
         .await
         .map(Json)
-        .map_err(internal)
+        .map_err(indexer_error)
 }
 
 async fn sync_indexer(State(app): State<App>) -> Result<Json<Value>, StatusCode> {
@@ -191,7 +191,22 @@ async fn sync_indexer(State(app): State<App>) -> Result<Json<Value>, StatusCode>
     indexer_tick(&app.db, &rpc, &contract, &usdc, true)
         .await
         .map(Json)
-        .map_err(internal)
+        .map_err(indexer_error)
+}
+
+fn indexer_error(error: anyhow::Error) -> StatusCode {
+    if let Some(transport) = error.downcast_ref::<reqwest::Error>() {
+        eprintln!(
+            "NEAR indexer RPC request failed: status={:?}, timeout={}, connect={}, decode={}",
+            transport.status(),
+            transport.is_timeout(),
+            transport.is_connect(),
+            transport.is_decode()
+        );
+        return StatusCode::BAD_GATEWAY;
+    }
+    eprintln!("NEAR indexer failed: {error:#}");
+    StatusCode::INTERNAL_SERVER_ERROR
 }
 
 async fn indexer_status(State(app): State<App>) -> Result<Json<Value>, StatusCode> {
