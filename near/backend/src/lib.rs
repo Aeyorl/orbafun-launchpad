@@ -110,6 +110,7 @@ pub async fn app_router_with_indexer(enable_indexer: bool) -> Result<Router> {
         .route("/api/images", post(upload_image))
         .route("/api/images/{id}", get(get_image))
         .route("/api/cron/indexer", get(run_indexer))
+        .route("/api/indexer/status", get(indexer_status))
         .route("/api/indexer/sync", post(sync_indexer))
         .route("/api/indexer/launch", post(index_launch))
         .route("/api/indexer/transaction", post(index_launch))
@@ -191,6 +192,19 @@ async fn sync_indexer(State(app): State<App>) -> Result<Json<Value>, StatusCode>
         .await
         .map(Json)
         .map_err(internal)
+}
+
+async fn indexer_status(State(app): State<App>) -> Result<Json<Value>, StatusCode> {
+    let checkpoint = sqlx::query_as::<_, (i64, DateTime<Utc>)>(
+        "SELECT last_block,updated_at FROM indexer_state WHERE name='near'",
+    )
+    .fetch_optional(&app.db)
+    .await
+    .map_err(internal)?;
+    Ok(Json(match checkpoint {
+        Some((height, updated_at)) => json!({"last_block":height,"updated_at":updated_at}),
+        None => json!({"last_block":null,"updated_at":null}),
+    }))
 }
 
 #[derive(Deserialize)]
@@ -478,8 +492,10 @@ async fn indexer_tick(
 
 async fn indexer_tick_locked(db: &PgPool, rpc: &str, contract: &str, usdc: &str) -> Result<Value> {
     let client = Client::builder().timeout(Duration::from_secs(12)).build()?;
-    let archival_rpc = env::var("NEAR_ARCHIVAL_RPC_URL")
-        .unwrap_or_else(|_| "https://archival-rpc.testnet.fastnear.com".into());
+    let configured_archive = env::var("NEAR_ARCHIVAL_RPC_URL").ok();
+    let archival_rpc = configured_archive
+        .as_deref()
+        .unwrap_or("https://archival-rpc.testnet.near.org");
     let height: Value = client
         .post(rpc)
         .json(&json!({"jsonrpc":"2.0","id":"orba","method":"block","params":{"finality":"final"}}))
@@ -517,17 +533,17 @@ async fn indexer_tick_locked(db: &PgPool, rpc: &str, contract: &str, usdc: &str)
         .and_then(|s| s.parse::<i64>().ok())
         .filter(|n| *n > 0)
         .unwrap_or(25)
-        .min(500);
+        .min(if configured_archive.is_some() { 500 } else { 3 });
     let limit = last.saturating_add(batch_blocks).min(block);
     let scanned_blocks = stream::iter((last + 1)..=limit)
         .map(|height| {
-            let (client, rpc, contract, usdc) = (&client, archival_rpc.as_str(), &contract, &usdc);
+            let (client, rpc, contract, usdc) = (&client, archival_rpc, &contract, &usdc);
             async move {
                 let (time, events) = scan_block(client, rpc, contract, usdc, height, block).await?;
                 Ok::<_, anyhow::Error>((height, time, events))
             }
         })
-        .buffered(8)
+        .buffered(if configured_archive.is_some() { 8 } else { 2 })
         .try_collect::<Vec<_>>()
         .await?;
     for (height, time, transactions) in scanned_blocks {
@@ -583,7 +599,7 @@ async fn scan_block(
                 format!("NEAR RPC returned no data for chunk {chunk_hash} at block {height}")
             })
         })
-        .buffered(10)
+        .buffered(3)
         .try_collect::<Vec<_>>()
         .await?;
     let mut indexed = Vec::new();
