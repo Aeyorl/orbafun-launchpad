@@ -58,7 +58,7 @@ a swap. After building both contract WASM artifacts, run it with:
 cargo test --locked --manifest-path near/sandbox-tests/Cargo.toml graduates_into_rhea_and_swaps -- --ignored
 ```
 
-The live contract upgrade and website swap wiring are pending.
+The testnet contract upgrade was deployed without reinitializing state. Its deployment transaction is `9H2drSzaqRaLjPqcQVK5669TshT93LNGywo7AHRyufLh`. No graduated pool has been funded through the live launchpad yet.
 
 ## Network and scope
 

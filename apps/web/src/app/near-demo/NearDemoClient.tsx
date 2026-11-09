@@ -14,6 +14,21 @@ type Wallet = {
   }) => Promise<unknown>;
   signOut: () => Promise<void>;
 };
+const rhea = 'ref-finance-101.testnet';
+const dexDeposits: Record<string, string> = {
+  exchange_storage: '20000000000000000000000',
+  token_storage: '1250000000000000000000',
+  usdc_storage: '1250000000000000000000',
+  register_tokens: '1',
+  create_pool: '100000000000000000000000',
+  deposit_token: '1',
+  deposit_usdc: '1',
+  add_liquidity: '10000000000000000000000',
+  verify_shares: '0',
+};
+type DexMigration = { step: string; pending: boolean; pool_id: number | null };
+type DexStatus = { tokenId: string; eligible: boolean; migration: DexMigration | null };
+
 type Token = {
   account_id: string;
   name: string;
@@ -88,6 +103,29 @@ export default function NearDemoClient({ mode = 'demo', tokenId = '' }: { mode?:
   const [amount, setAmount] = useState('1');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [dexStatus, setDex] = useState<DexStatus | null>(null);
+  const dex = dexStatus?.tokenId === selected ? dexStatus : null;
+  const graduated = mode === 'trade' && tokens.some((item) => item.account_id === selected && item.graduated);
+
+  useEffect(() => {
+    if (!graduated || !selected) return;
+    let cancelled = false;
+    async function refreshDex() {
+      try {
+        const args = { token_id: selected };
+        const [allocations, migration] = await Promise.all([
+          viewContract<[string, string, string]>(launchpad, 'get_supply_allocations', args),
+          viewContract<DexMigration | null>(launchpad, 'get_dex_migration', args),
+        ]);
+        if (!cancelled) setDex({ tokenId: selected, eligible: BigInt(allocations[2]) > 0n, migration });
+      } catch {
+        if (!cancelled) setDex(null);
+      }
+    }
+    void refreshDex();
+    const timer = window.setInterval(refreshDex, 5000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [graduated, selected]);
 
   async function load() {
     if (mode === 'launch') return;
@@ -310,6 +348,13 @@ export default function NearDemoClient({ mode = 'demo', tokenId = '' }: { mode?:
     setNotice('Confirm the transaction in your NEAR wallet…');
     try {
       const result = await wallet.signAndSendTransaction({ receiverId: launchpad, actions: [{ type: 'FunctionCall', params: { methodName, args, gas: '150000000000000', deposit } }] });
+      if (methodName === 'advance_dex_migration') {
+        const outcome = result as { transaction?: { hash?: string }; status?: { Failure?: unknown } } | null;
+        if (outcome?.status?.Failure) throw new Error('RHEA migration transaction failed.');
+        if (outcome?.transaction?.hash) setLastTransaction(outcome.transaction.hash);
+        setNotice('Migration step submitted. On-chain progress refreshes automatically.');
+        return;
+      }
       setNotice('Transaction submitted. Waiting for finalized indexer data…');
       const indexed = await syncIndexer(result, wallet.accountId);
       if (methodName === 'create_token' && indexed?.created_token) {
@@ -423,7 +468,17 @@ export default function NearDemoClient({ mode = 'demo', tokenId = '' }: { mode?:
     setBusy(true);
     setNotice('Checking quote…');
     try {
-      const quoted = await viewContract<string>(launchpad, side === 'buy' ? 'quote_buy' : 'quote_sell', side === 'buy' ? { token_id: selected, usdc_amount: rawAmount.toString() } : { token_id: selected, token_amount: rawAmount.toString() });
+      const poolId = dex?.migration?.step === 'complete' ? dex.migration.pool_id : null;
+      if (graduated && poolId === null) throw new Error('The RHEA pool is not ready.');
+      const tokenIn = side === 'buy' ? usdc : selected;
+      const tokenOut = side === 'buy' ? selected : usdc;
+      const swap = { pool_id: poolId, token_in: tokenIn, token_out: tokenOut, amount_in: rawAmount.toString() };
+      let quoted: string;
+      if (poolId !== null) {
+        quoted = await viewContract<string>(rhea, 'get_return', swap);
+      } else {
+        quoted = await viewContract<string>(launchpad, side === 'buy' ? 'quote_buy' : 'quote_sell', side === 'buy' ? { token_id: selected, usdc_amount: rawAmount.toString() } : { token_id: selected, token_amount: rawAmount.toString() });
+      }
       if (BigInt(quoted) <= 0n) throw new Error('This amount is too small to trade.');
       if (mode === 'trade') {
         const inputToken = side === 'buy' ? usdc : selected;
@@ -438,10 +493,21 @@ export default function NearDemoClient({ mode = 'demo', tokenId = '' }: { mode?:
           if (!await viewContract(contractId, 'storage_balance_of', args)) throw new Error('Storage registration has not settled. Check your wallet before retrying.');
         }
       }
-      const minimumOut = (BigInt(quoted) * 9_900n / 10_000n).toString();
-      const message = side === 'buy' ? { action: 'buy', token_id: selected, min_tokens_out: minimumOut } : { action: 'sell', token_id: selected, min_usdc_out: minimumOut };
+      const minimum = BigInt(quoted) * 9_900n / 10_000n;
+      const minimumOut = (minimum > 0n ? minimum : 1n).toString();
+      const message = poolId !== null
+        ? { force: 0, actions: [{ ...swap, min_amount_out: minimumOut }] }
+        : side === 'buy' ? { action: 'buy', token_id: selected, min_tokens_out: minimumOut } : { action: 'sell', token_id: selected, min_usdc_out: minimumOut };
       setNotice(`Estimated receive: ${(Number(quoted) / (side === 'buy' ? 1e18 : 1e6)).toLocaleString(undefined, { maximumFractionDigits: 6 })} ${side === 'buy' ? token?.symbol ?? 'tokens' : 'USDC'}. Confirm in your wallet.`);
-      const result = await wallet.signAndSendTransaction({ receiverId: side === 'buy' ? usdc : selected, actions: [{ type: 'FunctionCall', params: { methodName: 'ft_transfer_call', args: { receiver_id: launchpad, amount: rawAmount.toString(), msg: JSON.stringify(message) }, gas: side === 'buy' ? '250000000000000' : '150000000000000', deposit: '1' } }] });
+      const result = await wallet.signAndSendTransaction({ receiverId: side === 'buy' ? usdc : selected, actions: [{ type: 'FunctionCall', params: { methodName: 'ft_transfer_call', args: { receiver_id: poolId === null ? launchpad : rhea, amount: rawAmount.toString(), msg: JSON.stringify(message) }, gas: poolId !== null || side === 'buy' ? '250000000000000' : '150000000000000', deposit: '1' } }] });
+      if (poolId !== null) {
+        const outcome = result as { transaction?: { hash?: string }; status?: { Failure?: unknown } } | null;
+        if (outcome?.status?.Failure) throw new Error('RHEA swap transaction failed.');
+        if (outcome?.transaction?.hash) setLastTransaction(outcome.transaction.hash);
+        setNotice('RHEA swap submitted. Check the transaction and wallet balances for settlement.');
+        await refreshWalletData();
+        return;
+      }
       setNotice(side === 'buy' ? 'Buy submitted. Refreshing indexed data…' : 'Sell submitted. Claim the resulting USDC proceeds after it finalizes.');
       const indexed = await syncIndexer(result, wallet.accountId);
       if (indexed) setNotice(side === 'buy' ? 'Buy confirmed and indexed.' : 'Sell confirmed. Your USDC proceeds are available to claim.');
@@ -494,7 +560,18 @@ export default function NearDemoClient({ mode = 'demo', tokenId = '' }: { mode?:
   if (mode === 'trade') return <section className="card mt-8 space-y-4" id="trade">
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-xl font-semibold">Trade {token?.symbol}</h2>{walletButton}</div>
     {account && <p className="break-all text-sm text-text-secondary">{account} · {balance} USDC · {tokenBalance} {token?.symbol}</p>}
-    {token?.graduated ? <p>Bonding curve trading has ended for this token.</p> : <>
+    {token?.graduated && dex?.migration?.step !== 'complete' ? <div className="space-y-2">
+      <p>Bonding curve trading has ended for this token.</p>
+      {dex === null && <p className="text-sm text-text-secondary">RHEA migration status unavailable.</p>}
+      {dex?.eligible && <>
+        <p className="text-sm text-text-secondary">RHEA pool setup · {(dex.migration?.step ?? 'exchange_storage').replaceAll('_', ' ')}</p>
+        <button className="btn-primary disabled:opacity-40" disabled={!account || busy || dex.migration?.pending}
+          onClick={() => void call('advance_dex_migration', { token_id: token.account_id }, dexDeposits[dex.migration?.step ?? 'exchange_storage'])}>
+          {dex.migration?.pending ? 'Migration step pending' : 'Advance pool setup'}
+        </button>
+      </>}
+    </div> : <>
+      {token?.graduated && <p>Trading on RHEA · Pool #{dex?.migration?.pool_id}</p>}
       <label className="block">Amount <span className="text-sm text-text-secondary">(USDC to buy, tokens to sell)</span>
         <input className="input mt-1 w-full" inputMode="decimal" value={amount} onChange={(event) => setAmount(event.target.value)} />
       </label>

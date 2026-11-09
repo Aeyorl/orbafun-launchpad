@@ -658,5 +658,47 @@ async fn graduates_into_rhea_and_swaps() -> Result<()> {
         .await?
         .json()?;
     assert_eq!(deposits[f.token_id.as_str()], quoted);
+
+    let balance = |account_id| json!({ "account_id": account_id });
+    let before: String = f
+        .worker
+        .view(&f.token_id, "ft_balance_of")
+        .args_json(balance(f.buyer.id()))
+        .await?
+        .json()?;
+    let quoted: String = exchange
+        .view("get_return")
+        .args_json(json!({
+            "pool_id":pool_id,"token_in":f.usdc.id(),"amount_in":"1000000","token_out":f.token_id
+        }))
+        .await?
+        .json()?;
+    let swap_message = json!({"force":0,"actions":[{
+        "pool_id":pool_id,"token_in":f.usdc.id(),"amount_in":"1000000",
+        "token_out":f.token_id,"min_amount_out":quoted
+    }]});
+    let used: String = f
+        .buyer
+        .call(f.usdc.id(), "ft_transfer_call")
+        .args_json(
+            json!({"receiver_id":exchange.id(),"amount":"1000000","msg":swap_message.to_string()}),
+        )
+        .deposit(NearToken::from_yoctonear(1))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+    assert_eq!(used, "1000000");
+    let after: String = f
+        .worker
+        .view(&f.token_id, "ft_balance_of")
+        .args_json(balance(f.buyer.id()))
+        .await?
+        .json()?;
+    assert_eq!(
+        after.parse::<u128>()? - before.parse::<u128>()?,
+        quoted.parse::<u128>()?
+    );
     Ok(())
 }
