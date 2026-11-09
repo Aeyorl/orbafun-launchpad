@@ -22,6 +22,9 @@
 # Shell scripts — always LF (must be LF to execute)
 *.sh text eol=lf
 
+# SQLx verifies migration checksums against exact file bytes.
+near/backend/migrations/*.sql text eol=lf
+
 # Batch scripts — always CRLF
 *.bat text eol=crlf
 *.cmd text eol=crlf
