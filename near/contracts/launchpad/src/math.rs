@@ -2,6 +2,8 @@
 pub const ONE: u128 = 10u128.pow(18);
 pub const TOTAL_SUPPLY: u128 = 1_000_000_000 * ONE;
 pub const CURVE_SUPPLY: u128 = 880_000_000 * ONE;
+pub const DEX_SUPPLY: u128 = 80_000_000 * ONE;
+pub const NEW_CURVE_SUPPLY: u128 = CURVE_SUPPLY - DEX_SUPPLY;
 pub const RESERVED_SUPPLY: u128 = 120_000_000 * ONE;
 pub const VIRTUAL_USDC: u128 = 5_866_666_700;
 pub const VIRTUAL_TOKENS: u128 = 1_466_666_667 * ONE;
@@ -28,8 +30,18 @@ pub struct SellQuote {
     pub protocol_fee: u128,
 }
 
+#[cfg(test)]
 pub fn quote_buy(real_usdc: u128, tokens_sold: u128, amount: u128) -> BuyQuote {
-    let accepted_amount = accepted_buy_amount(real_usdc, tokens_sold, amount);
+    quote_buy_with_cap(real_usdc, tokens_sold, amount, CURVE_SUPPLY)
+}
+
+pub fn quote_buy_with_cap(
+    real_usdc: u128,
+    tokens_sold: u128,
+    amount: u128,
+    curve_supply: u128,
+) -> BuyQuote {
+    let accepted_amount = accepted_buy_amount(real_usdc, tokens_sold, amount, curve_supply);
     let fee = fee_for(accepted_amount);
     let creator_fee = fee / 2;
     let protocol_fee = fee - creator_fee;
@@ -40,7 +52,7 @@ pub fn quote_buy(real_usdc: u128, tokens_sold: u128, amount: u128) -> BuyQuote {
         accepted_amount,
         tokens_out: reserve_tokens
             .saturating_sub(new_y)
-            .min(CURVE_SUPPLY.saturating_sub(tokens_sold)),
+            .min(curve_supply.saturating_sub(tokens_sold)),
         fee,
         creator_fee,
         protocol_fee,
@@ -52,8 +64,13 @@ fn fee_for(amount: u128) -> u128 {
     amount / BPS * FEE_BPS + amount % BPS * FEE_BPS / BPS
 }
 
-fn accepted_buy_amount(real_usdc: u128, tokens_sold: u128, requested: u128) -> u128 {
-    let remaining = CURVE_SUPPLY.saturating_sub(tokens_sold);
+fn accepted_buy_amount(
+    real_usdc: u128,
+    tokens_sold: u128,
+    requested: u128,
+    curve_supply: u128,
+) -> u128 {
+    let remaining = curve_supply.saturating_sub(tokens_sold);
     if remaining == 0 || requested == 0 {
         return 0;
     }
@@ -145,6 +162,17 @@ mod tests {
     fn supply_allocation_conserves_total() {
         assert_eq!(CURVE_SUPPLY + RESERVED_SUPPLY, TOTAL_SUPPLY);
     }
+    #[test]
+    fn new_launch_sellout_preserves_dex_inventory_after_full_burn() {
+        let quote = quote_buy_with_cap(0, 0, u128::MAX, NEW_CURVE_SUPPLY);
+        assert_eq!(quote.tokens_out, NEW_CURVE_SUPPLY);
+        assert_eq!(
+            TOTAL_SUPPLY - RESERVED_SUPPLY - quote.tokens_out,
+            DEX_SUPPLY
+        );
+        assert_eq!(quote_buy(0, 0, u128::MAX).tokens_out, CURVE_SUPPLY);
+    }
+
     #[test]
     fn milestone_crossing_is_ordered_and_one_shot() {
         let thresholds = [10, 50, 150];

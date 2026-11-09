@@ -365,6 +365,28 @@ async fn high_volume_triggers_all_burns_and_locks_trading_after_graduation() -> 
         .json()?;
     assert_eq!(supply, "880000000000000000000000000");
 
+    let allocations: (String, String, String) = f
+        .launchpad
+        .view("get_supply_allocations")
+        .args_json(json!({ "token_id": f.token_id }))
+        .await?
+        .json()?;
+    assert_eq!(
+        allocations,
+        (
+            "800000000000000000000000000".into(),
+            "120000000000000000000000000".into(),
+            "80000000000000000000000000".into(),
+        )
+    );
+    let liquidity_inventory: String = f
+        .worker
+        .view(&f.token_id, "ft_balance_of")
+        .args_json(json!({ "account_id": f.launchpad.id() }))
+        .await?
+        .json()?;
+    assert_eq!(liquidity_inventory, allocations.2);
+
     let buyer_usdc_before: String = f
         .usdc
         .view("ft_balance_of")
@@ -423,8 +445,13 @@ async fn oversized_buy_refunds_input_beyond_curve_inventory() -> Result<()> {
         .await?
         .json()?;
     let spent = before.parse::<u128>()? - after.parse::<u128>()?;
-    let state = token_state(&f.launchpad, &f.token_id).await?;
-    assert_eq!(state["tokens_sold"].as_f64(), Some(8.8e26));
+    let buyer_tokens: String = f
+        .worker
+        .view(&f.token_id, "ft_balance_of")
+        .args_json(json!({ "account_id": f.buyer.id() }))
+        .await?
+        .json()?;
+    assert_eq!(buyer_tokens, "800000000000000000000000000");
     assert!(spent < 10_000_000_000_000);
     Ok(())
 }
@@ -511,5 +538,125 @@ async fn creator_and_owner_can_claim_accrued_fees() -> Result<()> {
     let state = token_state(&f.launchpad, &f.token_id).await?;
     assert_eq!(state["creator_fees"], 0);
     assert_eq!(state["protocol_fees"], 0);
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "imports the RHEA exchange bytecode from NEAR testnet"]
+async fn graduates_into_rhea_and_swaps() -> Result<()> {
+    let f = setup("spark").await?;
+    let exchange_id: AccountId = "ref-finance-101.testnet".parse()?;
+    let testnet = near_workspaces::testnet()
+        .rpc_addr("https://near-testnet.drpc.org")
+        .await?;
+    let exchange = f
+        .worker
+        .import_contract(&exchange_id, &testnet)
+        .initial_balance(NearToken::from_near(500))
+        .transact()
+        .await?;
+    exchange
+        .call("new")
+        .args_json(json!({
+            "owner_id": f.creator.id(), "exchange_fee": 0, "referral_fee": 0,
+            "boost_farm_id":f.creator.id(),"burrowland_id":f.creator.id(),"wnear_id":f.usdc.id()
+        }))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+    buy(&f, "12000000000", "1").await?.into_result()?;
+    for deposit in [
+        20_000_000_000_000_000_000_000,
+        1_250_000_000_000_000_000_000,
+        1_250_000_000_000_000_000_000,
+        1,
+        100_000_000_000_000_000_000_000,
+        1,
+        1,
+        10_000_000_000_000_000_000_000,
+        0,
+    ] {
+        let result = f
+            .creator
+            .call(f.launchpad.id(), "advance_dex_migration")
+            .args_json(json!({"token_id":f.token_id}))
+            .deposit(NearToken::from_yoctonear(deposit))
+            .max_gas()
+            .transact()
+            .await?;
+        assert!(
+            result.failures().is_empty(),
+            "migration failed: {result:#?}"
+        );
+        assert!(result.json::<bool>()?);
+    }
+    let migration: Value = f
+        .launchpad
+        .view("get_dex_migration")
+        .args_json(json!({"token_id":f.token_id}))
+        .await?
+        .json()?;
+    assert_eq!(migration["step"], "complete");
+    assert_eq!(migration["seed_usdc"], "1548800007");
+    assert_eq!(migration["retained_usdc"], "5491200030");
+    let pool_id = migration["pool_id"].as_u64().context("pool ID")?;
+    let shares: String = exchange
+        .view("get_pool_shares")
+        .args_json(json!({"pool_id":pool_id,"account_id":f.launchpad.id()}))
+        .await?
+        .json()?;
+    assert_eq!(migration["shares"], shares);
+    assert!(shares.parse::<u128>()? > 0);
+    let quoted: String = exchange
+        .view("get_return")
+        .args_json(json!({
+            "pool_id":pool_id,"token_in":f.usdc.id(),"amount_in":"1000000","token_out":f.token_id
+        }))
+        .await?
+        .json()?;
+    assert!(quoted.parse::<u128>()? > 0);
+    f.buyer
+        .call(exchange.id(), "storage_deposit")
+        .args_json(json!({"account_id":f.buyer.id(),"registration_only":false}))
+        .deposit(NearToken::from_millinear(20))
+        .transact()
+        .await?
+        .into_result()?;
+    f.buyer
+        .call(exchange.id(), "register_tokens")
+        .args_json(json!({"token_ids":[f.usdc.id(),f.token_id]}))
+        .deposit(NearToken::from_yoctonear(1))
+        .transact()
+        .await?
+        .into_result()?;
+    let used: String = f
+        .buyer
+        .call(f.usdc.id(), "ft_transfer_call")
+        .args_json(json!({"receiver_id":exchange.id(),"amount":"1000000","msg":""}))
+        .deposit(NearToken::from_yoctonear(1))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?
+        .json()?;
+    assert_eq!(used, "1000000");
+    f.buyer
+        .call(exchange.id(), "swap")
+        .args_json(json!({"actions":[{
+            "pool_id":pool_id,"token_in":f.usdc.id(),"amount_in":"1000000",
+            "token_out":f.token_id,"min_amount_out":quoted
+        }]}))
+        .deposit(NearToken::from_yoctonear(1))
+        .max_gas()
+        .transact()
+        .await?
+        .into_result()?;
+    let deposits: Value = exchange
+        .view("get_deposits")
+        .args_json(json!({"account_id":f.buyer.id()}))
+        .await?
+        .json()?;
+    assert_eq!(deposits[f.token_id.as_str()], quoted);
     Ok(())
 }

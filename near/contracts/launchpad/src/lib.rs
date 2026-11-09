@@ -1,3 +1,4 @@
+mod dex;
 mod math;
 
 use near_sdk::borsh::{BorshDeserialize, BorshSerialize};
@@ -5,13 +6,25 @@ use near_sdk::collections::{LookupMap, UnorderedMap, UnorderedSet};
 use near_sdk::json_types::U128;
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::{
-    env, ext_contract, near, AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseError,
-    PromiseOrValue,
+    AccountId, Gas, NearToken, PanicOnDefault, Promise, PromiseError, PromiseOrValue, env,
+    ext_contract, near,
 };
 use std::collections::BTreeMap;
 
 const TOTAL: u128 = math::TOTAL_SUPPLY;
 const RESERVED: u128 = math::RESERVED_SUPPLY;
+
+fn dex_allocation_key(token_id: &AccountId) -> Vec<u8> {
+    [b"dex-allocation:".as_slice(), token_id.as_bytes()].concat()
+}
+
+fn curve_supply(token_id: &AccountId) -> u128 {
+    if env::storage_has_key(&dex_allocation_key(token_id)) {
+        math::NEW_CURVE_SUPPLY
+    } else {
+        math::CURVE_SUPPLY
+    }
+}
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone)]
 #[serde(crate = "near_sdk::serde")]
@@ -181,6 +194,7 @@ impl Launchpad {
             .parse()
             .expect("valid token account");
         let storage_before = env::storage_usage();
+        env::storage_write(&dex_allocation_key(&token_id), b"");
         self.token_ids.insert(&token_id);
         let mut created = self.creator_token.get(&creator).unwrap_or_default();
         created.push(token_id.clone());
@@ -260,6 +274,7 @@ impl Launchpad {
     ) -> bool {
         if result.is_err() {
             self.tokens.remove(&token_id);
+            env::storage_remove(&dex_allocation_key(&token_id));
             self.token_ids.remove(&token_id);
             let mut created = self.creator_token.get(&creator).unwrap_or_default();
             created.retain(|id| id != &token_id);
@@ -308,7 +323,12 @@ impl Launchpad {
                 assert_eq!(predecessor, self.usdc_id, "USDC only supports buy");
                 let mut state = self.tokens.get(&token_id).expect("unknown token").clone();
                 assert!(!state.pending && !state.graduated, "trading locked");
-                let quote = math::quote_buy(state.real_usdc, state.tokens_sold, amount.0);
+                let quote = math::quote_buy_with_cap(
+                    state.real_usdc,
+                    state.tokens_sold,
+                    amount.0,
+                    curve_supply(&token_id),
+                );
                 assert!(
                     quote.tokens_out >= min_tokens_out.0 && quote.tokens_out > 0,
                     "slippage"
@@ -418,10 +438,11 @@ impl Launchpad {
             "no pending buy"
         );
         let snapshot = self.pending_buy.get(&token_id).expect("no pending buy");
-        let quote = math::quote_buy(
+        let quote = math::quote_buy_with_cap(
             snapshot.previous_real_usdc,
             snapshot.previous_tokens_sold,
             usdc_amount.0,
+            curve_supply(&token_id),
         );
         assert_eq!(quote.accepted_amount, usdc_amount.0, "unexpected payment");
         assert_eq!(quote.tokens_out, tokens_out.0, "unexpected delivery");
@@ -449,7 +470,7 @@ impl Launchpad {
     ) {
         let token_id = state.token_id.clone();
         Self::unlock_post_milestone_fees(&mut state);
-        state.graduated = state.tokens_sold >= math::CURVE_SUPPLY
+        state.graduated = state.tokens_sold >= curve_supply(&token_id)
             || math::market_cap(state.real_usdc, state.tokens_sold) >= math::GRADUATION_MARKET_CAP;
         self.tokens.insert(&token_id, &state);
         env::log_str(&format!(
@@ -716,7 +737,7 @@ impl Launchpad {
         state.treasury_unlocked += unlock;
         state.milestones_completed += 1;
         state.pending = true;
-        state.graduated = state.tokens_sold >= math::CURVE_SUPPLY
+        state.graduated = state.tokens_sold >= curve_supply(&token_id)
             || math::market_cap(state.real_usdc, state.tokens_sold) >= math::GRADUATION_MARKET_CAP;
         self.tokens.insert(token_id, &state);
         self.pending_burns.insert(
@@ -789,7 +810,25 @@ impl Launchpad {
     }
     pub fn quote_buy(&self, token_id: AccountId, usdc_amount: U128) -> U128 {
         let state = self.tokens.get(&token_id).expect("unknown token");
-        U128(math::quote_buy(state.real_usdc, state.tokens_sold, usdc_amount.0).tokens_out)
+        U128(
+            math::quote_buy_with_cap(
+                state.real_usdc,
+                state.tokens_sold,
+                usdc_amount.0,
+                curve_supply(&token_id),
+            )
+            .tokens_out,
+        )
+    }
+
+    pub fn get_supply_allocations(&self, token_id: AccountId) -> (U128, U128, U128) {
+        assert!(self.tokens.get(&token_id).is_some(), "unknown token");
+        let curve = curve_supply(&token_id);
+        (
+            U128(curve),
+            U128(RESERVED),
+            U128(math::CURVE_SUPPLY - curve),
+        )
     }
     pub fn quote_sell(&self, token_id: AccountId, token_amount: U128) -> U128 {
         let state = self.tokens.get(&token_id).expect("unknown token");
