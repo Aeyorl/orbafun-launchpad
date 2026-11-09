@@ -511,6 +511,24 @@ async fn indexer_tick_locked(db: &PgPool, rpc: &str, contract: &str, usdc: &str)
     let archival_rpc = configured_archive
         .as_deref()
         .unwrap_or("https://archival-rpc.testnet.near.org");
+    let archival_client = if let Ok(key) = env::var("FASTNEAR_API_KEY") {
+        anyhow::ensure!(
+            archival_rpc == "https://archival-rpc.testnet.fastnear.com",
+            "FASTNEAR_API_KEY requires the FastNear testnet archival RPC URL"
+        );
+        let mut authorization = reqwest::header::HeaderValue::from_str(&format!("Bearer {key}"))
+            .context("Invalid FastNear authorization header")?;
+        authorization.set_sensitive(true);
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::AUTHORIZATION, authorization);
+        Client::builder()
+            .timeout(Duration::from_secs(12))
+            .redirect(reqwest::redirect::Policy::none())
+            .default_headers(headers)
+            .build()?
+    } else {
+        client.clone()
+    };
     let height: Value = client
         .post(rpc)
         .json(&json!({"jsonrpc":"2.0","id":"orba","method":"block","params":{"finality":"final"}}))
@@ -552,7 +570,7 @@ async fn indexer_tick_locked(db: &PgPool, rpc: &str, contract: &str, usdc: &str)
     let limit = last.saturating_add(batch_blocks).min(block);
     let scanned_blocks = stream::iter((last + 1)..=limit)
         .map(|height| {
-            let (client, rpc, contract, usdc) = (&client, archival_rpc, &contract, &usdc);
+            let (client, rpc, contract, usdc) = (&archival_client, archival_rpc, &contract, &usdc);
             async move {
                 let (time, events) = scan_block(client, rpc, contract, usdc, height, block).await?;
                 Ok::<_, anyhow::Error>((height, time, events))
