@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use axum::{
+    Json, Router,
     body::{Body, Bytes},
     extract::{Path, Query, State},
     http::{HeaderMap, Request, StatusCode, Uri},
@@ -7,15 +8,14 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
     routing::post,
-    Json, Router,
 };
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
-use futures::{stream, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt, stream};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use serde_json::{Value, json};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::{env, time::Duration};
 use tokio::time::{interval, sleep};
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
@@ -76,7 +76,9 @@ pub async fn app_router_with_indexer(enable_indexer: bool) -> Result<Router> {
         .max_connections(10)
         .connect(&database_url)
         .await?;
-    sqlx::migrate!("./migrations").run(&db).await?;
+    if !enable_indexer || env::var("NEAR_INDEXER_SKIP_MIGRATIONS").as_deref() != Ok("true") {
+        sqlx::migrate!("./migrations").run(&db).await?;
+    }
     let app_state = App { db: db.clone() };
     if enable_indexer {
         let rpc =
@@ -529,6 +531,7 @@ async fn indexer_tick_locked(db: &PgPool, rpc: &str, contract: &str, usdc: &str)
     } else {
         client.clone()
     };
+    let use_block_feed = env::var("NEAR_INDEXER_BLOCK_FEED").as_deref() == Ok("true");
     let height: Value = client
         .post(rpc)
         .json(&json!({"jsonrpc":"2.0","id":"orba","method":"block","params":{"finality":"final"}}))
@@ -572,7 +575,26 @@ async fn indexer_tick_locked(db: &PgPool, rpc: &str, contract: &str, usdc: &str)
         .map(|height| {
             let (client, rpc, contract, usdc) = (&archival_client, archival_rpc, &contract, &usdc);
             async move {
-                let (time, events) = scan_block(client, rpc, contract, usdc, height, block).await?;
+                let (time, events) = if use_block_feed {
+                    let document: Value = client
+                        .get(format!("https://testnet.neardata.xyz/v0/block/{height}"))
+                        .send()
+                        .await?
+                        .error_for_status()?
+                        .json()
+                        .await?;
+                    if document.is_null() {
+                        scan_block(client, rpc, contract, usdc, height, block).await?
+                    } else {
+                        let header = &document["block"]["header"];
+                        let transactions = feed_transactions(&document, height)?;
+                        let events =
+                            scan_transactions(client, rpc, contract, usdc, transactions).await?;
+                        (block_time(header), events)
+                    }
+                } else {
+                    scan_block(client, rpc, contract, usdc, height, block).await?
+                };
                 Ok::<_, anyhow::Error>((height, time, events))
             }
         })
@@ -635,72 +657,120 @@ async fn scan_block(
         .buffered(3)
         .try_collect::<Vec<_>>()
         .await?;
-    let mut indexed = Vec::new();
-    for body in chunk_bodies {
-        let transactions = body
-            .get("transactions")
-            .and_then(Value::as_array)
-            .cloned()
-            .with_context(|| {
-                format!("NEAR RPC chunk at block {height} did not include transactions")
-            })?;
-        for tx in transactions {
-            let receiver = tx["receiver_id"].as_str().unwrap_or_default();
-            let relevant_action = tx["actions"].as_array().is_some_and(|actions| {
-                actions.iter().any(|action| {
-                    let method = action["FunctionCall"]["method_name"].as_str();
-                    match receiver {
-                        account if account == contract => matches!(
-                            method,
-                            Some(
-                                "create_token"
-                                    | "recover_delivered_buy"
-                                    | "claim_treasury"
-                                    | "claim_sell_proceeds"
-                                    | "claim_creator_fees"
-                                    | "claim_protocol_fees"
-                            )
-                        ),
-                        account
-                            if account == usdc
-                                || (account.starts_with("token-")
-                                    && account.ends_with(&format!(".{contract}"))) =>
-                        {
-                            transfer_call_targets_launchpad(action, contract)
-                        }
-                        _ => false,
-                    }
-                })
-            });
-            if !relevant_action {
-                continue;
-            }
-            let signer = tx["signer_id"].as_str().unwrap_or_default();
-            let tx_hash = tx["hash"].as_str().unwrap_or_default();
-            let status: RpcResponse = client
-                .post(rpc)
-                .json(&json!({"jsonrpc":"2.0","id":"orba","method":"EXPERIMENTAL_tx_status","params":[tx_hash,signer]}))
-                .send()
-                .await?
-                .error_for_status()?
-                .json()
-                .await?;
-            if let Some(error) = status.error {
-                anyhow::bail!("NEAR RPC transaction status failed for {tx_hash}: {error}");
-            }
-            let status = status.result.with_context(|| {
-                format!("NEAR RPC returned no status for transaction {tx_hash}")
-            })?;
-            let logs = launchpad_logs(&status, contract);
-            if !logs.is_empty() {
-                indexed.push(IndexedTransactionLogs {
-                    tx_hash: tx_hash.to_string(),
-                    events: logs,
-                });
-            }
+    let mut transactions = Vec::new();
+    for body in &chunk_bodies {
+        transactions.extend(body["transactions"].as_array().with_context(|| {
+            format!("NEAR RPC chunk at block {height} did not include transactions")
+        })?);
+    }
+    let indexed = scan_transactions(client, rpc, contract, usdc, transactions).await?;
+    Ok((block_time(&block["header"]), indexed))
+}
+
+fn feed_transactions(document: &Value, height: i64) -> Result<Vec<&Value>> {
+    let block = &document["block"];
+    anyhow::ensure!(
+        block["header"]["height"].as_i64() == Some(height),
+        "NEAR block feed returned an unexpected block for {height}"
+    );
+    let chunks = block["chunks"]
+        .as_array()
+        .context("Missing block chunk headers")?;
+    let shards = document["shards"]
+        .as_array()
+        .context("Missing block shards")?;
+    let mut transactions = Vec::new();
+    for header in chunks
+        .iter()
+        .filter(|chunk| chunk["height_included"].as_i64() == Some(height))
+    {
+        let hash = header["chunk_hash"]
+            .as_str()
+            .context("Missing chunk hash")?;
+        let chunk = shards
+            .iter()
+            .map(|shard| &shard["chunk"])
+            .find(|chunk| chunk["header"]["chunk_hash"].as_str() == Some(hash))
+            .with_context(|| format!("NEAR block feed omitted chunk {hash} at {height}"))?;
+        let entries = chunk["transactions"]
+            .as_array()
+            .context("Missing chunk transactions")?;
+        for entry in entries {
+            let transaction = &entry["transaction"];
+            anyhow::ensure!(
+                transaction.is_object(),
+                "Missing signed transaction in chunk {hash}"
+            );
+            transactions.push(transaction);
         }
     }
-    Ok((block_time(&block["header"]), indexed))
+    Ok(transactions)
+}
+
+async fn scan_transactions(
+    client: &Client,
+    rpc: &str,
+    contract: &str,
+    usdc: &str,
+    transactions: Vec<&Value>,
+) -> Result<Vec<IndexedTransactionLogs>> {
+    let mut indexed = Vec::new();
+    for tx in transactions {
+        let receiver = tx["receiver_id"].as_str().unwrap_or_default();
+        let relevant_action = tx["actions"].as_array().is_some_and(|actions| {
+            actions.iter().any(|action| {
+                let method = action["FunctionCall"]["method_name"].as_str();
+                match receiver {
+                    account if account == contract => matches!(
+                        method,
+                        Some(
+                            "create_token"
+                                | "recover_delivered_buy"
+                                | "claim_treasury"
+                                | "claim_sell_proceeds"
+                                | "claim_creator_fees"
+                                | "claim_protocol_fees"
+                        )
+                    ),
+                    account
+                        if account == usdc
+                            || (account.starts_with("token-")
+                                && account.ends_with(&format!(".{contract}"))) =>
+                    {
+                        transfer_call_targets_launchpad(action, contract)
+                    }
+                    _ => false,
+                }
+            })
+        });
+        if !relevant_action {
+            continue;
+        }
+        let signer = tx["signer_id"].as_str().unwrap_or_default();
+        let tx_hash = tx["hash"].as_str().unwrap_or_default();
+        let status: RpcResponse = client
+            .post(rpc)
+            .json(&json!({"jsonrpc":"2.0","id":"orba","method":"EXPERIMENTAL_tx_status","params":[tx_hash,signer]}))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        if let Some(error) = status.error {
+            anyhow::bail!("NEAR RPC transaction status failed for {tx_hash}: {error}");
+        }
+        let status = status
+            .result
+            .with_context(|| format!("NEAR RPC returned no status for transaction {tx_hash}"))?;
+        let logs = launchpad_logs(&status, contract);
+        if !logs.is_empty() {
+            indexed.push(IndexedTransactionLogs {
+                tx_hash: tx_hash.to_string(),
+                events: logs,
+            });
+        }
+    }
+    Ok(indexed)
 }
 
 async fn archival_block(client: &Client, rpc: &str, height: i64) -> Result<Option<Value>> {
@@ -786,19 +856,23 @@ fn launchpad_logs(status: &Value, contract: &str) -> Vec<Value> {
                         .filter(|event| event["event"] == "token_created")
                     {
                         let data = &mut event["data"][0];
-                        data["description"] = json!(profile["description"]
-                            .as_str()
-                            .map(str::trim)
-                            .filter(|value| !value.is_empty() && value.chars().count() <= 280));
-                        data["image_url"] = json!(profile["image_url"]
-                            .as_str()
-                            .filter(|value| value.len() <= 500)
-                            .and_then(|value| reqwest::Url::parse(value).ok())
-                            .filter(|url| url.scheme() == "https"
-                                && url.host_str().is_some()
-                                && url.username().is_empty()
-                                && url.password().is_none())
-                            .map(|url| url.to_string()));
+                        data["description"] = json!(
+                            profile["description"]
+                                .as_str()
+                                .map(str::trim)
+                                .filter(|value| !value.is_empty() && value.chars().count() <= 280)
+                        );
+                        data["image_url"] = json!(
+                            profile["image_url"]
+                                .as_str()
+                                .filter(|value| value.len() <= 500)
+                                .and_then(|value| reqwest::Url::parse(value).ok())
+                                .filter(|url| url.scheme() == "https"
+                                    && url.host_str().is_some()
+                                    && url.username().is_empty()
+                                    && url.password().is_none())
+                                .map(|url| url.to_string())
+                        );
                     }
                 }
             }
