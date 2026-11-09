@@ -14,16 +14,22 @@ export default function HomePage() {
             <Link href="/explore" className="font-bold text-accent-blue hover:underline">See what is growing</Link>
           </div>
         </div>
-        <div className="relative min-h-[360px] sm:min-h-[500px] rotate-[1deg] overflow-hidden rounded-3xl border border-text-primary bg-accent-peach p-6 shadow-[14px_14px_0_rgb(var(--color-accent-blue))]">
-          <div className="absolute left-1/2 top-[43%] h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-text-primary bg-accent-green shadow-[10px_10px_0_rgba(23,33,60,.18)]" />
-          <div className="absolute left-1/2 top-[43%] grid h-44 w-44 -translate-x-1/2 -translate-y-1/2 place-content-center "><Image src="/orba-bloom-icon.svg" alt="" width={120} height={120} priority /></div>
-          <svg viewBox="0 0 620 380" className="absolute inset-x-[5%] bottom-[7%] h-[76%] w-[90%]" fill="none" aria-hidden="true">
-            <path d="M18 340 C175 336 226 304 294 228 C369 145 452 92 602 28" stroke="rgb(var(--color-accent-blue))" strokeWidth="4" />
-          </svg>
-          <div className="absolute inset-x-6 bottom-5 flex items-center justify-between rounded-xl border border-text-primary bg-bg-card px-5 py-4 text-text-primary">
-            <div><strong className="block font-serif text-2xl font-normal text-accent-blue">Sundae Club</strong></div>
+        <Link
+          href="/token/token-3.launchpad.orba-near-demo-41c9.testnet"
+          className="relative block min-h-[360px] rotate-[1deg] overflow-hidden rounded-3xl border border-text-primary bg-accent-peach p-6 shadow-[14px_14px_0_rgb(var(--color-accent-blue))] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-accent-blue sm:min-h-[500px]"
+        >
+          <Image
+            src="/api/images/fd39d93561a41d43b3e144c0e45515f2bc29a577da29f8990325e0b8bcc42b1d"
+            alt=""
+            width={176}
+            height={176}
+            unoptimized
+            className="absolute left-1/2 top-[43%] h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-text-primary bg-bg-card object-cover shadow-[10px_10px_0_rgba(23,33,60,.18)]"
+          />
+          <div className="absolute inset-x-6 bottom-5 rounded-xl border border-text-primary bg-bg-card px-5 py-4">
+            <strong className="block font-serif text-2xl font-normal text-accent-blue">wifnear · $WIFNEAR</strong>
           </div>
-        </div>
+        </Link>
       </section>
       <div className="space-y-12 py-12">
         <MarketBoard />
