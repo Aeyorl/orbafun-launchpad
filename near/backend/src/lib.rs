@@ -477,7 +477,9 @@ async fn indexer_tick(
 }
 
 async fn indexer_tick_locked(db: &PgPool, rpc: &str, contract: &str, usdc: &str) -> Result<Value> {
-    let client = Client::new();
+    let client = Client::builder().timeout(Duration::from_secs(12)).build()?;
+    let archival_rpc = env::var("NEAR_ARCHIVAL_RPC_URL")
+        .unwrap_or_else(|_| "https://archival-rpc.testnet.fastnear.com".into());
     let height: Value = client
         .post(rpc)
         .json(&json!({"jsonrpc":"2.0","id":"orba","method":"block","params":{"finality":"final"}}))
@@ -519,9 +521,9 @@ async fn indexer_tick_locked(db: &PgPool, rpc: &str, contract: &str, usdc: &str)
     let limit = last.saturating_add(batch_blocks).min(block);
     let scanned_blocks = stream::iter((last + 1)..=limit)
         .map(|height| {
-            let (client, rpc, contract, usdc) = (&client, &rpc, &contract, &usdc);
+            let (client, rpc, contract, usdc) = (&client, archival_rpc.as_str(), &contract, &usdc);
             async move {
-                let (time, events) = scan_block(client, rpc, contract, usdc, height).await?;
+                let (time, events) = scan_block(client, rpc, contract, usdc, height, block).await?;
                 Ok::<_, anyhow::Error>((height, time, events))
             }
         })
@@ -542,26 +544,28 @@ async fn scan_block(
     contract: &str,
     usdc: &str,
     height: i64,
+    finalized_height: i64,
 ) -> Result<(Option<DateTime<Utc>>, Vec<IndexedTransactionLogs>)> {
-    let block: RpcResponse = client
-        .post(rpc)
-        .json(&json!({"jsonrpc":"2.0","id":"orba","method":"block","params":{"block_id":height}}))
-        .send()
-        .await?
-        .json()
-        .await?;
-    if let Some(error) = block.error {
-        anyhow::bail!("NEAR RPC block {height} failed: {error}");
-    }
-    let block = block
-        .result
-        .with_context(|| format!("NEAR RPC returned no data for block {height}"))?;
+    let Some(block) = archival_block(client, rpc, height).await? else {
+        for next in (height + 1)..=height.saturating_add(8).min(finalized_height) {
+            if let Some(successor) = archival_block(client, rpc, next).await? {
+                let previous = successor["header"]["prev_height"].as_i64();
+                if previous.is_some_and(|previous| previous < height) {
+                    return Ok((None, Vec::new()));
+                }
+                break;
+            }
+        }
+        anyhow::bail!("Cannot verify missing NEAR block {height}");
+    };
     let chunks = block
         .get("chunks")
         .and_then(Value::as_array)
         .cloned()
         .with_context(|| format!("NEAR RPC block {height} did not include chunks"))?;
-    let chunk_bodies = stream::iter(chunks)
+    let chunk_bodies = stream::iter(chunks.into_iter().filter(|chunk| {
+        chunk["height_included"].as_i64().is_none_or(|included| included == height)
+    }))
         .map(|chunk| async move {
             let chunk_hash = chunk["chunk_hash"].as_str().unwrap_or_default();
             let body: RpcResponse = client
@@ -648,6 +652,30 @@ async fn scan_block(
         }
     }
     Ok((block_time(&block["header"]), indexed))
+}
+
+async fn archival_block(client: &Client, rpc: &str, height: i64) -> Result<Option<Value>> {
+    let response = client
+        .post(rpc)
+        .json(&json!({"jsonrpc":"2.0","id":"orba","method":"block","params":{"block_id":height}}))
+        .send()
+        .await?;
+    let http_status = response.status();
+    let block: RpcResponse = response.json().await?;
+    if let Some(error) = block.error {
+        if error["cause"]["name"] == "UNKNOWN_BLOCK" {
+            return Ok(None);
+        }
+        anyhow::bail!("NEAR RPC block {height} failed: {error}");
+    }
+    let value = block
+        .result
+        .with_context(|| format!("NEAR RPC returned no data for block {height}"))?;
+    anyhow::ensure!(
+        http_status.is_success() && value["header"]["height"].as_i64() == Some(height),
+        "NEAR archival RPC returned an unexpected block for {height}"
+    );
+    Ok(Some(value))
 }
 
 fn block_time(header: &Value) -> Option<DateTime<Utc>> {
