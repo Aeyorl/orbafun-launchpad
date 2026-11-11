@@ -2,9 +2,9 @@ import Image from 'next/image';
 import Link from 'next/link';
 
 const groups = [
-  ['Launchpad', [['/launch', 'Launch a token'], ['/explore', 'Market'], ['/profile', 'Wallet profiles'], ['/watchlist', 'Watchlist']]],
-  ['Resources', [['/docs', 'Docs'], ['/fees', 'Fees'], ['/blog', 'Blog'], ['/leaderboard', 'Leaderboard']]],
-  ['NEAR testnet', [['https://testnet.nearblocks.io', 'Block explorer'], ['https://faucet.circle.com/', 'Testnet USDC faucet'], ['https://docs.near.org/', 'NEAR developer docs']]],
+  ['NEAR mainnet', [['/explore/meme-cooking', 'Market'], ['/settlement', 'Refunds and claims']]],
+  ['Resources', [['/docs', 'Docs'], ['/fees', 'Fees'], ['/blog', 'Blog'], ['/explore/meme-cooking?sort=deposits', 'Top auctions']]],
+  ['Orba testnet', [['/launch', 'Launch a token'], ['/explore', 'Testnet tokens'], ['https://testnet.nearblocks.io', 'Block explorer'], ['https://faucet.circle.com/', 'Testnet USDC faucet'], ['https://docs.near.org/', 'NEAR developer docs']]],
 ] as const;
 
 export function Footer() {
@@ -15,7 +15,7 @@ export function Footer() {
           <Image src="/orba-wordmark-bloom.svg" alt="Orba" width={99} height={32} className="dark:hidden" />
           <Image src="/orba-wordmark-bloom-dark.svg" alt="Orba" width={99} height={32} className="hidden dark:block" />
         </Link>
-        <p className="mt-3">Launch and trade memecoins on NEAR testnet. Use test tokens only.</p>
+        <p className="mt-3">Browse Meme.cooking on NEAR mainnet and try Orba launches on testnet.</p>
       </div>
       {groups.map(([title, links]) => <nav key={title} aria-label={title}>
         <h2 className="mb-3 font-semibold text-text-primary">{title}</h2>

@@ -8,10 +8,10 @@ import './globals.css';
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://orba.fun'),
   title: 'Orba — NEAR Token Launchpad',
-  description: 'Launch and trade tokens on NEAR with milestone based reserved supply burns and treasury unlocks.',
+  description: 'Explore Meme.cooking auctions on NEAR mainnet and try Orba’s launch and trading mechanics on testnet.',
   openGraph: {
     title: 'Orba — NEAR Token Launchpad',
-    description: 'Launch and trade tokens on NEAR with milestone based reserved supply burns and treasury unlocks.',
+    description: 'Explore Meme.cooking auctions on NEAR mainnet and try Orba’s launch and trading mechanics on testnet.',
     type: 'website',
   },
 };
@@ -27,14 +27,15 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         </Link>
         <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
           <Link href="/" className="hidden text-text-secondary hover:text-text-primary sm:inline">Discover</Link>
-          <a href="/explore" className="text-text-secondary hover:text-text-primary">Market</a>
-          <Link href="/leaderboard" className="hidden text-text-secondary hover:text-text-primary md:inline">Leaders</Link>
+          <Link href="/explore/meme-cooking" className="text-text-secondary hover:text-text-primary">Market</Link>
+          <Link href="/explore/meme-cooking?sort=deposits" className="hidden text-text-secondary hover:text-text-primary md:inline">Top auctions</Link>
           <a href="/docs" className="hidden text-text-secondary hover:text-text-primary md:inline">Docs</a>
           <a href="/fees" className="hidden text-text-secondary hover:text-text-primary md:inline">Fees</a>
-          <a href="/launch" className="font-semibold text-accent-blue hover:underline">Launch</a>
-          <Link href="/profile" className="text-text-secondary hover:text-text-primary">Profile</Link>
+          <a href="/launch" className="font-semibold text-accent-blue hover:underline">Testnet launch</a>
+          <Link href="/settlement" className="text-text-secondary hover:text-text-primary">Recovery</Link>
+          <Link href="/profile" className="text-text-secondary hover:text-text-primary">Testnet profile</Link>
           <ThemeToggle />
-          <span className="hidden text-xs uppercase tracking-[0.18em] text-text-secondary sm:inline">NEAR · Testnet</span>
+          <span className="hidden text-xs uppercase tracking-[0.18em] text-text-secondary sm:inline">NEAR</span>
           <div id="near-wallet-slot" className="empty:hidden" />
         </nav>
       </div>

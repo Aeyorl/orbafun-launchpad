@@ -49,7 +49,8 @@ export default function ExplorePage() {
   }, []);
 
   return <main className="mx-auto min-h-[70vh] max-w-6xl px-5 py-12 md:px-8">
-    <div className="mb-8 flex flex-wrap items-end justify-between gap-4"><div><h1 className="mt-2 text-4xl font-semibold">Explore tokens</h1></div><Link href="/launch" className="rounded-full bg-accent-green px-5 py-3 font-semibold text-text-primary">Launch a token</Link></div>
+    <div className="mb-8 flex flex-wrap items-end justify-between gap-4"><div><h1 className="mt-2 text-4xl font-semibold">Orba testnet tokens</h1></div><Link href="/launch" className="rounded-full bg-accent-green px-5 py-3 font-semibold text-text-primary">Launch a token</Link></div>
+    <Link href="/explore/meme-cooking" className="mb-5 inline-block text-sm font-semibold text-accent-blue underline">Browse Meme.cooking · NEAR mainnet</Link>
     <div className="mb-5 flex flex-wrap gap-3">
       <input className="input min-w-0 flex-1" aria-label="Search tokens" placeholder="Search by name, ticker or address" value={query} onChange={(event) => setQuery(event.target.value)} />
       <select className="input" aria-label="Sort tokens" value={sort} onChange={(event) => setSort(event.target.value === 'volume' ? 'volume' : 'newest')}>

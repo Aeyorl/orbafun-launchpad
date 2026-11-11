@@ -15,7 +15,9 @@ type Token = {
   graduated: boolean;
 };
 
-const api = (process.env.NEXT_PUBLIC_NEAR_API_URL ?? '').replace(/\/$/, '');
+const api = process.env.NODE_ENV === 'development'
+  ? (process.env.NEXT_PUBLIC_NEAR_API_URL || 'http://localhost:4001').replace(/\/$/, '')
+  : '';
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 const artwork = ['sunroom', 'cloud-choir', 'noodle-oracle', 'moon-moth', 'peach-engine', 'relay-garden'];
 const tabs = ['Newest', 'Market Cap', 'Volume', 'Graduated'] as const;

@@ -1,16 +1,20 @@
 # Orba on NEAR
 
-Orba is a NEAR testnet memecoin launchpad for the **Memecoins With Mechanics** track. Anyone can launch a token with an image and trade it on a USDC bonding curve. When a token crosses a trading milestone, the Rust smart contracts burn part of its reserved supply and unlock a treasury tranche for the recipient fixed at launch.
+Orba brings Meme.cooking auction discovery and refund and claim lookups to NEAR mainnet. Its own memecoin launchpad runs on NEAR testnet for the **Memecoins With Mechanics** track. Anyone can launch a token with an image and trade it on a USDC bonding curve. When a token crosses a trading milestone, the Rust smart contracts burn part of its reserved supply and unlock a treasury tranche for the recipient fixed at launch.
 
 Orba existed on Arc before the hackathon. The NEAR submission covers the Rust contracts and indexer, NEAR wallet and trading flows, and on-chain milestone burns and treasury claims built for this integration.
 
 ## Try the live demo
 
-1. Open the [Orba homepage](https://www.orba.fun/) and select the featured WIFNEAR card to open its market page.
+1. Open the [WIFNEAR testnet demo](https://www.orba.fun/token/token-3.launchpad.orba-near-demo-41c9.testnet).
 2. Find **Milestone progress**. It shows the first Spark milestone completed, **12M WIFNEAR** burned, and **0.0055 USDC** paid to the fixed recipient.
 3. Scroll to **Milestone rules** for the thresholds and burn percentages, then **Recent trades** for the buy and sell. Follow a transaction link to verify it on NEAR testnet.
 
 You can inspect the demo in your browser without a wallet or local setup. Use a funded NEAR testnet wallet if you want to launch or trade.
+
+## Explore NEAR mainnet
+
+The [Meme.cooking market](https://www.orba.fun/explore/meme-cooking) shows the public auction catalog, including auctions that did not launch. Homepage totals count catalog auctions, launched auctions, and the sum of reported wNEAR deposits for launched auctions. Deposits are distinct from secondary-market trading volume. Each listing opens the original Meme.cooking page. Use [Recovery](https://www.orba.fun/settlement) to check a NEAR mainnet account for refunds and token claims.
 
 ## Verify the mechanic
 
